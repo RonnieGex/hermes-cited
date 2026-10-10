@@ -395,3 +395,5 @@ instalación contra la URL pública de GitHub.
 ## Licencia
 
 Apache-2.0. Ver `LICENSE` y `NOTICE`. Versión en inglés: [README.md](README.md).
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/katalis-flame-192.png"><img src="docs/brand/katalis-flame-ink-192.png" alt="Katalis" height="48"></picture> <a href="https://katalis.dev">Hecho por Katalis</a></p>
