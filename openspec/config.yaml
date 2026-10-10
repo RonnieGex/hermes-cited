@@ -1,0 +1,20 @@
+schema: spec-driven
+context: |
+  hermes-cited is an Apache-2.0 native Hermes Agent plugin, written in Python.
+  hermes_cited/ implements cited_search and cited_ask over the configured Cited POST /api/mcp endpoint,
+  the /cited and /dot conversation modes, the deterministic cited-mode verifier and the hash-chained
+  audit log at $HERMES_HOME/cited/audit.jsonl.
+  The plugin is read-only against Cited: it never writes a document and never calls a language model itself.
+  It must not be configured through MCP: the plugin needs to see every result for the verifier and the log.
+  Repository prose, code, specifications and commits use English. README.es.md is a full translation.
+  The Hermes installation under %LOCALAPPDATA%\hermes and the checkout hermes-agent are read-only:
+  every run uses a temporary HERMES_HOME.
+rules:
+  proposal:
+    - Cite the authorized scope and keep specification, implementation and review authors separate.
+  specs:
+    - Use explicit SHALL requirements and WHEN/THEN scenarios with no unresolved implementation choice.
+  tasks:
+    - Start with feature/<change>, then TDD, implementation, existing tests, unit and end-to-end checks, documentation.
+    - Store executed command evidence under openspec/changes/<change>/reports/ and reports/.
+    - Close with verify, independent adversarial review, archive, then commit. Scan secrets before each commit.
