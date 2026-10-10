@@ -43,9 +43,10 @@ fixed note that names the retention.
    message can differ from the text the plugin composed and the record stored.
 
 In a "cited" mode that promises that no unverified value reaches the user, these gaps are the
-difference between a guarantee and a wish. The plugin's round 4 contract (D10 to D14) states exactly
-what it can promise: the **final message** is one of three fixed forms, and the seal is withheld on
-every surface where something else could have been seen.
+difference between a guarantee and a wish. The plugin's round 4 contract (D10 to D14), amended by D11,
+states exactly what it can promise: for a cited turn that reaches the hook, the plugin's composition is the
+documentary render, the fixed refusal or the operational refusal; the host may add text afterwards. The seal
+is withheld on every surface where something else could have been seen.
 
 ## The problem
 
@@ -223,8 +224,8 @@ capability point of D11 answers "not accredited" and the answer says so with the
 - **Footers after the transform**: the plugin declares that the delivered message can differ from the
   persisted render when the host appends its own text (`agent/turn_finalizer.py:645-647`), and it does not
   publish the render guarantee for those paths until the host hands the terminal text to the composition.
-- The promise of cited mode is about the **final message**: the render of the chosen lines, the fixed
-  refusal, or the fixed operational refusal with an incident code.
+- The composition of cited mode is what the plugin writes: for a cited turn that reaches the hook, it is the
+  documentary render, the fixed refusal or the operational refusal; the host may add text afterwards.
 
 ## Configuration reference used by the plugin
 

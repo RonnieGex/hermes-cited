@@ -3,12 +3,13 @@
 Cited en [Hermes Agent](https://github.com/NousResearch/hermes-agent): un plugin nativo de Python que le da
 a Hermes las herramientas de solo lectura de [Cited](https://github.com/RonnieGex/cited) como herramientas
 nativas, dos modos de conversación y un modo cited cuya respuesta **la escribe el plugin** a partir de los
-renglones exactos que eligió el modelo, junto a un registro local de consistencia encadenado por hash de lo
-que se entregó.
+renglones exactos que eligió el modelo, junto a un registro local de consistencia encadenado por hash de la
+composición del plugin.
 
 Hecho por Katalis. Apache-2.0.
 
-- **Modo dot** (el default): respuestas normales; Cited se usa cuando ayuda y la respuesta no se toca.
+- **Modo dot** (el default): respuestas normales; Cited se usa cuando ayuda, la marca reservada se retira de la
+  respuesta del modelo y una nota fija reemplaza a la respuesta que la limpieza deja vacía.
 - **Modo cited**: el modelo solo *elige*. Busca en Cited y luego llama a `cited_quote` con el identificador
   del pasaje y los renglones numerados que el usuario debe leer. El plugin descarta la prosa del modelo por
   completo y compone esos renglones **byte por byte**, cada uno con su documento, su sección y su marca
@@ -127,11 +128,11 @@ nota fija lo dice.
   entrega y solo si la política de entrega lo permite **y** el host acredita la entrega del turno (D11).
   Mientras el host no lo haga, la marca no se emite en ninguna ruta y la respuesta lo dice con la nota fija.
   La marca `[1]` y la fuente las genera el plugin; el modelo no escribe ninguna.
-- El modo dot entrega el texto del modelo tal cual. Se quita toda aparición de la marca reservada
-  `Verified by Cited` de todo el documento, en cualquier presentación que el consumidor renderice: markup
-  Markdown, énfasis, enlaces inline y por referencia, entidades nombradas y numéricas y saltos suaves
-  incluidos. Si la limpieza no puede completarse, lo que se entrega es una nota fija segura y nunca el texto
-  sin transformar del modelo. Si el texto era solo la marca, lo que se entrega es la nota fija que lo dice.
+- El modo dot entrega el texto del modelo con toda aparición de la marca reservada `Verified by Cited`
+  retirada de todo el documento, en cualquier presentación que el consumidor renderice: markup Markdown,
+  énfasis, enlaces inline y por referencia, entidades nombradas y numéricas y saltos suaves incluidos. Si la
+  limpieza no puede completarse, lo que se entrega es una nota fija segura y nunca el texto sin transformar del
+  modelo. Si el texto era solo la marca, lo que se entrega es la nota fija que lo dice.
 - Los totales y otros valores calculados quedan fuera de esta ronda: pertenecen a la misión de documentos,
   donde una herramienta los calcula por código y registra la procedencia.
 
@@ -139,9 +140,10 @@ nota fija lo dice.
 
 Hermes v0.21.6+387 entrega cada delta de texto a la pantalla, a la plataforma de mensajería, al comentario
 intermedio y al TTS de streaming **antes** de que `transform_llm_output` decida. Ningún hook de plugin puede
-retener esos deltas: es una limitación del host, y este plugin la declara en lugar de esconderla. La promesa
-del modo cited es sobre el **mensaje final**: el texto que entrega esta respuesta lo compone el plugin. No
-es una promesa sobre lo que un borrador pudo mostrar en pantalla mientras se escribía la respuesta.
+retener esos deltas: es una limitación del host, y este plugin la declara en lugar de esconderla. Para un turno
+cited que llega al hook, la composición del plugin es el render documental, la negativa fija o la negativa
+operativa; el host puede agregar texto después. No es una promesa sobre lo que un borrador pudo mostrar en
+pantalla mientras se escribía la respuesta.
 
 El plugin decide el sello a partir de una **instantánea tomada al inicio del turno cited** y la congela en
 el turno, así que un cambio de configuración durante el turno no puede cambiar una decisión ya tomada. La
@@ -190,14 +192,17 @@ archivo y línea de cada punto que toca. No se abrió ningún pull request ni is
 
 ## El registro de consistencia
 
-Cada respuesta entregada agrega un renglón, un objeto JSON, a `$HERMES_HOME/cited/audit.jsonl`, en ambos
+Cada composición del plugin cuyo append tiene éxito agrega un renglón, un objeto JSON, a
+`$HERMES_HOME/cited/audit.jsonl`, en ambos
 modos: la marca UTC, un `seq` monotónico, la identidad del log, la plataforma, la sesión, el identificador
 de turno, el usuario cuando existe, el modo, la pregunta, las llamadas a Cited con sus argumentos y el
 SHA-256 **y el texto** de cada extracto devuelto, el `pid` y el número original de cada renglón elegido con
-su documento, su sección y su posición, el texto entregado, la transcripción que el plugin habría devuelto
+su documento, su sección y su posición, el texto compuesto, la transcripción que el plugin habría devuelto
 sin el sello, la instantánea de entrega con su decisión, el resultado del verificador y la
 `composition_note` fija que dice qué es la fila, más `prev_hash` y `hash`. La cadena es
-`hash = sha256(prev_hash + canonical_json(entry sin hash))`.
+`hash = sha256(prev_hash + canonical_json(entry sin hash))`. Una negativa por fallo de persistencia no escribe
+ningún renglón, así que el registro es la composición del plugin cuando el append tiene éxito y nunca una
+afirmación sobre el mensaje terminal.
 
 **La fila registra la composición del plugin.** El host puede mostrar borradores mientras se genera la
 respuesta y agregar avisos propios al final (el pie de mutaciones, una explicación de salida anormal), así que
@@ -236,8 +241,8 @@ directorio como `hermes_plugins.<slug>` y nunca lo instala como paquete de nivel
 
 ## La frontera de un turno cited
 
-Para cada turno cited que llega a `transform_llm_output`, y en una ruta del host que no agrega texto después
-de ese hook, el texto entregado es exactamente uno de tres:
+Para un turno cited que llega al hook, la composición del plugin es el render documental, la negativa fija o la
+negativa operativa; el host puede agregar texto después. Las tres composiciones posibles son:
 
 1. el render de los renglones textuales que eligió el modelo, con la marca y la fuente, y la nota fija que
    dice que el sello se retiene: la marca misma no se emite mientras el host no acredite la entrega;
@@ -248,8 +253,8 @@ de ese hook, el texto entregado es exactamente uno de tres:
    detalle del error.
 
 El host todavía puede agregar su propio texto después del hook, como el footer de las mutaciones de archivo
-que fallaron (`agent/turn_finalizer.py:645-647`); donde lo hace, el mensaje entregado puede diferir de las
-tres formas y el plugin no reclama esta frontera para esas rutas. El tercer contrato de
+que fallaron (`agent/turn_finalizer.py:645-647`); donde lo hace, el mensaje terminal puede diferir de esa
+composición y el plugin no reclama esta frontera para esas rutas. El tercer contrato de
 `docs/upstream-proposal.md` pide la frontera de composición que cerraría ese hueco.
 
 Una sola frontera alrededor de todo el transformador convierte cualquier excepción de leer la configuración,
@@ -277,13 +282,13 @@ marca no puede completarse, entrega una nota fija segura y nunca `None`.
   compuso el plugin y del renglón que guardó el registro. El plugin no reclama el render de C1 para una ruta
   del host que pueda agregar texto.
 
-El contrato que este plugin le pide a Hermes es una política de entrega resuelta una vez por turno que
-retenga texto, razonamiento, comentario intermedio, voz y la ruta SSE hasta el veredicto, un paso final de
-composición ejecutado una vez por turno cited antes de persistir y entregar, incluso cuando el texto del
-modelo es vacío, y una frontera de composición que corra la composición del plugin después de todos los
-footers o explicaciones que agregue el host y antes de la entrega terminal, para que el mensaje entregado
-sea el texto que guarda el registro. `docs/upstream-proposal.md` trae el archivo y la línea de cada punto
-que cambiaría.
+El contrato que este plugin le pide a Hermes son tres contratos: la **retención síncrona de la entrega** — una
+política de entrega resuelta una vez por turno que retenga texto, razonamiento, comentario intermedio, voz y la
+ruta SSE hasta el veredicto —, **un paso final de composición incluso cuando el texto del modelo es vacío**,
+ejecutado una vez por turno cited antes de persistir y entregar, y **una frontera de composición después de los
+footers del host**, para que la composición del plugin corra después de todos los footers o explicaciones que
+agregue el host y antes de la entrega terminal y el mensaje entregado sea el texto que guarda el registro.
+`docs/upstream-proposal.md` trae el archivo y la línea de cada punto que cambiaría.
 
 ## La skill `cited`
 
@@ -353,7 +358,7 @@ ronda 2 ni de la ronda 3 tocó el puerto 3240.
 | El registro de consistencia de esos turnos | una entrada por turno con el conteo exacto; `python -m hermes_cited.verify_log` desde el plugin instalado reporta la consistencia interna de la cadena y sale 0; alterar una entrada, quitar una de en medio, reordenarla o introducir un hueco lo hace salir 1, mientras que un corte de sufijo completo o un archivo reescrito con todos los hashes recalculados queda con consistencia interna, que es el límite documentado de la revisión |
 | Modo dot | se entrega el texto del modelo, se quita cualquier marca reservada en toda presentación, y la entrada se registra con el verificador marcado como no aplicado |
 | El contrato cited | casos adversariales prueban que un valor cambiado, un sujeto movido, una subcadena, la prosa libre y un sello falsificado nunca llegan a la respuesta entregada |
-| La frontera | una falla al leer la configuración, resolver, renderizar o persistir entrega la negativa operativa fija con un código de incidente, incluso cuando falla la dependencia de entropía de ese código, que entonces usa el código de reserva constante, y el texto de un turno cited siempre es uno de los tres |
+| La frontera | una falla al leer la configuración, resolver, renderizar o persistir entrega la negativa operativa fija con un código de incidente, incluso cuando falla la dependencia de entropía de ese código, que entonces usa el código de reserva constante, y la composición del plugin de un turno cited es una de las tres |
 | La política de entrega (fixtures, aparte de la corrida de arriba) | `api_server`, `desktop`, una plataforma desconocida y una configuración ilegible marcan la superficie legible como no limpia; también lo hacen `streaming` encendido para una plataforma de mensajería, `interim_assistant_messages` encendido y `tts.auto_tts` encendido; en un fixture sintético de CLI quieto la superficie legible queda limpia y el sello igual se retiene porque el host no está acreditado, y un cambio de la configuración después de que arrancó el turno no cambia su decisión |
 | La respuesta vacía | el finalizador real regresa sin invocar el hook, y el plugin reporta eso como una incompatibilidad del host en lugar de cubrirla |
 | La skill `cited` | registrada por el plugin y presente en el árbol instalado, con la regla de `cited_quote` y la nota de que los comandos son del plugin |

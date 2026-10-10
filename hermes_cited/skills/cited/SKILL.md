@@ -38,9 +38,12 @@ the plugin-written answer exist only in the native plugin.
   lines the user should see. A paragraph with no line break is one line. Every passage the turn receives
   gets a unique `pid` (`P1`, `P2`, ...), so two searches that both return a passage 1 do not collide:
   pass the `pid`, not the number.
-- The plugin copies each chosen line byte for byte and adds, itself, the `[n]` mark, the source
-  (`Fuente: <document> - <section>`) and the seal `Verified by Cited`. Never write those yourself, and
-  never write a datum outside `cited_quote`.
+- The plugin copies each chosen line byte for byte and adds, itself, the `[n]` mark and the source
+  (`Fuente: <document> - <section>`). Never write those yourself, and never write a datum outside
+  `cited_quote`.
+- This version **does not emit** the seal `Verified by Cited`: the host exposes no accreditable delivery
+  contract, so every answer carries the fixed note that says the seal is withheld. Never write the mark
+  yourself either.
 - When Cited refuses, or the passages do not hold the answer, call no `cited_quote`: the plugin answers
   that it is not in the documents. A refusal anywhere in the turn blocks every selection of that turn,
   before or after it. Never fill that gap from the web or from general knowledge.
@@ -67,7 +70,10 @@ audit log do not: there is no plugin to run them.
   - Afinacion de bicicleta: 380 pesos. [1]
   Fuente: cafe-la-horquilla.md - Precios
 
-  Verified by Cited
+  Note on delivery: the host does not expose a per-turn delivery policy that accredits the effective
+  receivers and the guarantee that the terminal message is the plugin's composition, so the plugin cannot
+  prove what was delivered. The verified seal is withheld here because something else may have been visible
+  before this answer was verified. The text above is still copied from the documents of this turn.
   ```
 
   When nothing was chosen, Cited refused or the turn had no excerpt, the answer is exactly
@@ -77,9 +83,10 @@ audit log do not: there is no plugin to run them.
   on, and whenever the plugin cannot prove that nothing else was visible. `CITED_LANGUAGE` picks `es`
   (default) or `en` for the entry template, the refusal and the notes; the quoted lines never change
   language.
-- **What the plugin can promise:** the promise is about the final message. Hermes v0.21.6+387 gives a
-  plugin no way to retain the drafts a streaming surface already delivered (`agent/stream_delivery.py`),
-  and it never calls the hook when the model's answer is empty (`agent/turn_finalizer.py:501`), so an
-  empty answer is an incompatibility the plugin declares instead of covering. See
-  `docs/upstream-proposal.md`.
+- **What the plugin can promise:** for a cited turn that reaches the hook, the plugin's composition is the
+  documentary render, the fixed refusal or the operational refusal; the host may add text afterwards. Hermes
+  v0.21.6+387 gives a plugin no way to retain the drafts a streaming surface already delivered
+  (`agent/stream_delivery.py`), and it never calls the hook when the model's answer is empty
+  (`agent/turn_finalizer.py:501`), so an empty answer is an incompatibility the plugin declares instead of
+  covering. See `docs/upstream-proposal.md`.
 - `CITED_DEFAULT_MODE` sets the mode a conversation starts in (`dot` unless it says `cited`).
