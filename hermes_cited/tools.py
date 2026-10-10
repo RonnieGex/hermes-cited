@@ -58,12 +58,12 @@ QUOTE_SCHEMA = {
     "type": "object",
     "properties": {
         "passage": {
-            "type": "integer",
-            "description": "The number of a passage or citation that Cited returned in this turn, as its `n`.",
+            "type": "string",
+            "description": "The `pid` of a passage of this turn, like `P1`, as the tool that returned it listed it.",
         },
         "lines": {
             "type": "array",
-            "items": {"type": "integer"},
+            "items": {"type": "integer", "minimum": 1},
             "description": "The line numbers of that passage to show, in order, as the passage's `lines` lists them.",
         },
     },
@@ -83,9 +83,12 @@ ASK_DESCRIPTION = (
 )
 
 QUOTE_DESCRIPTION = (
-    "In cited mode, choose the exact lines the user will see. Pass the `passage` number from `cited_search` "
-    "or `cited_ask` and the `lines` numbers of that passage; the tool returns the text of those lines and "
-    "the plugin writes the answer from them. The model's own prose is discarded."
+    "In cited mode, choose the exact lines the user will see. The plugin gives every passage of the turn a "
+    "unique `pid` the moment it enters the turn: the first passage is `P1`, the next `P2`, and so on, so "
+    "two searches that both return a passage 1 do not collide. Pass that `pid` as `passage` and the line "
+    "numbers as `lines`; the tool returns the exact text of those lines and the plugin writes the answer "
+    "from them. The model's own prose is discarded. A plain number is accepted only while it identifies "
+    "exactly one passage of the turn."
 )
 
 
@@ -241,7 +244,11 @@ def excerpt_pairs(envelope: dict) -> list:
 
 
 def evidence_places(envelope: dict) -> list:
-    """The quotable places of one envelope, in order, with their document, section, lines and number."""
+    """The quotable places of one envelope, in order, with their document, section, lines and number.
+
+    ``pid``, ``call`` and ``uid`` are empty here: the turn assigns them when the place enters the turn, so
+    two searches of the same turn never collide (H14).
+    """
     places = []
     for place in _places_of(envelope):
         excerpt = place.get("excerpt")
@@ -250,13 +257,18 @@ def evidence_places(envelope: dict) -> list:
         number = place.get("n") if isinstance(place.get("n"), int) else 0
         heading = place.get("heading") if isinstance(place.get("heading"), str) else ""
         document = place.get("document") if isinstance(place.get("document"), str) else ""
+        position = place.get("position") if isinstance(place.get("position"), int) else 0
         places.append(
             {
                 "n": number,
                 "document": document,
                 "heading": heading,
+                "position": position,
                 "excerpt": excerpt,
                 "lines": render.numbered_lines(excerpt),
+                "pid": "",
+                "call": 0,
+                "uid": "",
             }
         )
     return places

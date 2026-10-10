@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""The gate of hermes-cited (round 3): affirm the named property of every claim.
+"""The gate of hermes-cited (round 4): affirm the named property of every claim.
 
 Run it with the Python of the installed Hermes venv:
 
@@ -10,7 +10,8 @@ and this process works under a temporary HERMES_HOME of its own, so the real
 ``%LOCALAPPDATA%\\hermes`` and ``~/.hermes`` are never used. The test Cited is built from
 ``origin/main`` of the Cited repository in its own temporary worktree and served on port 3246; port 3240
 and the live Cited are never touched. Every raw log and every report is redacted with the ephemeral
-token before it is written, the artifacts are scanned on disk, and only then is the verdict emitted.
+token before it is written, all the artifacts are written and then scanned on disk, and only then is the
+verdict emitted (M-R3-6).
 """
 
 from __future__ import annotations
@@ -29,10 +30,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-CHANGE = REPO / "openspec" / "changes" / "hermes-plugin-r3"
+CHANGE = REPO / "openspec" / "changes" / "hermes-plugin-r4"
 REPORTS = CHANGE / "reports"
-RAW_LOGS = REPO / ".tmp" / "gate-r3"
-ROUND_ONE_FACTS = REPO / "openspec" / "changes" / "hermes-plugin" / "reports" / "hermes-facts.md"
+RAW_LOGS = REPO / ".tmp" / "gate-r4"
+ROUND_ONE_FACTS = (
+    REPO / "openspec" / "changes" / "archive" / "2026-10-10-hermes-plugin" / "reports" / "hermes-facts.md"
+)
 
 HERMES_ROOT = Path(os.environ.get("HERMES_ROOT", r"C:\Users\Franc\AppData\Local\hermes\hermes-agent"))
 HERMES_EXE = HERMES_ROOT / "venv" / "Scripts" / "hermes.exe"
@@ -394,42 +397,70 @@ def first_cited_before_others(tools):
     return all(name in DISCOVERY_TOOLS for name in tools[:first_cited])
 
 
-def amount_with_citation(text, amount, unit_words=("peso", "mxn", "dolar", "usd", "eur", "euro", "centavo")):
-    """The text states exactly *amount*, with a unit and a citation mark (M-R2-4)."""
+UNIT_CLASSES = {
+    "currency": ("peso", "pesos", "mxn", "dolar", "dolares", "usd", "eur", "euro", "euros", "centavo", "centavos"),
+    "day": ("day", "days", "dia", "dias"),
+    "mass": ("kg", "mg", "mcg", "g", "gramo", "gramos"),
+    "percent": ("%", "por ciento", "percent"),
+}
+
+#: The signs that may prefix a statement. ``""`` means no sign at all.
+SIGNS = {"": r"", "-": r"-\s*", "+": r"\+\s*"}
+
+
+def amount_statement(text, amount, unit=None, mark=None, sign="", cite=False):
+    """One bound statement: sign, exact amount, unit of the right class and a mark of the selection.
+
+    M-R3-6: the old predicates ignored the sign, accepted a nearby unit of another class and accepted
+    any mark. This one parses a single statement: the amount must be a standalone token (never inside
+    ``1380`` or ``380.5`` and never the tail of ``-380`` when no sign was asked for), the sign must be
+    exactly the requested one, the unit must belong to the requested class, and the citation mark must be
+    the one that was resolved against the passage the run selected. ``cite=True`` requires a mark at all;
+    ``mark=None`` accepts any mark, a number accepts only that one and ``0`` accepts only no mark.
+    """
     if not isinstance(text, str) or not text:
         return False
-    cited = bool(re.search(r"\[\d+\]", text))
-    if not cited:
-        return False
-    pattern = r"(?<![\w.,]){0}(?![\d.,])".format(re.escape(amount))
+    number = re.escape(str(amount))
+    prefix = SIGNS.get(sign, r"")
+    pattern = r"(?<![\w.,]){0}{1}(?![\d.,])".format(prefix, number)
+    units = UNIT_CLASSES.get(unit) if unit else None
     for match in re.finditer(pattern, text):
-        window = text[max(0, match.start() - 32): match.end() + 32].lower()
-        if any(unit in window for unit in unit_words):
+        if sign == "" and match.start() > 0 and text[match.start() - 1] in "+-":
+            continue
+        window = text[match.end(): match.end() + 40].lower()
+        if units is not None and not any(re.match(r"[\s\-]*" + re.escape(word) + r"s?(?![\w])", window) for word in units):
+            continue
+        if mark is None:
+            if not cite or re.search(r"\[\d+\]", text):
+                return True
+            continue
+        if mark == 0:
+            if not re.search(r"\[\d+\]", text):
+                return True
+            continue
+        if "[{0}]".format(mark) in text:
             return True
     return False
 
 
+def amount_with_citation(text, amount, unit_words=("peso", "mxn", "dolar", "usd", "eur", "euro", "centavo")):
+    """The text states exactly *amount* with a currency unit and a citation mark."""
+    return amount_statement(text, amount, unit="currency", cite=True)
+
+
 def amount_with_unit(text, amount, unit):
-    """The text states exactly *amount* followed by *unit* (M-R2-4)."""
-    if not isinstance(text, str) or not text:
-        return False
-    pattern = r"(?<![\w.,]){0}[\s-]*{1}s?(?![\w])".format(re.escape(amount), re.escape(unit))
-    return bool(re.search(pattern, text, re.IGNORECASE))
+    """The text states exactly *amount* with a unit of the class *unit*."""
+    return amount_statement(text, amount, unit=unit)
 
 
 def amount_with_source(text, amount, unit_words=("peso", "mxn", "dolar", "usd", "eur", "euro", "centavo")):
-    """The MCP route states exactly *amount* with a unit and names a source (a mark or a document)."""
+    """The MCP route states exactly *amount* with a currency unit and names a source."""
     if not isinstance(text, str) or not text:
         return False
     sourced = bool(re.search(r"\[\d+\]", text)) or bool(re.search(r"[\w-]+\.(md|txt)", text))
     if not sourced:
         return False
-    pattern = r"(?<![\w.,]){0}(?![\d.,])".format(re.escape(amount))
-    for match in re.finditer(pattern, text):
-        window = text[max(0, match.start() - 32): match.end() + 32].lower()
-        if any(unit in window for unit in unit_words):
-            return True
-    return False
+    return amount_statement(text, amount, unit="currency")
 
 
 def clean_refusal(text):
@@ -438,21 +469,32 @@ def clean_refusal(text):
 
 
 def seal_matches_entry(text, entry):
-    """The delivered seal is crossed with the audited verifier result of its own entry (M-R2-2)."""
+    """The delivered seal is crossed with the audited delivery decision of its own entry (M-R2-2, H9).
+
+    M-R3-6: the check reads the decision the plugin recorded for that entry, so a seal the entry says was
+    withheld can never be accepted and a withheld note can never be accepted as a verified answer.
+    """
     if not isinstance(entry, dict):
         return False
     verifier = entry.get("verifier") or {}
+    delivery = entry.get("delivery") or {}
     if verifier.get("applied") is not True or verifier.get("ok") is not True:
-        return False
-    if verifier.get("seal_withheld"):
         return False
     if entry.get("response") != text:
         return False
-    return str(text or "").rstrip().endswith("Verified by Cited")
+    sealed = str(text or "").rstrip().endswith("Verified by Cited")
+    if sealed:
+        return verifier.get("verified") is True and verifier.get("seal_withheld") is False and delivery.get("seal") is True
+    return verifier.get("seal_withheld") is True or verifier.get("verified") is not True
 
 
-def delivered_of(events):
-    """The text a consumer of `--format stream-json` that shows only the terminal record delivers."""
+def terminal_record_of(events):
+    """The text a consumer of `--format stream-json` that shows only the terminal record delivers.
+
+    M-R3-6: this measures the terminal ``result`` record of the documented consumer. It does **not**
+    measure the temporary deliveries of a real CLI, desktop, bot or TTS; those surfaces are the accepted
+    limit of H9 and the reason ``docs/upstream-proposal.md`` exists.
+    """
     final = ""
     for event in events or []:
         if isinstance(event, dict) and event.get("type") == "result":
@@ -460,10 +502,19 @@ def delivered_of(events):
     return final
 
 
-def entry_for(entries, question, mode="cited"):
+def delivered_of(events):
+    """The old name of :func:`terminal_record_of`, kept for the round 3 fixtures of this gate."""
+    return terminal_record_of(events)
+
+
+def entry_for(entries, question, mode="cited", turn_id=None):
+    """The entry of the run: by question and mode, and by turn when the caller knows it (M-R3-6)."""
     for entry in entries or []:
-        if entry.get("question") == question and entry.get("mode") == mode:
-            return entry
+        if entry.get("question") != question or entry.get("mode") != mode:
+            continue
+        if turn_id is not None and entry.get("turn_id") != turn_id:
+            continue
+        return entry
     return None
 
 
@@ -476,6 +527,58 @@ def line_is_from_entry(text, entry):
             if text in render.excerpt_lines(excerpt):
                 return True
     return False
+
+
+def blocks_are_bound(entry, line):
+    """M-R3-6: one recorded block must be a full line of its own turn and carry a bound identifier.
+
+    The check resolves the block against the selection, the source and the turn identifier of that run:
+    the recorded ``uid`` must name the entry's own turn, the ``pid`` must be a passage of that turn, the
+    document and the section must be the ones of that passage, and the ``[n]`` mark of the delivered
+    answer must be the number of that same identifier.
+    """
+    if not isinstance(entry, dict) or not isinstance(line, dict):
+        return False
+    text = line.get("text")
+    pid = str(line.get("pid") or "")
+    uid = str(line.get("uid") or "")
+    if not text or not pid or not uid:
+        return False
+    if not uid.startswith("{0}:".format(entry.get("turn_id"))):
+        return False
+    if not line_is_from_entry(text, entry):
+        return False
+    response = str(entry.get("response") or "")
+    mark = "[{0}]".format(re.sub(r"\D", "", pid))
+    if mark not in response:
+        return False
+    source = ""
+    if line.get("document"):
+        source = str(line["document"])
+        if line.get("heading"):
+            source = "{0} - {1}".format(line["document"], line["heading"])
+    if source and source not in response:
+        return False
+    return True
+
+
+def every_block_is_bound(entries):
+    """M-R3-6: every block of every cited entry of the log, not only the entry of the price run."""
+    checked = 0
+    cited = 0
+    for entry in entries or []:
+        if entry.get("mode") != "cited":
+            continue
+        cited += 1
+        lines = entry.get("quoted_lines") or []
+        if not lines:
+            continue
+        for line in lines:
+            if not blocks_are_bound(entry, line):
+                return False, "entry {0} line {1} is not bound to its turn".format(
+                    entry.get("turn_id"), line.get("pid"))
+            checked += 1
+    return cited > 0, "cited entries: {0}, blocks checked: {1}".format(cited, checked)
 
 
 def recompute_digests(entries):
@@ -510,8 +613,8 @@ def strip_token_from_disk():
 
 
 def cited_fixture():
-    """D5 in process: the model chooses, the plugin writes, and a bad line cannot pass."""
-    from hermes_cited import plugin, render, verifier
+    """D5/D10 in process: the model chooses, the plugin writes, and a bad line cannot pass."""
+    from hermes_cited import delivery, plugin, render, verifier
 
     excerpt = "Precios\n- Espresso: 35 pesos.\n- Cafe de olla: 45 pesos.\n" + PRICE_LINE
     envelope = {
@@ -532,35 +635,76 @@ def cited_fixture():
     def build(args):
         turn = plugin.Turn("s", "t")
         turn.note_call(envelope, "cited_search", {"query": "afinacion"}, "ok")
+        turn.delivery = delivery.Snapshot(platform="cli", readable=True, seal=True)
         recorded, error = turn.add_quote(args)
         return turn, recorded, error
 
+    def deliver(turn):
+        body = render.render_answer("es", list(turn.selections))
+        return verifier.sealed(body)
+
     results = {}
-    turn, recorded, error = build({"passage": 1, "lines": [4]})
+    turn, recorded, error = build({"passage": "P1", "lines": [4]})
     results["recorded"] = recorded
     results["error"] = error
-    final, _verification, withheld = plugin._render_turn(turn, "cli")
+    final = deliver(turn) if not error else verifier.refusal_text("es")
     results["final"] = final
-    results["withheld"] = withheld
+    results["withheld"] = "Verified by Cited" not in final
     results["blocks_are_full_lines"] = all(
         block.text in turn.line_texts() for block in turn.selections
     )
+    results["pid"] = turn.selections[0].pid if turn.selections else ""
+    results["mark"] = turn.selections[0].mark() if turn.selections else ""
     empty = plugin.Turn("s", "t")
     empty.note_call(envelope, "cited_search", {}, "ok")
-    results["no_quote"] = plugin._render_turn(empty, "cli")[0]
+    empty.delivery = delivery.Snapshot(platform="cli", readable=True, seal=True)
+    results["no_quote"] = verifier.refusal_text("es")
     results["forged_stripped"] = verifier.strip_seal("380 pesos.\n\nVerified by Cited")
-    changed = render.Line(1, 4, "- Afinacion de bicicleta: 1380 pesos.", "cafe-la-horquilla.md", "Precios")
+    changed = render.Line(
+        passage=1,
+        number=4,
+        text="- Afinacion de bicicleta: 1380 pesos.",
+        document="cafe-la-horquilla.md",
+        heading="Precios",
+        pid="P1",
+        original=1,
+    )
     results["changed_rejected"] = verifier.verify_display([changed], turn.line_texts()).ok
     results["line_texts"] = sorted(turn.line_texts())
     results["price_line"] = PRICE_LINE
+
+    refused = plugin.Turn("s", "t2")
+    refused.note_call(envelope, "cited_search", {}, "ok")
+    refused.delivery = delivery.Snapshot(platform="cli", readable=True, seal=True)
+    refused.refusals.append("No está en los documentos.")
+    refused.add_quote({"passage": "P1", "lines": [4]})
+    results["refusal_blocks"] = bool(refused.refusals) and bool(refused.selections)
+    results["refusal_answer"] = verifier.refusal_text("es")
+
+    snap = delivery.snapshot("api_server", config={})
+    results["api_server_sse"] = snap.sse and not snap.seal
+    results["commentary_withholds"] = not delivery.snapshot(
+        "telegram", config={"streaming": {"enabled": False}}
+    ).seal
+    results["tts_withholds"] = not delivery.snapshot(
+        "cli", config={"display": {"streaming": False, "interim_assistant_messages": False}, "tts": {"auto_tts": True}}
+    ).seal
+    results["quiet_cli_seals"] = delivery.snapshot(
+        "cli", config={"display": {"streaming": False, "interim_assistant_messages": False}}
+    ).seal
     return results
 
 
 def audit_fixtures(root):
-    """D6 in process: a manipulated history refuses the append and a lost key fails closed."""
-    from unittest.mock import patch
+    """D9 in process: what the consistency record refuses and what it honestly cannot detect."""
+    import shutil as _shutil
 
     from hermes_cited import audit
+
+    root = Path(root)
+    if root.exists():
+        _shutil.rmtree(root, ignore_errors=True)
+    root.mkdir(parents=True, exist_ok=True)
 
     def payload(index):
         return {
@@ -582,7 +726,24 @@ def audit_fixtures(root):
             audit.append_entry(path, payload(index))
 
     def alter(path, variant):
-        if variant == "removed_tail":
+        if variant == "removed_middle":
+            lines = path.read_text(encoding="utf-8").splitlines()
+            del lines[1]
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        elif variant == "reordered":
+            lines = path.read_text(encoding="utf-8").splitlines()
+            lines[1], lines[2] = lines[2], lines[1]
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        elif variant == "tampered_entry":
+            lines = path.read_text(encoding="utf-8").splitlines()
+            entry = json.loads(lines[0])
+            entry["response"] = "tampered"
+            lines[0] = json.dumps(entry, ensure_ascii=False, sort_keys=True)
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        elif variant == "invalid_tail":
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write("{broken\n")
+        elif variant == "removed_tail":
             lines = path.read_text(encoding="utf-8").splitlines()
             path.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
         elif variant == "rewritten_chain":
@@ -597,69 +758,84 @@ def audit_fixtures(root):
                 "\n".join(json.dumps(entry, ensure_ascii=False, sort_keys=True) for entry in entries) + "\n",
                 encoding="utf-8",
             )
-        elif variant == "missing_checkpoint":
-            audit.checkpoint_path(path).unlink()
-        elif variant == "rollback_checkpoint":
-            entries = audit.read_entries(path)
-            audit.write_checkpoint(path, 1, entries[0]["hash"], entries[0]["log_id"])
-        elif variant == "empty_log":
-            path.write_text("", encoding="utf-8")
-        elif variant == "deleted_log":
-            path.unlink()
 
     results = {}
-    for variant in ("removed_tail", "rewritten_chain", "missing_checkpoint", "rollback_checkpoint",
-                    "empty_log", "deleted_log"):
+    for variant in ("removed_middle", "reordered", "tampered_entry", "invalid_tail"):
         path = root / "alter-{0}.jsonl".format(variant)
         chain(path)
         alter(path, variant)
+        before = path.read_bytes()
         try:
             audit.append_entry(path, payload(9))
             results[variant] = "appended"
         except audit.AuditError as error:
             results[variant] = "refused: {0}".format(str(error)[:80])
+        results[variant + "_untouched"] = path.read_bytes() == before
 
-    path = root / "rollback.jsonl"
-    chain(path)
-    saved_log = path.read_bytes()
-    saved_checkpoint = audit.checkpoint_path(path).read_bytes()
-    audit.append_entry(path, payload(4))
-    path.write_bytes(saved_log)
-    audit.checkpoint_path(path).write_bytes(saved_checkpoint)
-    results["rollback_verify_error"] = audit.verify_file(path)[1] is not None
-    try:
-        audit.append_entry(path, payload(5))
-        results["rollback_append"] = "appended"
-    except audit.AuditError:
-        results["rollback_append"] = "refused"
+    for variant in ("removed_tail", "rewritten_chain"):
+        path = root / "honest-{0}.jsonl".format(variant)
+        chain(path)
+        alter(path, variant)
+        count, error = audit.verify_file(path)
+        results[variant] = {"consistent": error is None, "count": count}
 
-    path = root / "checkpoint-failure.jsonl"
+    path = root / "half-write.jsonl"
     chain(path, 1)
-    original = audit.write_checkpoint
-    with patch.object(audit, "write_checkpoint", side_effect=OSError("synthetic checkpoint failure")):
+
+    def half_write(log, entry):
+        with open(log, "a", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(entry)[:20])
+            handle.flush()
+            os.fsync(handle.fileno())
+        raise OSError("synthetic failure after a partial write")
+
+    original = audit._append_line
+    audit._append_line = half_write
+    try:
         try:
             audit.append_entry(path, payload(2))
-            results["checkpoint_failure"] = "appended"
+            results["half_write"] = "appended"
         except OSError:
-            results["checkpoint_failure"] = "raised"
-    results["checkpoint_failure_rows"] = len(audit.read_entries(path))
-    results["checkpoint_failure_verifies"] = audit.verify_file(path)[1] is None
-
-    path = root / "lost-key.jsonl"
-    chain(path, 2)
-    audit.key_path().unlink()
-    results["lost_key_verify_error"] = audit.verify_file(path)[1] is not None
-    results["lost_key_not_recreated"] = not audit.key_path().exists()
+            results["half_write"] = "raised"
+    finally:
+        audit._append_line = original
+    results["half_write_detected"] = audit.verify_file(path)[1] is not None
     try:
         audit.append_entry(path, payload(3))
-        results["lost_key_append"] = "appended"
+        results["half_write_next_append"] = "appended"
     except audit.AuditError:
-        results["lost_key_append"] = "refused"
+        results["half_write_next_append"] = "refused"
+
+    custody_root = root / "no-custody"
+    custody_root.mkdir(parents=True, exist_ok=True)
+    path = custody_root / "audit.jsonl"
+    chain(path, 1)
+    results["files_next_to_the_log"] = sorted(item.name for item in custody_root.iterdir())
+
+    path = root / "append-refusal.jsonl"
+    chain(path, 2)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    del lines[1]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    before = path.read_bytes()
+    try:
+        audit.append_entry(path, payload(3))
+        results["append_refusal"] = "appended"
+    except audit.AuditError:
+        results["append_refusal"] = "refused"
+    results["append_refusal_untouched"] = path.read_bytes() == before
     return results
 
 
+def verifier_operational(code, language="es"):
+    """The fixed operational refusal of H10, built by the module that ships it."""
+    from hermes_cited import verifier
+
+    return verifier.operational_refusal(code, language)
+
+
 def delivery_fixture():
-    """D7 in process: the matrix of the resolver and the seal decision per surface."""
+    """H9 in process: the matrix of the resolver and the seal decision per surface."""
     from hermes_cited import delivery
 
     matrix = {
@@ -668,19 +844,38 @@ def delivery_fixture():
         "transport_off_bool": {"enabled": True, "transport": False},
         "explicit_off": {"enabled": False},
     }
-    streaming = {name: delivery.effective_streaming("telegram", {"streaming": raw}) for name, raw in matrix.items()}
-    seal = {name: delivery.seal_allowed("telegram", {"streaming": raw}) for name, raw in matrix.items()}
+    quiet = {"display": {"interim_assistant_messages": False}}
+    streaming = {
+        name: delivery.effective_streaming("telegram", {**quiet, "streaming": raw})
+        for name, raw in matrix.items()
+    }
+    seal = {
+        name: delivery.seal_allowed("telegram", {**quiet, "streaming": raw})
+        for name, raw in matrix.items()
+    }
+    on = {"streaming": {"enabled": True}}
     platforms = {
-        name: delivery.seal_allowed(name, {"streaming": {"enabled": True}})
-        for name in ("wecom", "feishu", "dingtalk", "qqbot", "acme-chat", "api_server")
+        name: delivery.seal_allowed(name, on)
+        for name in ("wecom", "feishu", "dingtalk", "qqbot", "acme-chat", "api_server", "desktop")
     }
     return {
         "streaming": streaming,
         "seal": seal,
         "platforms": platforms,
-        "cli_off": delivery.seal_allowed("cli", {"display": {"streaming": False}}),
-        "cli_on": delivery.seal_allowed("cli", {"display": {"streaming": True}}),
+        "cli_off": delivery.seal_allowed(
+            "cli", {"display": {"streaming": False, "interim_assistant_messages": False}}),
+        "cli_on": delivery.seal_allowed(
+            "cli", {"display": {"streaming": True, "interim_assistant_messages": False}}),
         "desktop": delivery.seal_allowed("desktop", {"streaming": {"enabled": False}}),
+        "commentary_withholds": not delivery.seal_allowed(
+            "telegram", {"streaming": {"enabled": False}, "display": {"interim_assistant_messages": True}}),
+        "tts_withholds": not delivery.seal_allowed(
+            "cli",
+            {
+                "display": {"streaming": False, "interim_assistant_messages": False},
+                "tts": {"auto_tts": True},
+            },
+        ),
         "compat": {
             "transport_off": delivery.CompatStreamingConfig.from_dict({"enabled": True, "transport": False}).transport,
             "mode_edit": delivery.CompatStreamingConfig.from_dict({"mode": "edit"}).globally_enabled,
@@ -727,7 +922,11 @@ def host_matrix(workspace):
 
 
 def gate_selftest():
-    """The gate's own predicates must reject the reproductions of both reviews (D8)."""
+    """The gate's own predicates must reject the reproductions of the three reviews (M-R3-6, D8).
+
+    Returns ``(ok, detail)``. ``detail`` names the failing fixtures exactly, so a red self-test can never
+    report success (the round 3 defect).
+    """
     cases = [
         ("a refusal that states an invented price", not clean_refusal(
             "No está en los documentos, pero cuesta 999 pesos.")),
@@ -748,14 +947,48 @@ def gate_selftest():
         ("1380 with a source is not 380", not amount_with_source("Cuesta 1380 pesos, segun doc.md.", "380")),
         ("a forged seal is stripped from dot", "Verified by Cited" not in
          __import__("hermes_cited.verifier", fromlist=["strip_seal"]).strip_seal("x\n\nVerified by Cited")),
+        # the new negatives of M-R3-6
+        ("a negative amount is not the positive one", not amount_with_citation("-380 pesos [99].", "380")),
+        ("a negative count of days is not the positive one", not amount_with_unit("-90 days", "90", "day")),
+        ("a weight is not a currency", not amount_with_citation("380 kg, pesos [99]", "380")),
+        ("a mark that is not the resolved one is not a bound citation",
+         not amount_statement("380 pesos [99].", "380", unit="currency", mark=1)),
+        ("the resolved mark is a bound citation",
+         amount_statement("380 pesos [1].", "380", unit="currency", mark=1)),
+        ("a mark of another passage is not the bound citation",
+         not amount_statement("380 pesos [2].", "380", unit="currency", mark=1)),
+        ("a decimal is not the integer", not amount_with_citation("380.5 pesos [1].", "380")),
+        ("the signed amount with its own sign passes",
+         amount_statement("-380 pesos [1].", "380", unit="currency", mark=1, sign="-")),
+        ("A markdown seal is stripped too", "Verified by Cited" not in
+         __import__("hermes_cited.verifier", fromlist=["strip_seal"]).strip_seal("**Verified by Cited**")),
+        ("an operational refusal never carries the seal",
+         "Verified by Cited" not in
+         __import__("hermes_cited.verifier", fromlist=["operational_refusal"]).operational_refusal("CITED-1", "es")),
     ]
     fixture = cited_fixture()
     cases.append(("the cited fixture records one line", fixture["recorded"] == [PRICE_LINE]))
     cases.append(("the cited render copies the line and adds the source",
                   PRICE_LINE in fixture["final"] and PRICE_SOURCE in fixture["final"]))
     cases.append(("the cited render ends with the seal", fixture["final"].rstrip().endswith("Verified by Cited")))
+    cases.append(("the render mark follows the pid", fixture["mark"] == "[1]" and fixture["pid"] == "P1"))
     cases.append(("a changed line is rejected", fixture["changed_rejected"] is False))
     cases.append(("no quote is the fixed refusal", fixture["no_quote"] == "No está en los documentos."))
+    cases.append(("a refusal blocks an existing selection", fixture["refusal_blocks"] is True))
+    cases.append(("api_server is the SSE route and withholds", fixture["api_server_sse"] is True))
+    cases.append(("interim commentary withholds", fixture["commentary_withholds"] is True))
+    cases.append(("streaming TTS withholds", fixture["tts_withholds"] is True))
+    cases.append(("a quiet CLI seals", fixture["quiet_cli_seals"] is True))
+    audits = audit_fixtures(REPO / ".tmp" / "gate-r4-selftest")
+    cases.append(("a broken chain refuses the next append",
+                  str(audits["removed_middle"]).startswith("refused") and audits["removed_middle_untouched"]))
+    cases.append(("a partial write is detected and refuses the next append",
+                  audits["half_write"] == "raised" and audits["half_write_detected"] is True
+                  and audits["half_write_next_append"] == "refused"))
+    cases.append(("no custody file is created next to the log",
+                  audits["files_next_to_the_log"] == ["audit.jsonl", "audit.jsonl.lock"]))
+    cases.append(("a cut suffix is honestly reported as consistent",
+                  audits["removed_tail"]["consistent"] is True))
     failed = [name for name, ok in cases if not ok]
     return not failed, "failed fixtures: {0}".format(", ".join(failed))
 
@@ -823,9 +1056,8 @@ def main():
     workspace = Path(tempfile.mkdtemp(prefix="hc-gate-"))
     gate_home = workspace / "gate-home"
     gate_home.mkdir()
-    gate_key = workspace / "gate-audit.key"
     os.environ["HERMES_HOME"] = str(gate_home)
-    os.environ["CITED_AUDIT_KEY_PATH"] = str(gate_key)
+    os.environ.pop("CITED_AUDIT_KEY_PATH", None)
     os.environ.pop("CITED_LANGUAGE", None)
     os.environ.pop("CITED_MCP_TOKEN", None)
     fixture_root = workspace / "audit-fixtures"
@@ -833,7 +1065,7 @@ def main():
     homes = []
     cited_process = None
     started = time.time()
-    print("hermes-cited gate r3 · workspace {0}".format(workspace))
+    print("hermes-cited gate r4 · workspace {0}".format(workspace))
 
     token = os.urandom(32).hex()
     TOKEN = token
@@ -858,19 +1090,19 @@ def main():
         claim("preflight", "port {0} is free".format(CITED_PORT), port_is_free(CITED_PORT),
               "another process is listening on {0}".format(CITED_PORT))
 
-        facts = (REPORTS / "hermes-facts-r3.md").read_text(encoding="utf-8")
+        facts = (REPORTS / "hermes-facts-r4.md").read_text(encoding="utf-8")
         claim(
             "H0",
-            "reports/hermes-facts-r3.md answers the delivery and render facts of D5 to D7",
+            "reports/hermes-facts-r4.md answers the delivery, empty-response and boundary facts of D9 to D14",
             all(
                 needle in facts
                 for needle in (
-                    "gateway/config.py:521",
-                    "gateway/config.py:509",
-                    "gateway/config.py:217",
-                    "model_tools.py:826",
-                    "agent/turn_finalizer.py:507",
-                    "_normalize_transport_token",
+                    "gateway/platforms/api_server.py:2394",
+                    "gateway/run_turn_runner.py:917-994",
+                    "gateway/display_config.py:11-35",
+                    "agent/turn_finalizer.py:501-502",
+                    "agent/turn_finalizer.py:104-111",
+                    "_run_agent_start_streaming_tts",
                 )
             ),
             "the report does not name every fact",
@@ -884,7 +1116,7 @@ def main():
         )
 
         ok, detail = gate_selftest()
-        claim("D8", "the gate's own predicates reject the reproductions of both reviews", ok, detail)
+        claim("D8", "the gate's own predicates reject the reproductions of the three reviews", ok, detail)
 
         fixture = cited_fixture()
         claim(
@@ -898,7 +1130,7 @@ def main():
             "the plugin-written render carries the line, the source, the mark and the seal",
             PRICE_LINE in fixture["final"] and PRICE_SOURCE in fixture["final"]
             and "[1]" in fixture["final"] and fixture["final"].rstrip().endswith("Verified by Cited")
-            and fixture["blocks_are_full_lines"] is True,
+            and fixture["blocks_are_full_lines"] is True and fixture["mark"] == "[1]",
             fixture["final"][:200],
         )
         claim(
@@ -908,46 +1140,63 @@ def main():
             json.dumps(fixture, ensure_ascii=False)[:240],
         )
         claim(
+            "H13",
+            "a Cited refusal blocks the selections of its turn, before or after it",
+            fixture["refusal_blocks"] is True and fixture["refusal_answer"] == "No está en los documentos.",
+            json.dumps(fixture.get("refusal_blocks")),
+        )
+        claim(
             "H4",
             "a seal written by the model is removed in dot mode",
             fixture["forged_stripped"] == "380 pesos.",
             fixture["forged_stripped"],
         )
+        claim(
+            "H14",
+            "the passage identifier of the turn is the render mark and reaches the log",
+            fixture["pid"] == "P1" and fixture["mark"] == "[1]",
+            json.dumps({"pid": fixture["pid"], "mark": fixture["mark"]}),
+        )
+        claim(
+            "H10",
+            "the operational refusal is a fixed template with an incident code and no error",
+            "Verified by Cited" not in verifier_operational("CITED-ABC123", "es")
+            and "CITED-ABC123" in verifier_operational("CITED-ABC123", "es"),
+            verifier_operational("CITED-ABC123", "es")[:120],
+        )
 
         audits = audit_fixtures(fixture_root)
-        os.environ.pop("CITED_AUDIT_KEY_PATH", None)
-        altered = ("removed_tail", "rewritten_chain", "missing_checkpoint", "rollback_checkpoint",
-                   "empty_log", "deleted_log")
+        altered = ("removed_middle", "reordered", "tampered_entry", "invalid_tail")
         claim(
-            "D6",
-            "an altered history refuses the next append in every reproduction of B-R2-3",
-            all(str(audits.get(name, "")).startswith("refused") for name in altered),
+            "H5",
+            "every detected alteration of the chain refuses the next append and leaves the log untouched",
+            all(str(audits.get(name, "")).startswith("refused") for name in altered)
+            and all(audits.get(name + "_untouched") is True for name in altered),
             json.dumps(audits, ensure_ascii=False)[:400],
         )
         claim(
-            "D6",
-            "a full rollback of the log and its checkpoint is detected and cannot be reappended",
-            audits["rollback_verify_error"] is True and audits["rollback_append"] == "refused",
-            json.dumps(audits, ensure_ascii=False)[:300],
+            "H5",
+            "a partial write of a failed append is detected and refuses the next append",
+            audits["half_write"] == "raised" and audits["half_write_detected"] is True
+            and audits["half_write_next_append"] == "refused",
+            json.dumps({key: audits[key] for key in ("half_write", "half_write_detected", "half_write_next_append")}),
         )
         claim(
-            "D6",
-            "a checkpoint failure rolls the row back and leaves a sound log",
-            audits["checkpoint_failure"] == "raised" and audits["checkpoint_failure_rows"] == 1
-            and audits["checkpoint_failure_verifies"] is True,
-            json.dumps(audits, ensure_ascii=False)[:300],
+            "H5",
+            "the retired custody wrote no file outside HERMES_HOME",
+            audits["files_next_to_the_log"] == ["audit.jsonl", "audit.jsonl.lock"],
+            json.dumps(audits["files_next_to_the_log"]),
         )
         claim(
-            "D6",
-            "a lost key fails closed and is never recreated by a read",
-            audits["lost_key_verify_error"] is True and audits["lost_key_not_recreated"] is True
-            and audits["lost_key_append"] == "refused",
-            json.dumps(audits, ensure_ascii=False)[:300],
+            "H5",
+            "the record names what it cannot detect: a cut suffix stays internally consistent",
+            audits["removed_tail"]["consistent"] is True and audits["rewritten_chain"]["consistent"] is True,
+            json.dumps({"removed_tail": audits["removed_tail"], "rewritten_chain": audits["rewritten_chain"]}),
         )
 
         policy = delivery_fixture()
         claim(
-            "D7",
+            "H9",
             "the delivery resolver reproduces the host mode alias and YAML booleans",
             policy["streaming"] == {"mode_edit": True, "enabled": True, "transport_off_bool": False,
                                     "explicit_off": False}
@@ -957,19 +1206,73 @@ def main():
             json.dumps(policy["streaming"]),
         )
         claim(
-            "D7",
-            "an unknown or newly admitted messaging platform withholds and the desktop warns",
+            "H9",
+            "an unknown platform, the desktop and the SSE route withhold, and the CLI follows its own switches",
             policy["platforms"] == {"wecom": False, "feishu": False, "dingtalk": False, "qqbot": False,
-                                    "acme-chat": False, "api_server": True}
-            and policy["cli_off"] is True and policy["cli_on"] is False and policy["desktop"] is False,
+                                    "acme-chat": False, "api_server": False, "desktop": False}
+            and policy["cli_off"] is True and policy["cli_on"] is False,
             json.dumps(policy["platforms"]),
+        )
+        claim(
+            "H9",
+            "interim commentary and streaming TTS withhold even with streaming off",
+            policy["commentary_withholds"] is True and policy["tts_withholds"] is True,
+            json.dumps({"commentary": policy["commentary_withholds"], "tts": policy["tts_withholds"]}),
         )
         host, host_error = host_matrix(workspace)
         claim(
-            "D7",
+            "H9",
             "inside the Hermes venv the plugin uses the real StreamingConfig of the host",
             host is not None and host.get("is_host") is True and host.get("host") == host.get("plugin"),
             host_error or json.dumps(host)[:200] if host else host_error,
+        )
+
+        # H15: the integration evidence of the two declared host incompatibilities. It runs the real
+        # loader, dispatcher, finalizer and stream receiver with a temporary HERMES_HOME; when the
+        # read-only host copy of the review is not on this machine the claim says so instead of passing.
+        host_copy = Path(
+            os.environ.get(
+                "HERMES_HOST_COPY",
+                str(
+                    Path(tempfile.gettempdir())
+                    / "codex-hermes-cited-r2-2d438babc89e4a55af33b15bab5269cd"
+                    / "host-fast"
+                    / "hermes-agent-dce1e9b37581dd62e480a9064dc04a709c2940d3"
+                ),
+            )
+        )
+        if (host_copy / "agent" / "turn_finalizer.py").exists():
+            host_code, host_out, host_err = run(
+                [str(TEST_PYTHON), "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/test_host.py"],
+                cwd=REPO,
+                timeout=900,
+            )
+            log("h15-host.txt", host_out + "\n" + host_err)
+            host_tail = host_out.strip().splitlines()[-1] if host_out.strip() else ""
+            claim(
+                "H15",
+                "the real host finalizer never calls the hook on an empty response and the boundary holds",
+                host_code == 0 and "failed" not in host_tail and "passed" in host_tail,
+                host_tail or host_err.strip()[-300:],
+            )
+        else:
+            claim(
+                "H15",
+                "the real host finalizer never calls the hook on an empty response and the boundary holds",
+                False,
+                "the read-only host copy is not present at {0}; the integration evidence of H15 is "
+                "reported as not run instead of covered".format(host_copy),
+            )
+        proposal = (REPO / "docs" / "upstream-proposal.md").read_text(encoding="utf-8")
+        claim(
+            "H15",
+            "the upstream proposal asks for the two missing contracts and opens no PR",
+            all(needle in proposal for needle in (
+                "synchronous retention of the delivery",
+                "A final composition step even when the model's response is empty",
+                "No pull request",
+            )),
+            "docs/upstream-proposal.md does not name both contracts",
         )
 
         if not port_is_free(CITED_PORT):
@@ -1076,14 +1379,12 @@ def main():
         plugin_home = workspace / "home-plugin"
         plugin_home.mkdir()
         homes.append(plugin_home)
-        audit_key = workspace / "audit.key"
         write_env(
             plugin_home,
             {
                 "CITED_URL": CITED_URL,
                 "CITED_MCP_TOKEN": token,
                 "CITED_DEFAULT_MODE": "cited",
-                "CITED_AUDIT_KEY_PATH": str(audit_key),
             },
         )
         url = "file:///" + str(source).replace("\\", "/")
@@ -1177,7 +1478,6 @@ def main():
                 "CITED_URL": CITED_URL,
                 "CITED_MCP_TOKEN": token,
                 "CITED_DEFAULT_MODE": "dot",
-                "CITED_AUDIT_KEY_PATH": str(audit_key),
             },
         )
         dot = run_stream_question(plugin_home, PRICE_QUESTION)
@@ -1195,7 +1495,6 @@ def main():
         verify_code, verify_out, verify_err = run(
             [str(TEST_PYTHON), "-m", "hermes_cited.verify_log", str(audit_file)],
             cwd=REPO,
-            env={"CITED_AUDIT_KEY_PATH": str(audit_key)},
             timeout=120,
         )
         log("h5-verify-log.txt", verify_out + "\n" + verify_err)
@@ -1238,11 +1537,11 @@ def main():
               guarantee_entry is not None and seal_matches_entry(guarantee["final"], guarantee_entry),
               "final={0}".format(guarantee["final"][-80:]))
         claim("H5", "the log verifies from the installed plugin, outside the checkout",
-              verify_from_installed(plugin_home, audit_file, audit_key) == 0,
+              verify_from_installed(plugin_home, audit_file) == 0,
               "the installed command did not exit zero")
-        claim("H5", "a suffix removed from the log makes the installed command fail",
-              suffix_fails_from_installed(plugin_home, audit_file, audit_key, workspace),
-              "the installed command did not detect the cut suffix")
+        claim("H5", "a middle entry removed from the log makes the installed command fail",
+              middle_removal_fails_from_installed(plugin_home, audit_file, workspace),
+              "the installed command did not detect the removed middle entry")
 
         dot_entries = [
             json.loads(line) for line in audit_file.read_text(encoding="utf-8").splitlines() if line.strip()
@@ -1254,17 +1553,17 @@ def main():
 
         readme_en = (REPO / "README.md").read_text(encoding="utf-8")
         readme_es = (REPO / "README.es.md").read_text(encoding="utf-8")
-        claim("H9", "(b) the CLI consumer rule and the desktop limitation are documented",
+        claim("H9", "(b) the CLI consumer rule and the retained surfaces are documented",
               ("show only the terminal `result` record" in readme_en
                or "show only the terminal" in readme_en)
-              and "a draft may be visible while the answer is written" in readme_en,
-              "the README does not state the CLI rule or the desktop limitation")
-        claim("H9", "(c) a consumer of the terminal record receives the verified answer, not the draft",
-              delivered_of(price["events"]) == price["final"]
+              and "api_server" in readme_en and "interim" in readme_en and "auto_tts" in readme_en,
+              "the README does not state the CLI rule or the withheld surfaces")
+        claim("H9", "(c) only the terminal record of the documented consumer is measured, not the drafts",
+              terminal_record_of(price["events"]) == price["final"]
               and bool(price["final"].strip())
               and (price["streamed"] != price["final"] or price["final"].rstrip().endswith("Verified by Cited")),
-              "delivered={0} draft_chars={1}".format(
-                  delivered_of(price["events"])[:80], len(price["streamed"])))
+              "terminal={0} draft_chars={1}".format(
+                  terminal_record_of(price["events"])[:80], len(price["streamed"])))
 
         EVIDENCE["h8"] = {
             "price": {"tools": price["tools"], "final": price["final"], "streamed": price["streamed"]},
@@ -1281,10 +1580,13 @@ def main():
                   needle in readme_en and needle in readme_es
                   for needle in (
                       "CITED_URL", "CITED_MCP_TOKEN", "CITED_DEFAULT_MODE", "CITED_LANGUAGE",
-                      "cited_quote", "/cited", "/dot", "2026-10-10", "audit.key", "stream-json",
-                      "checkpoint",
+                      "cited_quote", "/cited", "/dot", "2026-10-10", "stream-json",
                   )
-              ),
+              )
+              and "internal consistency" in readme_en.lower()
+              and "not tamper-proof" in readme_en.lower()
+              and "cited ledger" in readme_en.lower()
+              and "consistencia interna" in readme_es.lower(),
               "a README is missing a documented fact")
         cited_mcp = (SOURCE_HERMES / "docs" / "mcp.md").read_text(encoding="utf-8")
         cited_readme = (SOURCE_HERMES / "README.md").read_text(encoding="utf-8")
@@ -1316,7 +1618,7 @@ def main():
             print("WARNING: the temporary directory was not removed: {0}".format(workspace))
 
 
-def verify_from_installed(plugin_home, audit_file, audit_key):
+def verify_from_installed(plugin_home, audit_file):
     """M7: the documented command, from the installed plugin directory, outside the checkout."""
     installed_dir = plugin_home / "plugins" / "hermes-cited"
     if not installed_dir.exists():
@@ -1324,28 +1626,33 @@ def verify_from_installed(plugin_home, audit_file, audit_key):
     code, out, err = run(
         [str(HERMES_PYTHON), "-m", "hermes_cited.verify_log", str(audit_file)],
         cwd=installed_dir,
-        env={"CITED_AUDIT_KEY_PATH": str(audit_key)},
         timeout=120,
     )
     log("h5-installed-verify.txt", "exit {0}\n{1}\n{2}".format(code, out, err))
     return code
 
 
-def suffix_fails_from_installed(plugin_home, audit_file, audit_key, workspace):
-    """M4 end to end: cut the last entry of a copy and require a non-zero exit."""
-    copy = workspace / "audit-cut.jsonl"
+def middle_removal_fails_from_installed(plugin_home, audit_file, workspace):
+    """D9 end to end: remove a middle entry of a copy and require a non-zero exit.
+
+    Round 4 replaced the round 3 cut-suffix fixture: without a custody mark a cut suffix leaves a shorter,
+    internally consistent chain, which the record says it cannot detect. Removing a middle entry does
+    break the chain, and that is what this fixture requires.
+    """
+    copy = workspace / "audit-middle.jsonl"
     shutil.copyfile(audit_file, copy)
-    shutil.copyfile(str(audit_file) + ".checkpoint", str(copy) + ".checkpoint")
     lines = copy.read_text(encoding="utf-8").splitlines()
-    copy.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
+    if len(lines) < 2:
+        return False
+    del lines[0]
+    copy.write_text("\n".join(lines) + "\n", encoding="utf-8")
     installed_dir = plugin_home / "plugins" / "hermes-cited"
     code, out, err = run(
         [str(HERMES_PYTHON), "-m", "hermes_cited.verify_log", str(copy)],
         cwd=installed_dir,
-        env={"CITED_AUDIT_KEY_PATH": str(audit_key)},
         timeout=120,
     )
-    log("h5-installed-cut.txt", "exit {0}\n{1}\n{2}".format(code, out, err))
+    log("h5-installed-middle.txt", "exit {0}\n{1}\n{2}".format(code, out, err))
     return code != 0
 
 
@@ -1405,41 +1712,83 @@ def finish(started):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body, encoding="utf-8")
 
-    findings = strip_token_from_disk()
-    claim("H6", "the token is in no artifact on disk after redaction",
-          not findings,
-          "redacted artifacts scanned: {0}".format(len(ARTIFACTS) + len(EXTRA_SCAN))
-          if not findings else "the token appears in: {0}".format(", ".join(findings)))
-
     passed = sum(1 for _, _, ok, _ in CLAIMS if ok)
     total = len(CLAIMS)
     green = passed == total
     elapsed = time.time() - started
-    lines = [
-        "# The gate of hermes-cited, round 3",
-        "",
-        "Date: 2026-10-10. Command: `scripts/gate.py` with the Python of the Hermes venv.",
-        "Run: workspace {0}, {1:.0f}s, Hermes Agent v0.21.6+387 (`dce1e9b`), Cited `origin/main`.".format(
-            "under the system temp directory", elapsed),
-        "",
-        "| Claim | Result | Note |",
-        "|---|---|---|",
-    ]
-    for code, name, ok, detail in CLAIMS:
-        lines.append("| {0} — {1} | {2} | {3} |".format(code, name, "PASS" if ok else "FAIL", redact(detail)[:200]))
-    lines.append("")
-    lines.append("{0} — {1}/{2} claims passed in {3:.0f}s.".format(
-        "GATE: GREEN" if green else "GATE: RED", passed, total, elapsed))
-    lines.append("")
-    report = "\n".join(lines)
-    if TOKEN and TOKEN in report:
+    report_path = REPORTS / "2026-10-10-step-12-gate.md"
+
+    def build_report():
+        lines = [
+            "# The gate of hermes-cited, round 4",
+            "",
+            "Date: 2026-10-10. Command: `scripts/gate.py` with the Python of the Hermes venv.",
+            "Run: workspace {0}, {1:.0f}s, Hermes Agent v0.21.6+387 (`dce1e9b`), Cited `origin/main`.".format(
+                "under the system temp directory", elapsed),
+            "",
+            "| Claim | Result | Note |",
+            "|---|---|---|",
+        ]
+        for code, name, ok, detail in CLAIMS:
+            lines.append("| {0} — {1} | {2} | {3} |".format(code, name, "PASS" if ok else "FAIL", redact(detail)[:200]))
+        lines.append("")
+        lines.append("{0} — {1}/{2} claims passed in {3:.0f}s.".format(
+            "GATE: GREEN" if green else "GATE: RED", passed, total, elapsed))
+        lines.append("")
+        return "\n".join(lines)
+
+    # M-R3-6: the report is written to disk before the verdict, then every artifact, the report included,
+    # is scanned **on disk**, and if the report has to be rewritten its bytes are re-verified.
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(build_report(), encoding="utf-8")
+    findings = strip_token_from_disk()
+    report_on_disk = report_path.read_text(encoding="utf-8")
+    if TOKEN and TOKEN in report_path.read_bytes().decode("utf-8", "replace"):
         green = False
-        print("FAIL H6 the gate report itself carried the token; it was redacted before writing")
-    record("2026-10-10-step-11-gate.md", report)
-    gate_path = REPORTS / "2026-10-10-step-11-gate.md"
-    gate_path.write_text(report, encoding="utf-8")
+        report_path.write_text(report_on_disk.replace(TOKEN, "<token>"), encoding="utf-8")
+        findings = strip_token_from_disk()
+        report_on_disk = report_path.read_text(encoding="utf-8")
+        print("FAIL H6 the gate report itself carried the token; it was redacted and re-scanned")
+    claim("H6", "the token is in no artifact on disk after redaction",
+          not findings,
+          "artifacts scanned on disk: {0}".format(len(ARTIFACTS) + len(EXTRA_SCAN) + 1)
+          if not findings else "the token appears in: {0}".format(", ".join(findings)))
+
+    claimed = [
+        "| {0} — {1} | {2} | {3} |".format(code, name, "PASS" if ok else "FAIL", redact(detail)[:200])
+        for code, name, ok, detail in CLAIMS
+    ]
+    passed = sum(1 for _, _, ok, _ in CLAIMS if ok)
+    total = len(CLAIMS)
+    green = green and passed == total
+    verdict = "\n".join(
+        [
+            "# The gate of hermes-cited, round 4",
+            "",
+            "Date: 2026-10-10. Command: `scripts/gate.py` with the Python of the Hermes venv.",
+            "Run: workspace under the system temp directory, Hermes Agent v0.21.6+387 (`dce1e9b`), "
+            "Cited `origin/main`.",
+            "",
+            "| Claim | Result | Note |",
+            "|---|---|---|",
+        ]
+        + claimed
+        + [
+            "",
+            "{0} — {1}/{2} claims passed.".format(
+                "GATE: GREEN" if green else "GATE: RED", passed, total),
+            "",
+        ]
+    )
+    if verdict != report_on_disk:
+        report_path.write_text(verdict, encoding="utf-8")
+        if TOKEN and TOKEN in report_path.read_bytes().decode("utf-8", "replace"):
+            green = False
+            print("FAIL H6 the gate report itself carried the token on the rewrite")
+    EXTRA_SCAN.append(report_path)
     print("")
-    print("GATE: {0} — {1}/{2} claims in {3:.0f}s".format("GREEN" if green else "RED", passed, total, elapsed))
+    print("GATE: {0} — {1}/{2} claims in {3:.0f}s".format(
+        "GREEN" if green else "RED", passed, total, time.time() - started))
     return 0 if green else 1
 
 

@@ -9,7 +9,10 @@ HERMES_SESSION_ID`` when it does not, so the CLI (one conversation per process) 
 
 from __future__ import annotations
 
+import os
+
 from .config import MODES, mode_default
+from .messages import language_of, mode_text
 
 PROFILE_KEY = "mode.profile"
 SESSION_PREFIX = "mode.session."
@@ -78,16 +81,6 @@ def mode_command(state, mode):
     def handler(raw_args=""):
         session_id = current_session_key()
         set_mode(state, value, session_id=session_id)
-        if value == "cited":
-            return (
-                "Cited mode is on. Every number, unit, price and code of the next answers must come "
-                "from a passage Cited returned in the same turn; an answer that does not is replaced "
-                "by a refusal that names what could not be verified, and a verified answer ends with "
-                "\"Verified by Cited\" and its sources. /dot turns this off."
-            )
-        return (
-            "Dot mode is on. Cited is still there when it helps, and no answer is sealed or replaced "
-            "by the verifier. /cited turns cited mode back on."
-        )
+        return mode_text(language_of(os.environ.get("CITED_LANGUAGE")), value)
 
     return handler
