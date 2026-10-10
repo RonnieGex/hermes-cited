@@ -4,7 +4,8 @@ STATUS: DONE (gate green), round 6
 CHANGE: hermes-plugin-r4 (OpenSpec), delta over the capability `hermes-plugin`
 BRANCH: feature/hermes-plugin (no remote and no push)
 BASE: `bb4686d` (`docs: the round 5 closing evidence of the loop state`), round 5
-VERIFIED RUN: `scripts/gate.py` with the Python of the Hermes venv, `GATE: GREEN`, **66 of 66 claims in 644 s**
+VERIFIED RUN: `scripts/gate.py` with the Python of the Hermes venv, `GATE: GREEN`, **66 of 66 claims in 660 s**,
+on the frozen tree of `0e0c0cf` with both repositories clean
 REVIEW: **pending**. The fifth Codex review (`tasks/revision-codex-hermes-cited-r5.md`) is answered finding by
 finding in `tasks/entrega-cited-hermes-r6.md`; no sixth review has been asked for or run.
 AGENT: DeepSeek (implementer); the publication of `RonnieGex/hermes-cited`, the review and any upstream
