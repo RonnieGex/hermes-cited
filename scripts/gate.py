@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""The gate of hermes-cited (the `hermes-plugin-r4` change; round 5 run).
+"""The gate of hermes-cited (the `hermes-plugin-r4` change; round 6 run).
 
 Run it with the Python of the installed Hermes venv:
 
@@ -449,7 +449,15 @@ def amount_statement(text, amount, unit=None, mark=None, sign="", cite=False):
             digits = match.group("mark")[1:-1]
         else:
             later = re.search(r"\[(\d+)\]", window)
-            digits = later.group(1) if later else None
+            if later is None:
+                digits = None
+            else:
+                between = window[: later.start()]
+                # M-R5-4: a later mark is not this amount's citation when another number with a unit
+                # sits between them ("Price: 380 pesos. Fee: 999 pesos [1]" is not the citation of 380).
+                if re.search(r"\d", between) and re.search(r"[A-Za-z%]{2,}", between):
+                    continue
+                digits = later.group(1)
         if mark is None:
             if not cite or digits is not None:
                 return True
@@ -488,24 +496,143 @@ def clean_refusal(text):
     return str(text or "").strip() in FIXED_REFUSALS
 
 
-def seal_matches_entry(text, entry):
-    """The delivered seal is crossed with the audited delivery decision of its own entry (M-R2-2, H9).
+def operational_refusal_template(text):
+    """True when the text is the fixed operational refusal, of a validated language and with a code.
 
-    M-R3-6: the check reads the decision the plugin recorded for that entry, so a seal the entry says was
-    withheld can never be accepted and a withheld note can never be accepted as a verified answer.
+    M-R5-4: the round 5 gate accepted a ``startswith``, so any text that began with the opening words
+    passed. This matches the whole validated template of ``hermes_cited.messages`` and requires a code.
+    """
+    from hermes_cited import messages
+
+    value = str(text or "").strip()
+    for language in messages.LANGUAGES:
+        template = messages.OPERATIONAL[language]
+        head, _, tail = template.partition("{code}")
+        if not value.startswith(head):
+            continue
+        if tail and not value.endswith(tail):
+            continue
+        middle = value[len(head): len(value) - len(tail)] if tail else value[len(head):]
+        if re.fullmatch(r"CITED-[A-Za-z0-9-]{1,32}", middle):
+            return True
+    return False
+
+
+def is_refusal_answer(text):
+    """A cited answer that carries no blocks: the fixed refusal or the fixed operational refusal."""
+    value = str(text or "").strip()
+    return value in FIXED_REFUSALS or operational_refusal_template(value)
+
+
+def _source_prefix(entry):
+    response = str(entry.get("response") or "")
+    if "Fuente: " not in response and "Source: " in response:
+        return "Source: "
+    return "Fuente: "
+
+
+def render_block_text(entry, line):
+    """The exact block the plugin writes for one recorded line (M-R5-4)."""
+    from hermes_cited import render
+
+    mark = "[{0}]".format(re.sub(r"\D", "", str(line.get("pid") or "")))
+    head = "{0} {1}".format(line.get("text"), mark)
+    row = _evidence_row(entry, line) or {}
+    document = str(row.get("document") or "")
+    if not document:
+        return head
+    source = render.escape_meta(document)
+    heading = render.escape_meta(row.get("heading") or "") if row.get("heading") else ""
+    if heading:
+        source = "{0} - {1}".format(source, heading)
+    return "{0}\n{1}{2}".format(head, _source_prefix(entry), source)
+
+
+def expected_render(entry, language):
+    """The exact body the plugin composes from the recorded lines of one entry (M-R5-4)."""
+    from hermes_cited import render
+
+    lines = entry.get("quoted_lines") or []
+    blocks = [render_block_text(entry, line) for line in lines]
+    if not blocks:
+        return render.refusal_text(language)
+    return "{0}\n\n{1}".format(render.entry_text(language), "\n\n".join(blocks))
+
+
+def _snapshot_of_entry(entry):
+    from hermes_cited import delivery
+
+    data = entry.get("delivery") or {}
+    return delivery.Snapshot(
+        platform=str(data.get("platform") or ""),
+        readable=bool(data.get("readable")),
+        streaming=bool(data.get("streaming")),
+        commentary=bool(data.get("commentary")),
+        tts=bool(data.get("tts")),
+        sse=bool(data.get("sse")),
+        known_platform=bool(data.get("known_platform")),
+        source=str(data.get("source") or ""),
+        reasons=tuple(data.get("reasons") or ()),
+        surface_clear=bool(data.get("surface_clear")),
+        accredited=bool(data.get("accredited")),
+        seal=bool(data.get("seal")),
+    )
+
+
+def allowed_cited_answers(entry):
+    """Every string a cited render of this entry may have delivered: the plugin's fixed templates.
+
+    M-R5-4 compares the **whole** answer, not substrings: the entry template, the blocks, the fixed note
+    of a retained mark and the fixed withheld note. A future accredited host would add the sealed form.
+    """
+    from hermes_cited import delivery, messages, render
+
+    lines = entry.get("quoted_lines") or []
+    if not lines:
+        return set(FIXED_REFUSALS)
+    snap = _snapshot_of_entry(entry)
+    mark_retained = any(
+        render.contains_mark(str(line.get("text") or ""))
+        or render.contains_mark(str(line.get("document") or ""))
+        or render.contains_mark(str(line.get("heading") or ""))
+        for line in lines
+    )
+    allowed = set()
+    for language in messages.LANGUAGES:
+        variants = {expected_render(entry, language)}
+        if mark_retained:
+            variants = {value + "\n\n" + messages.mark_retained_note(language) for value in variants}
+        variants = {value + "\n\n" + delivery.withheld_note(snap) for value in variants}
+        if snap.seal:
+            variants = {render.sealed(value) for value in variants}
+        allowed |= variants
+    return allowed
+
+
+def answer_matches_entry(text, entry):
+    """The delivered text is exactly the plugin's composition of its own audited entry (M-R5-4, H16).
+
+    It carries no seal while the host does not accredit the delivery, the entry says the verification was
+    applied and the seal withheld, and the text is one of the fixed templates the plugin writes.
     """
     if not isinstance(entry, dict):
         return False
+    value = str(text or "")
+    if entry.get("response") != value:
+        return False
     verifier = entry.get("verifier") or {}
-    delivery = entry.get("delivery") or {}
-    if verifier.get("applied") is not True or verifier.get("ok") is not True:
+    if verifier.get("applied") is not True:
         return False
-    if entry.get("response") != text:
+    if "Verified by Cited" in value:
         return False
-    sealed = str(text or "").rstrip().endswith("Verified by Cited")
-    if sealed:
-        return verifier.get("verified") is True and verifier.get("seal_withheld") is False and delivery.get("seal") is True
-    return verifier.get("seal_withheld") is True or verifier.get("verified") is not True
+    if bool((entry.get("delivery") or {}).get("seal")) is not False:
+        return False
+    if is_refusal_answer(value):
+        return verifier.get("verified") is not True
+    if verifier.get("verified") is not False or verifier.get("seal_withheld") is not True:
+        return False
+    return value in allowed_cited_answers(entry)
+
 
 
 def terminal_record_of(events):
@@ -575,15 +702,13 @@ def _int_or_zero(value):
 
 
 def blocks_are_bound(entry, line):
-    """M-R3-6 and M-R4-7: one recorded block must resolve against its own evidence row.
+    """M-R3-6 and M-R4-7, hardened by M-R5-4: one recorded block resolves against its own evidence row.
 
-    The identifier must be the one of the table (``turn_id:call:pid``), the document, the section and the
-    position must be the original metadata of that row, the text must be one of its full lines, the
-    ``[n]`` mark and the escaped source must be the ones of that same row in the delivered answer. A
-    forged call, pid, document or position, or an answer that does not hold the block, is not bound.
+    The identifier must be the one of the table (``turn_id:call:pid``), the document, the section, the
+    position, the **original number** and the **line number with its text** must be the ones of that same
+    row, and the whole block — the line with its mark and its escaped source — must appear in the answer.
+    A forged call, pid, document, position, line number or line text is not bound.
     """
-    from hermes_cited import render
-
     if not isinstance(entry, dict) or not isinstance(line, dict):
         return False
     text = line.get("text")
@@ -602,43 +727,41 @@ def blocks_are_bound(entry, line):
         return False
     if _int_or_zero(row.get("position")) != _int_or_zero(line.get("position")):
         return False
-    if text not in [str(item.get("text")) for item in row.get("lines") or [] if isinstance(item, dict)]:
+    if _int_or_zero(row.get("number")) != _int_or_zero(line.get("original")):
         return False
-    response = str(entry.get("response") or "")
-    mark = "[{0}]".format(re.sub(r"\D", "", pid))
-    block = "{0} {1}".format(text, mark)
-    if block not in response:
+    if not any(
+        isinstance(item, dict)
+        and _int_or_zero(item.get("line")) == _int_or_zero(line.get("number"))
+        and str(item.get("text")) == str(text)
+        for item in row.get("lines") or []
+    ):
         return False
-    document = str(row.get("document") or "")
-    if document:
-        source = render.escape_meta(document)
-        heading = render.escape_meta(row.get("heading") or "") if row.get("heading") else ""
-        if heading:
-            source = "{0} - {1}".format(source, heading)
-        prefix = "Fuente: " if "Fuente:" in response else "Source: "
-        if "{0}{1}".format(prefix, source) not in response:
-            return False
+    if render_block_text(entry, line) not in str(entry.get("response") or ""):
+        return False
     return True
 
 
 def every_block_is_bound(entries):
-    """M-R3-6: every block of every cited entry of the log, with the refusals excluded by name.
+    """M-R3-6 and M-R5-4: every block of every cited entry, with the refusals excluded by name.
 
-    A refusal is a cited entry without blocks (the fixed refusal and the operational one), so it is
-    excluded explicitly instead of being skipped because its list happens to be empty.
+    A citation that is not one of the fixed refusals and holds no block is a failure: the round 5 predicate
+    skipped it because its list happened to be empty. The whole answer of every cited render is compared
+    against the plugin's fixed templates before its blocks are resolved.
     """
     checked = 0
     cited = 0
     for entry in entries or []:
         if entry.get("mode") != "cited":
             continue
-        response = str(entry.get("response") or "").strip()
-        if response in FIXED_REFUSALS or response.startswith("No puedo entregar") or response.startswith("I cannot deliver"):
+        response = str(entry.get("response") or "")
+        if is_refusal_answer(response):
             continue
         cited += 1
         lines = entry.get("quoted_lines") or []
         if not lines:
-            continue
+            return False, "entry {0} is not a refusal and holds no block".format(entry.get("turn_id"))
+        if not answer_matches_entry(response, entry):
+            return False, "entry {0} is not the plugin's fixed composition".format(entry.get("turn_id"))
         for line in lines:
             if not blocks_are_bound(entry, line):
                 return False, "entry {0} line {1} is not bound to its turn".format(
@@ -647,23 +770,68 @@ def every_block_is_bound(entries):
     return cited > 0, "cited entries: {0}, blocks checked: {1}".format(cited, checked)
 
 
-def entry_of_run(entries, question, mode="cited"):
-    """The entry of one run, resolved again by the ``turn_id`` that run recorded (M-R4-7)."""
-    found = entry_for(entries, question, mode)
-    if found is None:
+def entry_of_run(entries, question, mode="cited", turn_id=None):
+    """The entry of one run, resolved by the ``turn_id`` the execution captured (M-R5-4).
+
+    Without a turn identity there is no run binding: absence, an ambiguous match and a duplicate are all
+    rejected instead of being guessed from the question, which was the tautology of the round 5 helper.
+    """
+    if not turn_id:
         return None
-    return entry_for(entries, question, mode, turn_id=found.get("turn_id"))
+    matches = [
+        entry
+        for entry in entries or []
+        if entry.get("turn_id") == turn_id
+        and entry.get("question") == question
+        and entry.get("mode") == mode
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def run_entries(entries, before):
+    """Every entry a run appended after the ``before`` entries the log already held (M-R5-4)."""
+    return list(entries or [])[int(before):]
+
+
+def phase_entry(entries, before, question=None, mode=None):
+    """``(entry, error)`` of the one entry a phase of the gate appended.
+
+    M-R5-4: the run is identified by what its execution really appended. No entry, more than one entry and
+    a question or mode that does not match the phase are errors, and the ``turn_id`` the entry carries has
+    to resolve back to exactly that entry.
+    """
+    fresh = run_entries(entries, before)
+    if not fresh:
+        return None, "the phase appended no entry"
+    if len(fresh) > 1:
+        return None, "the phase appended {0} entries".format(len(fresh))
+    entry = fresh[0]
+    if question is not None and entry.get("question") != question:
+        return None, "the question of the entry is not the one of the phase"
+    if mode is not None and entry.get("mode") != mode:
+        return None, "the mode of the entry is not the one of the phase"
+    if entry_of_run(entries, question, mode, turn_id=entry.get("turn_id")) is not entry:
+        return None, "the turn identity of the phase is absent, ambiguous or duplicated"
+    return entry, None
 
 
 def bound_amount(entry, amount, unit=None, mark=None, sign="", cite=False):
-    """The delivered answer states the amount inside a block bound to the evidence of its own entry."""
+    """The amount, its unit and its citation inside the block the entry bound to its own evidence (M-R5-4).
+
+    Round 5 measured the amount somewhere in the answer and the bindings somewhere else, so the two
+    conditions could belong to different blocks. This measures inside each already resolved block.
+    """
     if not isinstance(entry, dict):
         return False
-    response = str(entry.get("response") or "")
-    if not amount_statement(response, amount, unit=unit, mark=mark, sign=sign, cite=cite):
-        return False
     lines = entry.get("quoted_lines") or []
-    return bool(lines) and all(blocks_are_bound(entry, line) for line in lines)
+    if not lines:
+        return False
+    for line in lines:
+        if not blocks_are_bound(entry, line):
+            return False
+        if amount_statement(render_block_text(entry, line), amount, unit=unit, mark=mark, sign=sign, cite=cite):
+            return True
+    return False
 
 
 def recompute_digests(entries):
@@ -725,8 +893,10 @@ def cited_fixture():
         return turn, recorded, error
 
     def deliver(turn):
+        # D11/H16: the seal is retained while the host does not accredit the delivery, so the fixture
+        # composes the render with the fixed note the plugin appends.
         body = render.render_answer("es", list(turn.selections))
-        return verifier.sealed(body)
+        return "{0}\n\n{1}".format(body, delivery.withheld_note(turn.delivery))
 
     results = {}
     turn, recorded, error = build({"passage": "P1", "lines": [4]})
@@ -774,9 +944,12 @@ def cited_fixture():
     results["tts_withholds"] = not delivery.snapshot(
         "cli", config={"display": {"streaming": False, "interim_assistant_messages": False}, "tts": {"auto_tts": True}}
     ).seal
-    results["quiet_cli_seals"] = delivery.snapshot(
+    quiet = delivery.snapshot(
         "cli", config={"display": {"streaming": False, "interim_assistant_messages": False}}
-    ).seal
+    )
+    results["quiet_cli_surface_clear"] = quiet.surface_clear
+    results["quiet_cli_seal"] = quiet.seal
+    results["quiet_cli_accredited"] = quiet.accredited
     return results
 
 
@@ -921,7 +1094,7 @@ def verifier_operational(code, language="es"):
 
 
 def delivery_fixture():
-    """H9 in process: the matrix of the resolver and the seal decision per surface."""
+    """H9 and H16 in process: the matrix of the resolver, the surfaces and the retained seal."""
     from hermes_cited import delivery
 
     matrix = {
@@ -935,33 +1108,39 @@ def delivery_fixture():
         name: delivery.effective_streaming("telegram", {**quiet, "streaming": raw})
         for name, raw in matrix.items()
     }
+    surface = {
+        name: delivery.snapshot("telegram", config={**quiet, "streaming": raw}).surface_clear
+        for name, raw in matrix.items()
+    }
     seal = {
-        name: delivery.seal_allowed("telegram", {**quiet, "streaming": raw})
+        name: delivery.snapshot("telegram", config={**quiet, "streaming": raw}).seal
         for name, raw in matrix.items()
     }
     on = {"streaming": {"enabled": True}}
     platforms = {
-        name: delivery.seal_allowed(name, on)
+        name: delivery.snapshot(name, config=on).seal
         for name in ("wecom", "feishu", "dingtalk", "qqbot", "acme-chat", "api_server", "desktop")
     }
     return {
         "streaming": streaming,
+        "surface": surface,
         "seal": seal,
         "platforms": platforms,
-        "cli_off": delivery.seal_allowed(
-            "cli", {"display": {"streaming": False, "interim_assistant_messages": False}}),
-        "cli_on": delivery.seal_allowed(
-            "cli", {"display": {"streaming": True, "interim_assistant_messages": False}}),
-        "desktop": delivery.seal_allowed("desktop", {"streaming": {"enabled": False}}),
-        "commentary_withholds": not delivery.seal_allowed(
-            "telegram", {"streaming": {"enabled": False}, "display": {"interim_assistant_messages": True}}),
-        "tts_withholds": not delivery.seal_allowed(
+        "cli_off_surface": delivery.snapshot(
+            "cli", config={"display": {"streaming": False, "interim_assistant_messages": False}}).surface_clear,
+        "cli_on_surface": delivery.snapshot(
+            "cli", config={"display": {"streaming": True, "interim_assistant_messages": False}}).surface_clear,
+        "desktop": delivery.snapshot("desktop", config={"streaming": {"enabled": False}}).seal,
+        "commentary_withholds": not delivery.snapshot(
+            "telegram", {"streaming": {"enabled": False}, "display": {"interim_assistant_messages": True}}).surface_clear,
+        "tts_withholds": not delivery.snapshot(
             "cli",
             {
                 "display": {"streaming": False, "interim_assistant_messages": False},
                 "tts": {"auto_tts": True},
             },
-        ),
+        ).surface_clear,
+        "accredited": delivery.accredited_delivery(),
         "compat": {
             "transport_off": delivery.CompatStreamingConfig.from_dict({"enabled": True, "transport": False}).transport,
             "mode_edit": delivery.CompatStreamingConfig.from_dict({"mode": "edit"}).globally_enabled,
@@ -1007,12 +1186,87 @@ def host_matrix(workspace):
         return None, out.strip()[-300:]
 
 
+def _m_r5_4_entry(quoted=None):
+    """The entry of the M-R5-4 counterexamples: one bound block of a fixture cited turn."""
+    from hermes_cited import delivery
+
+    line = {
+        "pid": "P1",
+        "call": 0,
+        "original": 1,
+        "number": 1,
+        "uid": "t1:0:P1",
+        "passage": 1,
+        "text": "- Afinacion de bicicleta: 380 pesos.",
+        "document": "cafe-la-horquilla.md",
+        "heading": "Precios",
+        "position": 2,
+    }
+    body = (
+        "Según tus documentos:\n\n- Afinacion de bicicleta: 380 pesos. [1]\n"
+        "Fuente: cafe-la-horquilla.md - Precios"
+    )
+    snap = delivery.Snapshot(
+        platform="cli",
+        readable=True,
+        known_platform=True,
+        source="supplied",
+        surface_clear=True,
+        accredited=False,
+        seal=False,
+    )
+    return {
+        "ts": "2026-10-10T00:00:00Z",
+        "seq": 1,
+        "log_id": "m-r5-4",
+        "platform": "cli",
+        "session": "s",
+        "turn_id": "t1",
+        "user": "",
+        "mode": "cited",
+        "question": "cuanto cuesta la afinacion",
+        "tool_calls": [{"excerpt_sha256": [], "excerpt_texts": ["- Afinacion de bicicleta: 380 pesos."]}],
+        "sources": ["cafe-la-horquilla.md"],
+        "refusals": [],
+        "evidence": [
+            {
+                "call": 0,
+                "pid": "P1",
+                "uid": "t1:0:P1",
+                "number": 1,
+                "document": "cafe-la-horquilla.md",
+                "heading": "Precios",
+                "position": 2,
+                "lines": [{"line": 1, "text": "- Afinacion de bicicleta: 380 pesos."}],
+            }
+        ],
+        "quoted_lines": [dict(line)] if quoted is None else quoted,
+        "transcript": body,
+        "composition_note": "the plugin's composition",
+        "response": "{0}\n\n{1}".format(body, delivery.withheld_note(snap)),
+        "delivery": snap.as_dict(),
+        "verifier": {
+            "applied": True,
+            "ok": True,
+            "verified": False,
+            "blocks": 1,
+            "ungrounded": [],
+            "unbound": [],
+            "grounding": 1,
+            "seal_withheld": True,
+        },
+        "prev_hash": "",
+        "hash": "",
+    }
+
+
 def gate_selftest():
-    """The gate's own predicates must reject the reproductions of the four reviews (M-R3-6, M-R4-7, D8).
+    """The gate's own predicates must reject the reproductions of the five reviews (M-R3-6, M-R4-7, M-R5-4).
 
     Returns ``(ok, detail)``. ``detail`` names the failing fixtures exactly, so a red self-test can never
     report success (the round 3 defect).
     """
+    render_module = __import__("hermes_cited.render", fromlist=["contains_mark", "escape_meta", "strip_mark"])
     cases = [
         ("a refusal that states an invented price", not clean_refusal(
             "No está en los documentos, pero cuesta 999 pesos.")),
@@ -1051,7 +1305,7 @@ def gate_selftest():
         ("an operational refusal never carries the seal",
          "Verified by Cited" not in
          __import__("hermes_cited.verifier", fromlist=["operational_refusal"]).operational_refusal("CITED-1", "es")),
-        # the three counterexamples of M-R4-7
+        # the counterexamples of M-R5-4
         ("a sign separated by a space is not the plain amount",
          not amount_statement("- 380 pesos [1]", "380", unit="currency", mark=1)),
         ("a mark of another statement is not the bound citation",
@@ -1064,19 +1318,59 @@ def gate_selftest():
                  "response": "INVENTED_999 [1]\nFuente: forged.md - Elsewhere",
                  "evidence": [],
                  "quoted_lines": [
-                     {"pid": "P1", "uid": "t1:0:P1", "call": 0, "text": "INVENTED_999",
-                      "document": "forged.md", "heading": "Elsewhere", "position": 9}
+                     {"pid": "P1", "uid": "t1:0:P1", "call": 0, "text": "INVENTED_999", "original": 1,
+                      "number": 1, "document": "forged.md", "heading": "Elsewhere", "position": 9}
                  ],
              },
-             {"pid": "P1", "uid": "t1:0:P1", "call": 0, "text": "INVENTED_999",
-              "document": "forged.md", "heading": "Elsewhere", "position": 9},
+             {"pid": "P1", "uid": "t1:0:P1", "call": 0, "text": "INVENTED_999", "original": 1,
+              "number": 1, "document": "forged.md", "heading": "Elsewhere", "position": 9},
          )),
+        # M-R5-4: the cited entry with no block that is not a refusal, the wrong line number, the wrong
+        # original number, the extra block and the run that is not identified.
+        ("a cited entry that is not a refusal and holds no block is rejected",
+         every_block_is_bound([_m_r5_4_entry(quoted=[])])[0] is False),
+        ("a wrong line number is not the bound line",
+         not blocks_are_bound(_m_r5_4_entry(), dict(_m_r5_4_entry()["quoted_lines"][0], number=999))),
+        ("a wrong original number is not the bound line",
+         not blocks_are_bound(_m_r5_4_entry(), dict(_m_r5_4_entry()["quoted_lines"][0], original=999))),
+        ("an invented extra block fails the whole render comparison",
+         not answer_matches_entry(
+             _m_r5_4_entry()["response"].replace("\n\n", "\n\nINVENTED_999 [99]\nFuente: forged.md\n\n", 1),
+             _m_r5_4_entry())),
+        ("a run without a turn identity selects nothing",
+         entry_of_run(
+             [dict(_m_r5_4_entry(), turn_id="unrelated-old-turn"), _m_r5_4_entry()],
+             _m_r5_4_entry()["question"]) is None),
+        ("an operational refusal that only shares the opening words is not the template",
+         not operational_refusal_template("No puedo entregar 999 pesos sin registro.")),
+        ("the fixed operational refusal with a code is the template",
+         operational_refusal_template(
+             __import__("hermes_cited.verifier", fromlist=["operational_refusal"]).operational_refusal(
+                 "CITED-1", "es"))),
+        # the counterexamples of M-R5-3
+        ("a removal that would create the mark is repeated until it is gone",
+         render_module.strip_mark("Verified Verified by Cited by Cited").strip() == ""),
+        ("a soft line break does not hide the mark", render_module.contains_mark("Verified\nby Cited") is True
+         and render_module.strip_mark("Verified\nby Cited").strip() == ""),
+        ("a numeric entity does not hide the mark",
+         render_module.contains_mark("Verified &#98;y Cited") is True
+         and "verified" not in render_module.strip_mark("Verified &#98;y Cited").lower()),
+        ("a named entity does not hide the mark",
+         render_module.contains_mark("Verified&nbsp;by&nbsp;Cited") is True
+         and "verified" not in render_module.strip_mark("Verified&nbsp;by&nbsp;Cited").lower()),
+        ("a reference link does not hide the mark",
+         render_module.strip_mark("Verified by [Cited][c]\n\n[c]: https://example.invalid").strip()
+         == "[c]: https://example.invalid"),
+        ("an entity in the metadata is escaped and cannot read as the mark",
+         "\\&nbsp;" in render_module.escape_meta("Verified&nbsp;by&nbsp;Cited")
+         and render_module.contains_mark(render_module.escape_meta("Verified&nbsp;by&nbsp;Cited")) is False),
     ]
     fixture = cited_fixture()
     cases.append(("the cited fixture records one line", fixture["recorded"] == [PRICE_LINE]))
     cases.append(("the cited render copies the line and adds the source",
                   PRICE_LINE in fixture["final"] and PRICE_SOURCE in fixture["final"]))
-    cases.append(("the cited render ends with the seal", fixture["final"].rstrip().endswith("Verified by Cited")))
+    cases.append(("the cited render carries no seal and the fixed withheld note",
+                  "Verified by Cited" not in fixture["final"] and "withheld" in fixture["final"]))
     cases.append(("the render mark follows the pid", fixture["mark"] == "[1]" and fixture["pid"] == "P1"))
     cases.append(("a changed line is rejected", fixture["changed_rejected"] is False))
     cases.append(("no quote is the fixed refusal", fixture["no_quote"] == "No está en los documentos."))
@@ -1084,7 +1378,10 @@ def gate_selftest():
     cases.append(("api_server is the SSE route and withholds", fixture["api_server_sse"] is True))
     cases.append(("interim commentary withholds", fixture["commentary_withholds"] is True))
     cases.append(("streaming TTS withholds", fixture["tts_withholds"] is True))
-    cases.append(("a quiet CLI seals", fixture["quiet_cli_seals"] is True))
+    cases.append(("a quiet CLI is clear on its surfaces but never accredited",
+                  fixture["quiet_cli_surface_clear"] is True
+                  and fixture["quiet_cli_seal"] is False
+                  and fixture["quiet_cli_accredited"] is False))
     audits = audit_fixtures(REPO / ".tmp" / "gate-r4-selftest")
     cases.append(("a broken chain refuses the next append",
                   str(audits["removed_middle"]).startswith("refused") and audits["removed_middle_untouched"]))
@@ -1222,7 +1519,7 @@ def main():
         )
 
         ok, detail = gate_selftest()
-        claim("D8", "the gate's own predicates reject the reproductions of the four reviews", ok, detail)
+        claim("D8", "the gate's own predicates reject the reproductions of the five reviews", ok, detail)
 
         fixture = cited_fixture()
         claim(
@@ -1233,9 +1530,10 @@ def main():
         )
         claim(
             "H12",
-            "the plugin-written render carries the line, the source, the mark and the seal",
+            "the plugin-written render carries the line, the source and the mark, and no seal (H16)",
             PRICE_LINE in fixture["final"] and PRICE_SOURCE in fixture["final"]
-            and "[1]" in fixture["final"] and fixture["final"].rstrip().endswith("Verified by Cited")
+            and "[1]" in fixture["final"] and "Verified by Cited" not in fixture["final"]
+            and "withheld" in fixture["final"]
             and fixture["blocks_are_full_lines"] is True and fixture["mark"] == "[1]",
             fixture["final"][:200],
         )
@@ -1306,17 +1604,29 @@ def main():
             "the delivery resolver reproduces the host mode alias and YAML booleans",
             policy["streaming"] == {"mode_edit": True, "enabled": True, "transport_off_bool": False,
                                     "explicit_off": False}
-            and policy["seal"] == {"mode_edit": False, "enabled": False, "transport_off_bool": True,
-                                   "explicit_off": True}
+            and policy["surface"] == {"mode_edit": False, "enabled": False, "transport_off_bool": True,
+                                      "explicit_off": True}
             and policy["compat"] == {"transport_off": "off", "mode_edit": True},
             json.dumps(policy["streaming"]),
+        )
+        claim(
+            "H16",
+            "no route emits the seal while the host does not accredit the delivery",
+            policy["seal"] == {"mode_edit": False, "enabled": False, "transport_off_bool": False,
+                               "explicit_off": False}
+            and policy["platforms"] == {"wecom": False, "feishu": False, "dingtalk": False, "qqbot": False,
+                                        "acme-chat": False, "api_server": False, "desktop": False}
+            and policy["accredited"] is False
+            and policy["cli_off_surface"] is True and policy["cli_on_surface"] is False,
+            json.dumps({"seal": policy["seal"], "accredited": policy["accredited"]}),
         )
         claim(
             "H9",
             "an unknown platform, the desktop and the SSE route withhold, and the CLI follows its own switches",
             policy["platforms"] == {"wecom": False, "feishu": False, "dingtalk": False, "qqbot": False,
                                     "acme-chat": False, "api_server": False, "desktop": False}
-            and policy["cli_off"] is True and policy["cli_on"] is False,
+            and policy["cli_off_surface"] is True and policy["cli_on_surface"] is False
+            and policy["commentary_withholds"] is True and policy["tts_withholds"] is True,
             json.dumps(policy["platforms"]),
         )
         claim(
@@ -1349,7 +1659,10 @@ def main():
         )
         if (host_copy / "agent" / "turn_finalizer.py").exists():
             host_code, host_out, host_err = run(
-                [str(TEST_PYTHON), "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider", "tests/test_host.py"],
+                [
+                    str(TEST_PYTHON), "-B", "-m", "pytest", "-q", "-p", "no:cacheprovider",
+                    "tests/test_host.py", "tests/regressions/test_r5_host.py",
+                ],
                 cwd=REPO,
                 timeout=900,
             )
@@ -1370,6 +1683,17 @@ def main():
                 "reported as not run instead of covered".format(host_copy),
             )
         proposal = (REPO / "docs" / "upstream-proposal.md").read_text(encoding="utf-8")
+        claim(
+            "H16",
+            "the upstream proposal names what the host would have to offer to activate the seal",
+            all(needle in proposal for needle in (
+                "What would activate the seal",
+                "accredited_delivery",
+                "The effective policy of the turn",
+                "The terminal message is the plugin's composition",
+            )),
+            "docs/upstream-proposal.md does not name the activation contract",
+        )
         claim(
             "H15",
             "the upstream proposal asks for the missing contracts and opens no PR",
@@ -1418,7 +1742,7 @@ def main():
         )
         log("adversarial.txt", adv_out + "\n" + adv_err)
         adv_tail = adv_out.strip().splitlines()[-1] if adv_out.strip() else ""
-        claim("D8", "one permanent fixture per finding of the four reviews is green",
+        claim("D8", "one permanent fixture per finding of the five reviews is green",
               adv_code == 0 and "failed" not in adv_tail, adv_tail or adv_err.strip()[-300:])
 
         proposal = (REPO / "docs" / "upstream-proposal.md").read_text(encoding="utf-8")
@@ -1539,8 +1863,17 @@ def main():
               and {"cited", "dot"}.issubset(set(loader.get("commands") or [])),
               probe_err.strip()[-300:] or probe_out.strip()[-300:])
 
+        audit_file = plugin_home / "cited" / "audit.jsonl"
+
+        def read_audit():
+            if not audit_file.exists():
+                return []
+            return [json.loads(line) for line in audit_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+        price_before = len(read_audit())
         price = run_stream_question(plugin_home, PRICE_QUESTION)
         log("h2-price.jsonl", price["stdout"] + "\n" + price["stderr"])
+        price_entry, price_error = phase_entry(read_audit(), price_before, PRICE_QUESTION, "cited")
         native = [name for name in price["tools"] if name in ("cited_search", "cited_ask")]
         quoted = "cited_quote" in price["tools"]
         no_mcp = not any(str(name).startswith("mcp__cited__") for name in price["tools"])
@@ -1554,20 +1887,35 @@ def main():
         claim("H12", "(a) the price result is the plugin render of the line Cited returned",
               PRICE_LINE in price["final"] and PRICE_SOURCE in price["final"],
               price["final"][:300])
+        claim("H16", "(a) the price answer is the plugin's composition with no seal",
+              price_entry is not None and answer_matches_entry(price["final"], price_entry),
+              price_error or "final={0}".format(price["final"][-120:]))
 
+        guarantee_before = len(read_audit())
         guarantee = run_stream_question(plugin_home, GUARANTEE_QUESTION)
         log("h2-guarantee.jsonl", guarantee["stdout"] + "\n" + guarantee["stderr"])
         guarantee_question = GUARANTEE_QUESTION
+        guarantee_entry, guarantee_error = phase_entry(
+            read_audit(), guarantee_before, GUARANTEE_QUESTION, "cited")
         if GUARANTEE_LINE not in guarantee["final"]:
+            guarantee_before = len(read_audit())
             guarantee = run_stream_question(plugin_home, GUARANTEE_FALLBACK_QUESTION)
             log("h2-guarantee-2.jsonl", guarantee["stdout"] + "\n" + guarantee["stderr"])
             guarantee_question = GUARANTEE_FALLBACK_QUESTION
+            guarantee_entry, guarantee_error = phase_entry(
+                read_audit(), guarantee_before, GUARANTEE_FALLBACK_QUESTION, "cited")
         claim("H12", "(b) the guarantee result is the render of a full line of its excerpt",
               guarantee["code"] == 0 and GUARANTEE_LINE in guarantee["final"] and GUARANTEE_SOURCE in guarantee["final"],
               guarantee["final"][:240])
+        claim("H16", "(b) the guarantee answer is the plugin's composition with no seal",
+              guarantee_entry is not None and answer_matches_entry(guarantee["final"], guarantee_entry),
+              guarantee_error or "final={0}".format(guarantee["final"][-120:]))
 
+        unanswered_before = len(read_audit())
         unanswered = run_stream_question(plugin_home, UNANSWERED_QUESTION)
         log("h2-unanswered.jsonl", unanswered["stdout"] + "\n" + unanswered["stderr"])
+        unanswered_entry, unanswered_error = phase_entry(
+            read_audit(), unanswered_before, UNANSWERED_QUESTION, "cited")
         claim("H8", "(c) the unanswered question is the fixed refusal and states no datum",
               unanswered["code"] == 0 and clean_refusal(unanswered["final"]),
               "streamed={0} final={1}".format(unanswered["streamed"][:120], unanswered["final"][:200]))
@@ -1580,18 +1928,15 @@ def main():
                 "CITED_DEFAULT_MODE": "dot",
             },
         )
+        dot_before = len(read_audit())
         dot = run_stream_question(plugin_home, PRICE_QUESTION)
         log("h4-dot.jsonl", dot["stdout"] + "\n" + dot["stderr"])
+        dot_entry, dot_error = phase_entry(read_audit(), dot_before, PRICE_QUESTION, "dot")
         claim("H4", "dot mode says nothing about a seal",
               dot["code"] == 0 and "Verified by Cited" not in dot["final"], dot["final"][:200])
 
-        audit_file = plugin_home / "cited" / "audit.jsonl"
-        audit_text = audit_file.read_text(encoding="utf-8") if audit_file.exists() else ""
         EXTRA_SCAN.append(audit_file)
-        entries = []
-        for line in audit_text.splitlines():
-            if line.strip():
-                entries.append(json.loads(line))
+        entries = read_audit()
         verify_code, verify_out, verify_err = run(
             [str(TEST_PYTHON), "-m", "hermes_cited.verify_log", str(audit_file)],
             cwd=REPO,
@@ -1616,11 +1961,28 @@ def main():
                   and entry["tool_calls"]
                   and isinstance(entry.get("verifier"), dict)
                   and entry["verifier"].get("applied") is (entry.get("mode") == "cited")
+                  and entry.get("composition_note")
                   for entry in entries
               ),
               "an entry is missing a field or marks the verifier wrongly")
-        price_entry = entry_of_run(entries, PRICE_QUESTION, "cited")
-        guarantee_entry = entry_of_run(entries, guarantee_question, "cited")
+        claim("H16", "the record says in words that it registers the plugin's composition",
+              all(
+                  "no es constancia del mensaje terminal" in str(entry.get("composition_note") or "")
+                  for entry in entries
+              ),
+              json.dumps(entries[-1].get("composition_note") if entries else None))
+        claim("H8", "(a) the turn of the price run is the one the execution appended",
+              price_entry is not None and price_entry.get("question") == PRICE_QUESTION,
+              price_error or "turn={0}".format((price_entry or {}).get("turn_id")))
+        claim("H8", "(b) the turn of the guarantee run is the one the execution appended",
+              guarantee_entry is not None and guarantee_entry.get("question") == guarantee_question,
+              guarantee_error or "turn={0}".format((guarantee_entry or {}).get("turn_id")))
+        claim("H8", "(c) the turn of the unanswered run is the one the execution appended",
+              unanswered_entry is not None and unanswered_entry.get("question") == UNANSWERED_QUESTION,
+              unanswered_error or "turn={0}".format((unanswered_entry or {}).get("turn_id")))
+        claim("H8", "(d) the turn of the dot run is the one the execution appended",
+              dot_entry is not None and dot_entry.get("mode") == "dot",
+              dot_error or "turn={0}".format((dot_entry or {}).get("turn_id")))
         claim("H8", "(a) the price amount is bound to the evidence row of its own turn",
               bound_amount(price_entry, "380", unit="currency", cite=True),
               json.dumps(price_entry or {})[:240])
@@ -1639,12 +2001,6 @@ def main():
         digests_ok, digests_detail = recompute_digests(entries)
         claim("H5", "every excerpt digest recomputes from the excerpt text stored in the entry",
               digests_ok, digests_detail)
-        claim("H4", "(a) the delivered price seal is the one its own audited entry carries",
-              price_entry is not None and seal_matches_entry(price["final"], price_entry),
-              "final={0} entry={1}".format(price["final"][-80:], json.dumps(price_entry or {})[:160]))
-        claim("H4", "(b) the delivered guarantee seal is the one its own audited entry carries",
-              guarantee_entry is not None and seal_matches_entry(guarantee["final"], guarantee_entry),
-              "final={0}".format(guarantee["final"][-80:]))
         claim("H5", "the log verifies from the installed plugin, outside the checkout",
               verify_from_installed(plugin_home, audit_file) == 0,
               "the installed command did not exit zero")
@@ -1652,13 +2008,10 @@ def main():
               middle_removal_fails_from_installed(plugin_home, audit_file, workspace),
               "the installed command did not detect the removed middle entry")
 
-        dot_entries = [
-            json.loads(line) for line in audit_file.read_text(encoding="utf-8").splitlines() if line.strip()
-        ]
         claim("H4", "a dot-mode answer is logged with the verifier marked as not applied",
-              dot_entries[-1].get("mode") == "dot"
-              and dot_entries[-1].get("verifier", {}).get("applied") is False,
-              json.dumps(dot_entries[-1].get("verifier")))
+              entries[-1].get("mode") == "dot"
+              and entries[-1].get("verifier", {}).get("applied") is False,
+              json.dumps(entries[-1].get("verifier")))
 
         readme_en = (REPO / "README.md").read_text(encoding="utf-8")
         readme_es = (REPO / "README.es.md").read_text(encoding="utf-8")
@@ -1670,7 +2023,8 @@ def main():
         claim("H9", "(c) only the terminal record of the documented consumer is measured, not the drafts",
               terminal_record_of(price["events"]) == price["final"]
               and bool(price["final"].strip())
-              and (price["streamed"] != price["final"] or price["final"].rstrip().endswith("Verified by Cited")),
+              and "Verified by Cited" not in price["final"]
+              and (price["streamed"] != price["final"] or "withheld" in price["final"]),
               "terminal={0} draft_chars={1}".format(
                   terminal_record_of(price["events"])[:80], len(price["streamed"])))
 
@@ -1829,7 +2183,7 @@ def finish(started):
 
     def build_report():
         lines = [
-            "# The gate of hermes-cited, round 5 (change hermes-plugin-r4)",
+            "# The gate of hermes-cited, round 6 (change hermes-plugin-r4)",
             "",
             "Date: 2026-10-10. Command: `scripts/gate.py` with the Python of the Hermes venv.",
             "Run: workspace {0}, {1:.0f}s, Hermes Agent v0.21.6+387 (`dce1e9b`), Cited `origin/main`.".format(
@@ -1872,7 +2226,7 @@ def finish(started):
     green = green and passed == total
     verdict = "\n".join(
         [
-            "# The gate of hermes-cited, round 5 (change hermes-plugin-r4)",
+            "# The gate of hermes-cited, round 6 (change hermes-plugin-r4)",
             "",
             "Date: 2026-10-10. Command: `scripts/gate.py` with the Python of the Hermes venv.",
             "Run: workspace under the system temp directory, Hermes Agent v0.21.6+387 (`dce1e9b`), "
