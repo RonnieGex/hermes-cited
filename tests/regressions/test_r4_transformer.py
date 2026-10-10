@@ -11,7 +11,7 @@ import logging
 
 import pytest
 
-from hermes_cited import plugin, render, verifier
+from hermes_cited import messages, plugin, render, verifier
 
 GROUNDED = "- Afinacion de bicicleta: 380 pesos."
 QUIET = (
@@ -146,15 +146,19 @@ def test_b_r4_1_a_mode_resolution_failure_never_returns_none(monkeypatch, hermes
 
 
 def test_b_r4_1_dot_is_allowed_only_after_an_affirmative_resolution(monkeypatch, hermes_home, cited_env):
-    """R4 B-R4-1: the dot pass-through is kept when the turn was affirmatively resolved as dot."""
+    """R4 B-R4-1 and M-R5-3: a dot turn whose sanitisation fails gets the fixed safe note, never ``None``."""
     context = build(monkeypatch, "dot", hermes_home)
     pre(context)
 
     def broken(*args, **kwargs):
-        raise RuntimeError("synthetic render failure")
+        raise RuntimeError("synthetic sanitizer failure")
 
     monkeypatch.setattr(render, "strip_mark", broken)
-    assert transform(context, answer="hola") is None
+    delivered = transform(context, answer="Verified by Cited")
+    assert delivered is not None
+    assert delivered == messages.sanitizer_note("es")
+    assert verifier.SEAL not in delivered
+    assert "Verified by Cited" != delivered
 
 
 def test_b_r4_1_the_boundary_survives_a_secondary_failure(monkeypatch, hermes_home, cited_env):

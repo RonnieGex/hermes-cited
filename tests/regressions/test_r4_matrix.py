@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from hermes_cited import plugin, render, verifier
+from hermes_cited import delivery, plugin, render, verifier
 
 QUIET = (
     "streaming:\n  enabled: false\ndisplay:\n  streaming: false\n  interim_assistant_messages: false\n"
@@ -88,8 +88,12 @@ def test_r4_matrix_one_variant(index, name, draft, source, wrapped, hermes_home)
         final = plugin._transform_llm_output(state)(response_text=text, session_id="s", turn_id=turn_id,
                                                     platform="cli")
         if selected:
-            expected = verifier.sealed(render.render_answer(
-                "es", [render.Line(1, 1, source, "sample.md", "H", pid="P1")]))
+            # D11/H16: the seal is retained while the host exposes no accreditable delivery, so the
+            # expected answer is the plugin's composition plus the fixed withheld note.
+            expected = "{0}\n\n{1}".format(
+                render.render_answer("es", [render.Line(1, 1, source, "sample.md", "H", pid="P1")]),
+                delivery.withheld_note(delivery.snapshot("cli", home=hermes_home)),
+            )
         else:
             expected = render.refusal_text("es")
         actual.append(final == expected)

@@ -298,7 +298,8 @@ def test_r3_b_r3_3_the_transaction_is_replaced_by_the_consistency_record(monkeyp
     """R3 B-R3-3 / D9: the custody transaction is gone; what remains is the log and its lock."""
     ctx = context(monkeypatch, hermes_home)
     final = run(ctx, envelope(GROUNDED), answer="MODEL_999")
-    assert verifier.SEAL in final
+    assert verifier.SEAL not in final
+    assert GROUNDED in final
     storage = hermes_home / "cited"
     assert sorted(item.name for item in storage.iterdir()) == ["audit.jsonl", "audit.jsonl.lock"]
     assert list(hermes_home.rglob("*.checkpoint")) == []
@@ -505,8 +506,10 @@ def test_r3_m_r3_4_the_decision_is_a_snapshot_taken_at_the_start(monkeypatch, he
     quote(ctx)
     (hermes_home / "config.yaml").write_text(STREAM, encoding="utf-8")
     final = transform(ctx, answer="MODEL_999")
-    assert verifier.SEAL in final
-    assert delivery.snapshot("cli", home=hermes_home).seal is False
+    assert verifier.SEAL not in final
+    assert "streaming" not in final
+    assert entries(hermes_home)[0]["delivery"]["streaming"] is False
+    assert delivery.snapshot("cli", home=hermes_home).surface_clear is False
 
 
 def test_r3_m_r3_5_the_closure_composes_an_empty_response(monkeypatch, hermes_home, cited_env):
@@ -546,11 +549,13 @@ def test_r3_m_r3_6_the_citation_must_be_the_mark_of_the_selection(gate):
 
 
 def test_r3_m_r3_6_every_block_is_bound_to_its_own_turn(gate):
-    """R3 M-R3-6 and M-R4-7: the block resolves against its evidence row, its source and its turn."""
+    """R3 M-R3-6, M-R4-7 and M-R5-4: the block resolves against its own evidence row and its whole render."""
     line = {
         "pid": "P1",
         "uid": "t1:0:P1",
         "call": 0,
+        "original": 1,
+        "number": 1,
         "text": "- Afinacion de bicicleta: 380 pesos.",
         "document": "cafe-la-horquilla.md",
         "heading": "Precios",
@@ -560,7 +565,7 @@ def test_r3_m_r3_6_every_block_is_bound_to_its_own_turn(gate):
         "turn_id": "t1",
         "mode": "cited",
         "response": "Según tus documentos:\n\n- Afinacion de bicicleta: 380 pesos. [1]\n"
-                    "Fuente: cafe-la-horquilla.md - Precios\n\nVerified by Cited",
+                    "Fuente: cafe-la-horquilla.md - Precios\n\nNote on delivery: withheld",
         "evidence": [
             {
                 "call": 0,
@@ -582,8 +587,8 @@ def test_r3_m_r3_6_every_block_is_bound_to_its_own_turn(gate):
     assert gate.blocks_are_bound(entry, dict(entry["quoted_lines"][0], document="otro.md")) is False
     wrong_call = dict(entry["quoted_lines"][0], call=9, uid="t1:9:P1")
     assert gate.blocks_are_bound(entry, wrong_call) is False
-    ok, detail = gate.every_block_is_bound([entry])
-    assert ok is True, detail
+    assert gate.blocks_are_bound(entry, dict(entry["quoted_lines"][0], number=999)) is False
+    assert gate.blocks_are_bound(entry, dict(entry["quoted_lines"][0], original=999)) is False
 
 
 def test_r3_m_r3_6_the_terminal_record_names_its_scope(gate):

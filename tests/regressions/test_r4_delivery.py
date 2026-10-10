@@ -89,14 +89,15 @@ def test_m_r4_2_malformed_yaml_is_unreadable_not_permissive(tmp_path):
 
 
 def test_m_r4_2_the_snapshot_is_frozen_at_the_start(tmp_path, monkeypatch):
-    """R4 M-R4-2: the policy is frozen when the turn starts, not re-read later."""
+    """R4 M-R4-2 and D11: the policy is frozen when the turn starts, not re-read later."""
     (tmp_path / "config.yaml").write_text(QUIET, encoding="utf-8")
     loaded = {"display": {"streaming": False, "interim_assistant_messages": False}}
     monkeypatch.setattr(delivery, "host_config", lambda home=None: loaded)
     snap = delivery.snapshot("cli", home=tmp_path)
-    assert snap.seal is True and snap.as_dict()["source"] == "host"
+    assert snap.surface_clear is True and snap.as_dict()["source"] == "host"
+    assert snap.seal is False and snap.accredited is False
     loaded["tts"] = {"auto_tts": True}
-    assert snap.tts is False and snap.seal is True
+    assert snap.tts is False and snap.surface_clear is True
 
 
 def test_m_r4_2_the_plugin_withholds_when_the_loaded_host_speaks(tmp_path, monkeypatch):

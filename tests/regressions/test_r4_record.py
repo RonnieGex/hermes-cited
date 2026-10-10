@@ -198,6 +198,7 @@ def test_m_r4_1_a_disk_sync_failure_is_the_refusal_and_writes_no_row(
     post(tool_name="cited_search", args={"query": "q"}, result=envelope, session_id="s1", turn_id="t2", status="ok")
     quote({"passage": "P1", "lines": [1]}, session_id="s1", turn_id="t2")
     second = transform(response_text="MODEL_999", session_id="s1", turn_id="t2", platform="cli")
-    assert verifier.SEAL in second
+    assert verifier.SEAL not in second
+    assert GROUNDED in second
     count, error = audit.verify_file(hermes_home / "cited" / "audit.jsonl")
     assert error is None and count == 1

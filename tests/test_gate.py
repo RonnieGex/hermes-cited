@@ -103,38 +103,34 @@ def test_the_terminal_record_consumer_takes_only_the_terminal_record(gate):
         {"type": "text", "text": "unverified draft 999"},
         {"type": "tool_use", "name": "cited_search"},
         {"type": "text", "text": "more draft"},
-        {"type": "result", "text": "Según tus documentos:\n\n380 pesos [1]\n\nVerified by Cited"},
+        {"type": "result", "text": "Según tus documentos:\n\n380 pesos [1]\n\nwithheld"},
     ]
     delivered = gate.terminal_record_of(events)
     assert "999" not in delivered
-    assert delivered.endswith("Verified by Cited")
+    assert delivered.endswith("withheld")
     assert gate.delivered_of(events) == delivered
 
 
-def test_the_seal_is_crossed_with_the_audited_entry(gate):
-    text = "Según tus documentos:\n\n- Afinacion de bicicleta: 380 pesos. [1]\n\nVerified by Cited"
-    entry = {
-        "response": text,
-        "delivery": {"seal": True},
-        "verifier": {"applied": True, "ok": True, "verified": True, "seal_withheld": False},
-    }
-    assert gate.seal_matches_entry(text, entry) is True
-    assert gate.seal_matches_entry(text, {"response": "otra", "verifier": {"ok": True}}) is False
-    forged = dict(entry)
-    forged["delivery"] = {"seal": False}
-    assert gate.seal_matches_entry(text, forged) is False, "a seal the entry says was withheld cannot pass"
-    withheld = text.replace("\n\nVerified by Cited", "\n\nwithheld")
-    assert gate.seal_matches_entry(
-        withheld, {"response": withheld, "delivery": {"seal": False}, "verifier": {"applied": True, "ok": True, "seal_withheld": True}}
-    ) is True
+def test_the_answer_is_the_plugin_composition_without_a_seal(gate):
+    """M-R5-4/H16: the delivered text is the whole fixed composition of its own entry, with no seal."""
+    entry = gate._m_r5_4_entry()
+    assert gate.answer_matches_entry(entry["response"], entry) is True
+    assert gate.answer_matches_entry(entry["response"] + "\n\nVerified by Cited", entry) is False
+    assert gate.answer_matches_entry(entry["response"], {"response": "otra"}) is False
+    forged = dict(entry, response=entry["response"] + "\n\nINVENTED_999")
+    assert gate.answer_matches_entry(forged["response"], forged) is False
+    assert "Verified by Cited" not in entry["response"]
+    assert entry["verifier"]["seal_withheld"] is True
 
 
 def test_a_recorded_block_is_bound_to_its_own_turn(gate):
-    """M-R3-6 and M-R4-7: the block resolves against its evidence row, its source and its turn."""
+    """M-R3-6, M-R4-7 and M-R5-4: the block resolves against its evidence row, its source and its turn."""
     line = {
         "pid": "P1",
         "uid": "t1:0:P1",
         "call": 0,
+        "original": 1,
+        "number": 1,
         "text": "- Afinacion de bicicleta: 380 pesos.",
         "document": "cafe-la-horquilla.md",
         "heading": "Precios",
@@ -143,7 +139,7 @@ def test_a_recorded_block_is_bound_to_its_own_turn(gate):
     entry = {
         "turn_id": "t1",
         "mode": "cited",
-        "response": "Según tus documentos:\n\n- Afinacion de bicicleta: 380 pesos. [1]\nFuente: cafe-la-horquilla.md - Precios\n\nVerified by Cited",
+        "response": "Según tus documentos:\n\n- Afinacion de bicicleta: 380 pesos. [1]\nFuente: cafe-la-horquilla.md - Precios",
         "evidence": [
             {
                 "call": 0,
@@ -168,7 +164,12 @@ def test_a_recorded_block_is_bound_to_its_own_turn(gate):
     assert gate.blocks_are_bound(entry, wrong_source) is False
     wrong_call = dict(entry["quoted_lines"][0], call=9, uid="t1:9:P1")
     assert gate.blocks_are_bound(entry, wrong_call) is False
-    ok, detail = gate.every_block_is_bound([entry])
+    wrong_line = dict(entry["quoted_lines"][0], number=999)
+    assert gate.blocks_are_bound(entry, wrong_line) is False
+    wrong_original = dict(entry["quoted_lines"][0], original=999)
+    assert gate.blocks_are_bound(entry, wrong_original) is False
+    complete = gate._m_r5_4_entry()
+    ok, detail = gate.every_block_is_bound([complete])
     assert ok is True, detail
 
 

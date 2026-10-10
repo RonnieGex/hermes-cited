@@ -192,10 +192,13 @@ def test_the_real_finalizer_delivers_the_plugin_render_through_the_dispatcher(ho
     assert final.startswith("Según tus documentos:")
     assert "Afinacion de bicicleta: 380 pesos. [1]" in final
     assert "MODEL_999" not in final
-    assert final.rstrip().endswith("Verified by Cited")
+    assert "Verified by Cited" not in final
+    assert "per-turn delivery policy" in final
     stored = rows(host)
     assert len(stored) == 1
     assert stored[0]["response"] == final
+    assert stored[0]["verifier"]["verified"] is False
+    assert stored[0]["verifier"]["seal_withheld"] is True
 
 
 def test_the_host_never_calls_the_hook_for_an_empty_response(host):
@@ -257,12 +260,12 @@ def test_an_exception_of_the_transformer_never_reaches_the_host(host, monkeypatc
     session, turn = begin(host)
     select(host, session, turn)
 
-    verifier = plugin_module(host, "verifier")
+    render = plugin_module(host, "render")
 
     def explode(*args, **kwargs):
         raise RuntimeError("synthetic failure inside the transformer")
 
-    monkeypatch.setattr(verifier, "sealed", explode)
+    monkeypatch.setattr(render, "render_answer", explode)
     final, transformed, _pre = apply(host, turn, "MODEL_999")
     assert transformed is True
     assert "CITED-" in final
@@ -330,7 +333,7 @@ def test_the_finalizer_persists_what_the_plugin_delivered(host):
     final, transformed, _pre = apply_llm_output_transform(agent, "MODEL_999", turn_id=turn)
     assert transformed is True
     assert "MODEL_999" not in final
-    assert str(final).rstrip().endswith("Verified by Cited")
+    assert "Verified by Cited" not in final
     stored = rows(host)
     assert stored and stored[-1]["response"] == final
     assert stored[-1]["turn_id"] == turn

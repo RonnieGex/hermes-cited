@@ -321,7 +321,9 @@ def test_m_r3_3_the_log_records_what_was_delivered(monkeypatch, hermes_home, cit
     final = run_turn(context, args={"passage": "P1", "lines": [4]}, platform="cli")
     entry = audit.read_entries(hermes_home / "cited" / "audit.jsonl")[0]
     assert entry["response"] == final
-    assert entry["verifier"]["verified"] is True
+    assert entry["verifier"]["verified"] is False
+    assert entry["verifier"]["seal_withheld"] is True
+    assert entry["composition_note"]
 
 
 # --- M-R2-1: the delivery resolver must reproduce the host ---------------------------------------

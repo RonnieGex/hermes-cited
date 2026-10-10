@@ -149,7 +149,9 @@ def test_r1_b1_the_model_draft_never_reaches_the_final_message(monkeypatch, herm
     final = run(quiet, raw, answer="UNVERIFIED_999", select="P1")
     assert "UNVERIFIED_999" not in final
     assert GROUNDED in final
-    assert final.rstrip().endswith(verifier.SEAL)
+    # D11/H16: the seal is retained on every route while the host does not accredit the delivery.
+    assert verifier.SEAL not in final
+    assert "Note on delivery" in final
 
     streaming = context(monkeypatch, hermes_home, config=STREAM)
     withheld = run(streaming, raw, answer="UNVERIFIED_999", select="P1", session="s2", turn="t2",
@@ -157,6 +159,18 @@ def test_r1_b1_the_model_draft_never_reaches_the_final_message(monkeypatch, herm
     assert "UNVERIFIED_999" not in withheld
     assert verifier.SEAL not in withheld
     assert "Note on delivery" in withheld
+
+
+def test_r1_b1_a_quiet_surface_is_clear_but_never_accredited(monkeypatch, hermes_home, cited_env):
+    """R1 B1 / D11: the final message is the plugin's composition; the surfaces are clean, the seal is not."""
+    raw = envelope(GROUNDED)
+    quiet = context(monkeypatch, hermes_home)
+    final = run(quiet, raw, answer="UNVERIFIED_999", select="P1")
+    entry = json.loads((hermes_home / "cited" / "audit.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert entry["delivery"]["surface_clear"] is True
+    assert entry["delivery"]["accredited"] is False
+    assert entry["delivery"]["seal"] is False
+    assert entry["response"] == final
 
 
 def test_r1_b2_an_echoed_query_with_zero_passages_cannot_verify_itself(monkeypatch, hermes_home, cited_env):
@@ -510,18 +524,15 @@ def test_r1_m6_an_empty_digest_list_does_not_pass(gate):
     assert detail
 
 
-def test_r1_m6_the_seal_is_crossed_with_its_audited_entry(gate):
-    """R1 M6: the seal was accepted by substring, without the delivery decision of the turn."""
-    text = "Según tus documentos:\n\n- Afinacion de bicicleta: 380 pesos. [1]\n\nVerified by Cited"
-    entry = {
-        "response": text,
-        "delivery": {"seal": True},
-        "verifier": {"applied": True, "ok": True, "verified": True, "seal_withheld": False},
-    }
-    assert gate.seal_matches_entry(text, entry) is True
-    forged = dict(entry, delivery={"seal": False})
-    assert gate.seal_matches_entry(text, forged) is False
-    assert gate.seal_matches_entry(text, {"response": "otra", "verifier": {"ok": True}}) is False
+def test_r1_m6_the_answer_is_crossed_with_its_audited_entry(gate):
+    """R1 M6, M-R5-4/H16: the delivered text is the whole composition of its own entry, with no seal."""
+    entry = gate._m_r5_4_entry()
+    assert gate.answer_matches_entry(entry["response"], entry) is True
+    assert gate.answer_matches_entry(entry["response"], {"response": "otra"}) is False
+    forged = dict(entry, response=entry["response"] + "\n\nVerified by Cited")
+    assert gate.answer_matches_entry(forged["response"], forged) is False
+    withheld = dict(entry, delivery=dict(entry["delivery"], seal=True))
+    assert gate.answer_matches_entry(entry["response"], withheld) is False
 
 
 def test_r1_m6_the_selftest_negatives_are_the_gate_cases(gate):

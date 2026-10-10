@@ -77,6 +77,7 @@ def test_the_host_platforms_of_the_release_are_messaging_unless_documented_other
 
 
 def test_the_seal_follows_the_host_streaming_matrix():
+    """D11/H16: the readable surfaces follow the host; the seal itself is never emitted today."""
     expected = {
         "mode_edit": False,
         "enabled": False,
@@ -94,7 +95,10 @@ def test_the_seal_follows_the_host_streaming_matrix():
             "streaming": streaming,
             "display": {"platforms": {"telegram": {"interim_assistant_messages": False}}},
         }
-        assert delivery.seal_allowed("telegram", config) is expected[name], name
+        snap = delivery.snapshot("telegram", config=config)
+        assert snap.surface_clear is expected[name], name
+        assert snap.accredited is False
+        assert snap.seal is False, name
 
 
 def test_a_platform_override_only_narrows():
@@ -102,17 +106,17 @@ def test_a_platform_override_only_narrows():
         "streaming": {"enabled": True},
         "display": {"platforms": {"telegram": {"streaming": False, "interim_assistant_messages": False}}},
     }
-    assert delivery.seal_allowed("telegram", overridden) is True
-    assert delivery.seal_allowed("discord", overridden) is False
+    assert delivery.snapshot("telegram", config=overridden).surface_clear is True
+    assert delivery.snapshot("discord", config=overridden).surface_clear is False
     plain_off = {"streaming": {"enabled": False}, "display": {"interim_assistant_messages": False}}
-    assert delivery.seal_allowed("discord", plain_off) is True
+    assert delivery.snapshot("discord", config=plain_off).surface_clear is True
 
 
 def test_the_cli_uses_display_streaming_and_commentary():
     quiet = {"display": {"streaming": False, "interim_assistant_messages": False}}
-    assert delivery.seal_allowed("cli", quiet) is True
-    assert delivery.seal_allowed("cli", {"display": {"streaming": True, "interim_assistant_messages": False}}) is False
-    assert delivery.seal_allowed("cli", {}) is False
+    assert delivery.snapshot("cli", config=quiet).surface_clear is True
+    assert delivery.snapshot("cli", config={"display": {"streaming": True, "interim_assistant_messages": False}}).surface_clear is False
+    assert delivery.snapshot("cli", config={}).surface_clear is False
     assert delivery.effective_streaming("cli", {"display": {"streaming": True}}) is True
     assert delivery.commentary_enabled({}, "cli") is True
 
@@ -158,7 +162,9 @@ def test_streaming_tts_withholds():
 def test_webhook_and_local_are_not_user_surfaces():
     config = {"streaming": {"enabled": False}}
     for platform in ("webhook", "msgraph_webhook", "local"):
-        assert delivery.snapshot(platform, config=config).seal is True
+        snap = delivery.snapshot(platform, config=config)
+        assert snap.surface_clear is True
+        assert snap.seal is False
 
 
 def test_an_unreadable_configuration_withholds():
@@ -172,11 +178,11 @@ def test_the_snapshot_is_frozen_and_does_not_follow_a_later_change(tmp_path):
     home = tmp_path
     (home / "config.yaml").write_text("streaming:\n  enabled: false\ndisplay:\n  interim_assistant_messages: false\n", encoding="utf-8")
     snap = delivery.snapshot("telegram", home=home)
-    assert snap.seal is True
+    assert snap.surface_clear is True
     (home / "config.yaml").write_text("streaming:\n  enabled: true\n", encoding="utf-8")
-    assert snap.seal is True
-    assert delivery.snapshot("telegram", home=home).seal is False
-    assert delivery.seal_allowed("telegram", snap=snap) is True
+    assert snap.surface_clear is True
+    assert delivery.snapshot("telegram", home=home).surface_clear is False
+    assert delivery.seal_allowed("telegram", snap=snap) is False
 
 
 def test_the_withheld_note_names_the_platform_and_the_fix_without_claiming_the_seal():

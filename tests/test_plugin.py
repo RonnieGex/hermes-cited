@@ -192,14 +192,16 @@ def test_dot_mode_injects_nothing(monkeypatch, hermes_home):
     assert not pre(context)
 
 
-def test_a_chosen_line_is_rendered_and_sealed_and_logged(monkeypatch, hermes_home, cited_env):
+def test_a_chosen_line_is_rendered_and_recorded_with_no_seal(monkeypatch, hermes_home, cited_env):
+    """D11/H16: the plugin composes the answer, the host does not accredit the delivery, so no seal."""
     context = build(monkeypatch, mode="cited", hermes_home=hermes_home)
     final = run_turn(context, answer="prose to discard", args={"passage": "P1", "lines": [4]})
     assert final.startswith("Según tus documentos:")
     assert GROUNDED in final
     assert "Fuente: cafe-la-horquilla.md - Precios" in final
     assert "[1]" in final
-    assert final.rstrip().endswith("Verified by Cited")
+    assert verifier.SEAL not in final
+    assert "per-turn delivery policy" in final
     assert "prose to discard" not in final
 
     path = hermes_home / "cited" / "audit.jsonl"
@@ -213,14 +215,17 @@ def test_a_chosen_line_is_rendered_and_sealed_and_logged(monkeypatch, hermes_hom
     assert entry["turn_id"] == "t1"
     assert entry["verifier"]["applied"] is True
     assert entry["verifier"]["ok"] is True
-    assert entry["verifier"]["verified"] is True
-    assert entry["verifier"]["seal_withheld"] is False
+    assert entry["verifier"]["verified"] is False
+    assert entry["verifier"]["seal_withheld"] is True
     assert entry["quoted_lines"][0]["text"] == GROUNDED
     assert entry["quoted_lines"][0]["pid"] == "P1"
     assert entry["quoted_lines"][0]["original"] == 1
     assert entry["response"] == final
-    assert entry["transcript"] == final[: -len("\n\nVerified by Cited")]
-    assert entry["delivery"]["seal"] is True
+    assert entry["transcript"] and final.startswith(entry["transcript"])
+    assert verifier.SEAL not in entry["transcript"]
+    assert entry["delivery"]["seal"] is False
+    assert entry["delivery"]["accredited"] is False
+    assert entry["composition_note"]
     assert cited_env.token not in path.read_text(encoding="utf-8")
 
 
@@ -228,7 +233,7 @@ def test_a_numeric_passage_is_still_accepted_when_it_is_unambiguous(monkeypatch,
     context = build(monkeypatch, mode="cited", hermes_home=hermes_home)
     final = run_turn(context, args={"passage": 1, "lines": [4]})
     assert GROUNDED in final
-    assert final.rstrip().endswith("Verified by Cited")
+    assert verifier.SEAL not in final
 
 
 def test_the_models_prose_is_discarded_whole(monkeypatch, hermes_home, cited_env):
@@ -636,7 +641,7 @@ def test_a_failure_inside_the_render_is_an_operational_refusal(monkeypatch, herm
     def explode(*args, **kwargs):
         raise RuntimeError("MODEL_LEAK_999 inside the render")
 
-    monkeypatch.setattr(verifier, "sealed", explode)
+    monkeypatch.setattr(render, "render_answer", explode)
     final = transform(context, answer="MODEL_999")
     assert "MODEL_LEAK_999" not in final
     assert final.startswith("No puedo entregar")
@@ -652,7 +657,7 @@ def test_the_turn_state_is_dropped_even_when_the_transformer_fails(monkeypatch, 
     def explode(*args, **kwargs):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(verifier, "sealed", explode)
+    monkeypatch.setattr(render, "render_answer", explode)
     transform(context, answer="MODEL_999")
     assert plugin._turn_of("s1", "t1") is None
     assert plugin._active_turns("s1") == []
@@ -732,8 +737,8 @@ def test_the_token_in_the_question_is_redacted_from_the_log(monkeypatch, hermes_
 def test_the_mode_command_changes_the_next_turn(monkeypatch, hermes_home, cited_env):
     context = build(monkeypatch, mode="dot", hermes_home=hermes_home)
     cited_message = context.commands["cited"]("")
-    assert "plugin escribe" in cited_message
-    assert verifier.SEAL in run_turn(context, args={"passage": "P1", "lines": [4]})
+    assert "plugin compone" in cited_message
+    assert verifier.SEAL not in run_turn(context, args={"passage": "P1", "lines": [4]})
     dot_message = context.commands["dot"]("")
     assert "dot" in dot_message.lower()
     assert run_turn(context) is None
@@ -764,12 +769,17 @@ def test_the_seal_is_withheld_on_a_streaming_messaging_surface(monkeypatch, herm
     assert "streaming" in entry["delivery"]["reasons"]
 
 
-def test_the_seal_is_kept_when_streaming_and_commentary_are_off(monkeypatch, hermes_home, cited_env):
+def test_a_quiet_surface_is_clear_but_the_seal_is_retained(monkeypatch, hermes_home, cited_env):
+    """D11/H16: streaming and commentary off remove the surface reasons, not the retention."""
     write_config(hermes_home, QUIET)
     context = build(monkeypatch, mode="cited", hermes_home=hermes_home, quiet=False)
     final = run_turn(context, args={"passage": "P1", "lines": [4]}, platform="telegram")
-    assert verifier.SEAL in final
-    assert "withheld" not in final
+    assert verifier.SEAL not in final
+    entry = entries_of(hermes_home)[0]
+    assert entry["delivery"]["surface_clear"] is True
+    assert entry["delivery"]["accredited"] is False
+    assert entry["delivery"]["seal"] is False
+    assert entry["delivery"]["reasons"] == []
 
 
 def test_a_platform_override_can_turn_streaming_off(monkeypatch, hermes_home, cited_env):
@@ -780,7 +790,8 @@ def test_a_platform_override_can_turn_streaming_off(monkeypatch, hermes_home, ci
     )
     context = build(monkeypatch, mode="cited", hermes_home=hermes_home, quiet=False)
     final = run_turn(context, args={"passage": "P1", "lines": [4]}, platform="telegram")
-    assert verifier.SEAL in final
+    assert verifier.SEAL not in final
+    assert entries_of(hermes_home)[0]["delivery"]["surface_clear"] is True
 
 
 def test_an_unknown_messaging_surface_withholds(monkeypatch, hermes_home, cited_env):
@@ -790,10 +801,11 @@ def test_an_unknown_messaging_surface_withholds(monkeypatch, hermes_home, cited_
     assert verifier.SEAL not in final
 
 
-def test_the_cli_keeps_the_seal_when_its_streaming_is_off(monkeypatch, hermes_home, cited_env):
+def test_the_cli_with_its_streaming_off_keeps_a_clean_surface(monkeypatch, hermes_home, cited_env):
     context = build(monkeypatch, mode="cited", hermes_home=hermes_home)
     final = run_turn(context, args={"passage": "P1", "lines": [4]}, platform="cli")
-    assert verifier.SEAL in final
+    assert verifier.SEAL not in final
+    assert entries_of(hermes_home)[0]["delivery"]["surface_clear"] is True
 
 
 def test_the_cli_with_streaming_on_withholds_the_seal(monkeypatch, hermes_home, cited_env):
@@ -849,5 +861,7 @@ def test_the_snapshot_does_not_follow_a_change_during_the_turn(monkeypatch, herm
     quote(context, {"passage": "P1", "lines": [4]})
     write_config(hermes_home, "streaming:\n  enabled: true\n")
     final = transform(context)
-    assert verifier.SEAL in final
-    assert delivery.snapshot("cli", home=hermes_home).seal is False
+    assert verifier.SEAL not in final
+    assert "streaming" not in final
+    assert entries_of(hermes_home)[0]["delivery"]["streaming"] is False
+    assert delivery.snapshot("cli", home=hermes_home).surface_clear is False

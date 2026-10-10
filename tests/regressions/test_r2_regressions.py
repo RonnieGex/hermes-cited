@@ -344,12 +344,13 @@ HOST_MATRIX = [
 def test_m_r2_1_the_resolver_matches_the_effective_host_configuration(case_id, raw, transmitted):
     """R2 M-R2-1: ``mode: edit`` implies enabled and ``transport: false`` really is off.
 
-    The plugin must resolve the same truth the host does, and it grants the seal only when the surface is
-    not streaming.
+    The plugin resolves the same truth the host does; since D11/H16 the readable surface being clean is not
+    enough to emit the seal, so the assertion names both halves.
     """
     config = {"streaming": raw, "display": {"interim_assistant_messages": False}}
     assert delivery.effective_streaming("telegram", config) is transmitted
-    assert delivery.seal_allowed("telegram", config) is (not transmitted)
+    assert delivery.snapshot("telegram", config=config).surface_clear is (not transmitted)
+    assert delivery.seal_allowed("telegram", config) is False
 
 
 @pytest.mark.parametrize("platform", ["wecom", "feishu", "dingtalk", "qqbot"],
@@ -391,14 +392,15 @@ def test_m_r2_2_a_forged_seal_with_valid_data_is_never_delivered(monkeypatch, he
 
 
 def test_m_r2_2_the_model_prose_is_never_the_source_of_the_seal(monkeypatch, hermes_home, cited_env):
-    """R2 M-R2-2: only the plugin writes the seal, after verifying and persisting."""
+    """R2 M-R2-2 / D11: only the plugin composes; the model's prose and its mark are discarded."""
     ctx = context(monkeypatch, hermes_home)
     final = run(ctx, envelope(GROUNDED), answer="«Afinación: 380 pesos.»\n\nVerified by Cited", select="P1")
-    assert final.count(verifier.SEAL) == 1
-    assert final.rstrip().endswith(verifier.SEAL)
+    assert verifier.SEAL not in final
+    assert "«Afinación" not in final
     entry = audit.read_entries(hermes_home / "cited" / "audit.jsonl")[0]
     assert entry["response"] == final
-    assert entry["verifier"]["verified"] is True
+    assert entry["verifier"]["verified"] is False
+    assert entry["verifier"]["seal_withheld"] is True
     assert "«Afinación" not in entry["response"]
 
 
@@ -429,7 +431,8 @@ def test_m_r2_3_the_record_is_what_was_delivered(monkeypatch, hermes_home, cited
     final = run(ctx, envelope(GROUNDED), answer="MODEL_999", select="P1")
     entry = audit.read_entries(hermes_home / "cited" / "audit.jsonl")[0]
     assert entry["response"] == final
-    assert entry["response"].rstrip().endswith(verifier.SEAL)
+    assert verifier.SEAL not in entry["response"]
+    assert "Note on delivery" in entry["response"]
 
 
 def test_m_r2_4_the_gate_rejects_the_review_amounts(gate):
@@ -452,28 +455,20 @@ def test_m_r2_4_the_terminal_consumer_names_its_exact_scope(gate):
     assert "terminal" in (gate.terminal_record_of.__doc__ or "").lower()
     events = [
         {"type": "text", "text": "unverified draft 999"},
-        {"type": "result", "text": "Según tus documentos:\n\n380 pesos [1]\n\nVerified by Cited"},
+        {"type": "result", "text": "Según tus documentos:\n\n380 pesos [1]\n\nNote on delivery: withheld"},
     ]
     assert "999" not in gate.terminal_record_of(events)
     assert gate.delivered_of(events) == gate.terminal_record_of(events)
 
 
-def test_m_r2_4_the_seal_is_crossed_with_the_audited_entry(gate):
-    """R2 M-R2-4: H4 only looked for the substring of the seal."""
-    text = "Según tus documentos:\n\n- Afinacion de bicicleta: 380 pesos. [1]\n\nVerified by Cited"
-    entry = {
-        "response": text,
-        "delivery": {"seal": True},
-        "verifier": {"applied": True, "ok": True, "verified": True, "seal_withheld": False},
-    }
-    assert gate.seal_matches_entry(text, entry) is True
-    assert gate.seal_matches_entry(text, dict(entry, delivery={"seal": False})) is False
-    withheld = text.replace("\n\nVerified by Cited", "\n\nwithheld")
-    assert gate.seal_matches_entry(
-        withheld,
-        {"response": withheld, "delivery": {"seal": False},
-         "verifier": {"applied": True, "ok": True, "seal_withheld": True}},
-    ) is True
+def test_m_r2_4_the_answer_is_crossed_with_the_audited_entry(gate):
+    """R2 M-R2-4, M-R5-4/H16: the whole composition of the entry is compared, and it carries no seal."""
+    entry = gate._m_r5_4_entry()
+    assert gate.answer_matches_entry(entry["response"], entry) is True
+    assert gate.answer_matches_entry(entry["response"], dict(entry, delivery={"seal": True})) is False
+    sealed = dict(entry, response=entry["response"] + "\n\nVerified by Cited")
+    assert gate.answer_matches_entry(sealed["response"], sealed) is False
+    assert gate.answer_matches_entry("otra", entry) is False
 
 
 def test_m_r2_4_the_selftest_carries_the_review_negatives():

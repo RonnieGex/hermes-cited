@@ -8,9 +8,11 @@ read-only copy of the host is not present.
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -60,7 +62,8 @@ def test_m_r4_6_the_host_footer_lands_after_the_render_and_the_append(host):
     assert "SYNTHETIC_FILE_ERROR_999" in final
     assert "SYNTHETIC_FILE_ERROR_999" not in stored
     assert final != stored
-    assert stored.rstrip().endswith("Verified by Cited")
+    assert "Verified by Cited" not in stored
+    assert rows(host)[-1]["composition_note"]
 
 
 def test_b_r4_1_the_real_dispatcher_never_keeps_the_prose_on_a_lookup_failure(host, monkeypatch):
@@ -99,38 +102,76 @@ def test_b_r4_1_the_real_dispatcher_never_keeps_the_prose_on_a_mode_failure(host
     assert "CITED-" in actual[0]
 
 
-def test_m_r4_2_the_real_host_policy_beats_the_file(host, monkeypatch):
-    """R4 M-R4-2: the loaded object says TTS is on while the file says off; the answer is not sealed."""
-    delivery = plugin_module(host, "delivery")
+def test_m_r4_2_the_real_turn_runner_receives_receivers_the_file_hides(host):
+    """R4 M-R4-2, re-run by R5 M-R5-1 with the original reproduction and no double.
+
+    The real ``TurnRunner._setup_stream_consumer`` connects TTS and commentary of a synthetic context while
+    the configuration file says quiet. The review of round 5 showed that a double of ``host_config`` proved
+    nothing; what this asserts is that the snapshot does not accredit the delivery it cannot see, so the
+    seal is retained and the answer carries the fixed note.
+    """
+    from gateway.config import StreamingConfig
+    from gateway.display_config import resolve_display_setting
+    from gateway.run_turn_runner import TurnRunner
+
+    events = []
+
+    class Voice:
+        def on_delta(self, text):
+            events.append(["tts", text])
+
     effective = {
         "streaming": {"enabled": False},
-        "display": {"streaming": False, "interim_assistant_messages": False},
+        "display": {"interim_assistant_messages": True},
         "tts": {"auto_tts": True},
     }
-    monkeypatch.setattr(delivery, "host_config", lambda home=None: effective)
-    session, turn = begin(host)
+    ctx = SimpleNamespace(
+        mute_notification_reply=False, streaming_tts_consumer_holder=[Voice()], user_config=effective,
+        resolve_display_setting=resolve_display_setting, scheduled_heartbeat=False,
+        interim_assistant_messages_enabled=True, source=SimpleNamespace(platform="telegram"),
+        _run_still_current=lambda: True, _status_adapter=True, _status_thread_metadata={},
+    )
+    runner = SimpleNamespace(
+        config=SimpleNamespace(streaming=StreamingConfig.from_dict(effective["streaming"])),
+        _delivery_adapter_for=lambda source: None,
+    )
+    turn_runner = TurnRunner(runner, ctx)
+    turn_runner._send_status_text = lambda text, *args: events.append(["messaging", text])
+    _consumer, delta, interim, _want = turn_runner._setup_stream_consumer("telegram")
+
+    session, turn = begin(host, platform="telegram")
     select(host, session, turn)
-    actual = apply(host, turn, "MODEL_999")
+    delta("MODEL_AUDIO_999")
+    interim("MODEL_COMMENTARY_999")
+    actual = apply(host, turn, "MODEL_FINAL_999", platform="telegram")
     stored = rows(host)[-1]
+    assert "MODEL_AUDIO_999" in json.dumps(events)
+    assert "MODEL_COMMENTARY_999" in json.dumps(events)
+    assert stored["delivery"]["surface_clear"] is True
+    assert stored["delivery"]["accredited"] is False
+    assert stored["delivery"]["seal"] is False
     assert "Verified by Cited" not in actual[0]
-    assert "text to speech" in actual[0]
-    assert stored["delivery"]["tts"] is True
-    assert stored["delivery"]["source"] == "host"
+    assert "per-turn delivery policy" in actual[0]
 
 
-def test_m_r4_2_a_host_that_cannot_answer_withholds_the_seal(host, monkeypatch):
-    """R4 M-R4-2: the host is present and does not answer; the seal is withheld, not assumed."""
+def test_m_r4_2_the_real_loader_read_error_is_unreadable(host):
+    """R4 M-R4-2, re-run by R5 M-R5-1: the real ``FailedConfigRead`` of the host loader.
+
+    The review loaded a valid quiet configuration and broke the YAML afterwards; Hermes keeps the last
+    valid state as a ``FailedConfigRead``, which is a mapping, so the round 5 snapshot accepted it. A read
+    error is not a configuration and the snapshot must withhold.
+    """
+    from hermes_cli.config import load_config_readonly
+
     delivery = plugin_module(host, "delivery")
-
-    def broken(home=None):
-        raise delivery.UnreadableConfig("the host configuration did not answer")
-
-    monkeypatch.setattr(delivery, "host_config", broken)
-    session, turn = begin(host)
-    select(host, session, turn)
-    actual = apply(host, turn, "MODEL_999")
-    stored = rows(host)[-1]
-    assert "Verified by Cited" not in actual[0]
-    assert "withheld" in actual[0]
-    assert stored["delivery"]["readable"] is False
-    assert stored["verifier"]["seal_withheld"] is True
+    valid = load_config_readonly()
+    assert valid.get("streaming", {}).get("enabled") is False
+    (host["home"] / "config.yaml").write_text(
+        "display:\n  interim_assistant_messages: false\nstreaming: [\n", encoding="utf-8"
+    )
+    broken = load_config_readonly()
+    assert getattr(broken, "read_error", None)
+    snapshot = delivery.snapshot("telegram", home=host["home"])
+    assert snapshot.readable is False
+    assert snapshot.seal is False
+    assert "unreadable" in snapshot.reasons
