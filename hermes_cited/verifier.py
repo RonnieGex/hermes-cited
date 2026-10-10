@@ -4,9 +4,8 @@ The verifier does not read prose. It asserts that every block the plugin is abou
 to a full line of an excerpt of the same turn, and that the block carries the identifier of the passage it
 came from, so the mark of the render, the selection of the model and the row of the log are the same
 reference (H14). There is no Unicode normalisation, no substring comparison and no word list: all of those
-were the holes of D2. In dot mode the model's text is delivered as it is, minus the reserved mark, which
-only the plugin may write; ``render.strip_mark`` does that removal and ``messages`` holds the fixed note
-that replaces a text left empty by it (D11).
+were the holes of D2. In dot mode the model's text is delivered as it is: with D12 this version writes no
+seal, so there is no mark to remove and no fixed note that replaces anything.
 """
 
 from __future__ import annotations
@@ -63,8 +62,3 @@ def operational_refusal(code, language="es") -> str:
     log and to ``stderr`` only.
     """
     return messages.operational_text(language, code)
-
-
-def strip_seal(text: str) -> str:
-    """The model's text without the reserved mark: only the plugin may write it (M-R2-2, M-R3-3)."""
-    return render.strip_mark(text)

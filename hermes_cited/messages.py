@@ -39,25 +39,6 @@ OPERATIONAL = {
     ),
 }
 
-#: Dot mode: the model's text was nothing but the reserved mark, so what is delivered is this note (D11).
-SEAL_ONLY_NOTE = {
-    "es": "La respuesta del modelo era solo el sello reservado y se retiró: no quedó nada más que mostrar.",
-    "en": "The model's answer was only the reserved seal and it was removed: there was nothing else to show.",
-}
-
-#: M-R5-3/H16: the removal of the reserved mark could not complete, so the model's text is never delivered;
-#: this fixed note replaces it. It carries no fragment of the answer.
-SANITIZER_NOTE = {
-    "es": (
-        "No se pudo retirar la marca reservada de esta respuesta, asi que el texto del modelo no se muestra. "
-        "Vuelve a preguntar o cambia a modo cited con /cited."
-    ),
-    "en": (
-        "The reserved mark could not be removed from this answer, so the model's text is not shown. Ask "
-        "again or switch to cited mode with /cited."
-    ),
-}
-
 #: D11.3/H16: every audit entry carries this sentence, so a reader never mistakes the row for a record of
 #: the terminal message the host delivered.
 COMPOSITION_NOTE = {
@@ -68,18 +49,6 @@ COMPOSITION_NOTE = {
     "en": (
         "this row registers the plugin's composition; the host may show drafts while the answer is written "
         "and add its own notices at the end, so the row is not a record of the terminal message."
-    ),
-}
-
-#: A block or metadata of the turn contains the reserved mark, so the seal is withheld (M-R3-3).
-MARK_RETAINED_NOTE = {
-    "es": (
-        "Nota: el texto de esta respuesta contiene la marca reservada que solo el plugin escribe; por eso "
-        "el sello se retiene. El contenido se muestra tal como lo devolvieron los documentos."
-    ),
-    "en": (
-        "Note: the text of this answer contains the reserved mark, which only the plugin writes, so the "
-        "seal is withheld. The content is shown exactly as the documents returned it."
     ),
 }
 
@@ -104,16 +73,17 @@ _MODE_CITED = {
 
 _MODE_DOT = {
     "es": (
-        "Modo dot activado. Cited sigue disponible cuando ayuda. La marca reservada `Verified by Cited` se "
-        "retira de cualquier respuesta del modelo, en cualquier presentacion que el consumidor renderice, "
-        "incluidas entidades, saltos suaves y enlaces; si no queda nada mas, se entrega una nota fija. "
-        "/cited vuelve a activar el modo cited."
+        "Modo dot activado. Cited sigue disponible cuando ayuda. Nada en modo dot está verificado, diga lo "
+        "que diga el texto: esta versión del plugin no escribe ningún sello, así que la frase "
+        "`Verified by Cited` en una respuesta nunca viene del plugin, y el texto del modelo se entrega "
+        "intacto. El registro guarda exactamente el texto que se entrega. /cited vuelve a activar el modo "
+        "cited."
     ),
     "en": (
-        "Dot mode is on. Cited is still there when it helps. The reserved mark `Verified by Cited` is "
-        "removed from any answer of the model, in any presentation the consumer renders, entities, soft "
-        "breaks and links included; if nothing else is left, a fixed note is delivered. /cited turns cited "
-        "mode back on."
+        "Dot mode is on. Cited is still there when it helps. Nothing in dot mode is verified, whatever the "
+        "text says: this version of the plugin writes no seal, so the phrase `Verified by Cited` in an "
+        "answer never comes from the plugin, and the model's text is delivered intact. The record stores "
+        "exactly the text that is delivered. /cited turns cited mode back on."
     ),
 }
 
@@ -124,19 +94,6 @@ def refusal_text(language) -> str:
 
 def operational_text(language, code) -> str:
     return OPERATIONAL[language_of(language)].format(code=str(code or "unknown"))
-
-
-def seal_only_note(language) -> str:
-    return SEAL_ONLY_NOTE[language_of(language)]
-
-
-def mark_retained_note(language) -> str:
-    return MARK_RETAINED_NOTE[language_of(language)]
-
-
-def sanitizer_note(language) -> str:
-    """The fixed safe note delivered when the reserved mark could not be removed (M-R5-3)."""
-    return SANITIZER_NOTE[language_of(language)]
 
 
 def composition_note(language) -> str:

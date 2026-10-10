@@ -13,6 +13,11 @@ hook, the delivered text is exactly one of the render, the fixed localized refus
 localized operational refusal with an incident code, and any exception of reading the configuration,
 resolving, rendering, composing or persisting produces that third one. The turn state is dropped in
 ``finally``. No error detail is ever interpolated into an answer.
+
+Round 8 (D12) retires the protection of the reserved mark. With D11 the plugin emits no seal on any route,
+so no authentic seal exists that anyone could forge: dot mode returns the model's text untouched and its
+row records exactly that string, and a cited documentary line that carries the phrase is data like any
+other, next to the general note that says this version emits no seal.
 """
 
 from __future__ import annotations
@@ -620,18 +625,6 @@ def _operational_refusal(code) -> str:
         return "CITED incident {0}: the answer could not be delivered as verified.".format(code)
 
 
-def _dot_safety_note() -> str:
-    """M-R5-3: the fixed safe note of a dot turn whose sanitisation could not run or complete."""
-    try:
-        return messages.sanitizer_note(_safe_language())
-    except BaseException:
-        pass
-    try:
-        return messages.SANITIZER_NOTE[messages.DEFAULT_LANGUAGE]
-    except BaseException:
-        return "The reserved mark could not be removed from this answer, so the model's text is not shown."
-
-
 def _sanitized_diagnostic(message, code, error) -> str:
     """One diagnostic with the bearer redacted from the whole formatted traceback (M-R4-5)."""
     import traceback
@@ -679,9 +672,10 @@ def _transform_llm_output(state):
             code = incident_code()
             _report_failure("the cited-mode transformer failed", code, error)
             if mode == "dot" or (mode is None and intent == "dot"):
-                # M-R5-3: dot mode never hands the model's text back untransformed and never returns
-                # ``None`` on a failure of the removal; it delivers the fixed safe note instead.
-                return _dot_safety_note()
+                # D12: dot mode delivers the model's text untouched, so a failure of the pass-through
+                # returns ``None`` and leaves the text in place. The mode was resolved affirmatively, so
+                # this is never the undetermined case M-R4-1 removed.
+                return None
             return _operational_refusal(code)
         finally:
             try:
@@ -708,12 +702,9 @@ def _deliver_cited(turn, language):
         if error:
             return verifier.operational_refusal(incident_code(), language)
         return final
-    mark_in_content = any(line.has_mark() for line in blocks)
     snap = turn.delivery
-    sealed = bool(snap is not None and snap.seal) and not mark_in_content
+    sealed = bool(snap is not None and snap.seal)
     body = render.render_answer(language, blocks)
-    if mark_in_content:
-        body = "{0}\n\n{1}".format(body, messages.mark_retained_note(language))
     final = verifier.sealed(body) if sealed else body
     if not sealed:
         final = "{0}\n\n{1}".format(final, delivery.withheld_note(snap if snap is not None else turn.platform))
@@ -751,28 +742,20 @@ def _verification(turn, applied=True, ok=False, blocks=()):
 
 
 def _deliver_dot(turn, text):
-    """Dot mode: the model's text, minus the reserved mark; the log records what is delivered (D11).
+    """Dot mode: the model's text passes intact, and the row records exactly that string (D12).
 
-    M-R5-3: when the removal cannot complete, the delivered text is the fixed safe note and never the
-    model's untransformed text; the failure is reported and the turn's entry records the note.
+    This version of the plugin writes no seal, so there is no mark to detect and no text to rewrite: the
+    transformer returns ``None`` (the host keeps the model's own text) and the entry stores the text that
+    reaches the user, unchanged.
     """
-    try:
-        final = render.strip_mark(text)
-    except BaseException as error:
-        _report_failure("the dot-mode sanitisation failed", incident_code(), error)
-        final = _dot_safety_note()
-    if text and not final.strip():
-        final = messages.seal_only_note(_language())
     verification = _verification(turn, applied=False, ok=False)
-    _entry, error = _write_entry(turn, "dot", final, verification, False, transcript=text)
+    _entry, error = _write_entry(turn, "dot", text, verification, False, transcript=text)
     if error:
         print(
             "hermes-cited: the dot-mode audit entry could not be written: {0}".format(error),
             file=sys.stderr,
         )
-    if final == text:
-        return None
-    return final
+    return None
 
 
 def _write_entry(
