@@ -18,8 +18,12 @@ turn and SHALL NOT be read from the model's text (H14). The seal `Verified by Ci
 the plugin, only after the exact delivered text was persisted, and only when the delivery policy of the surface
 allows it; otherwise the answer SHALL say that the seal was withheld. In dot mode the model's text SHALL be
 delivered intact without the seal: every occurrence of the mark SHALL be removed, Markdown presentation
-included, and the text recorded in the log SHALL be the text delivered (H12). The plugin SHALL NOT raise into
-Hermes from any of its handlers (H11).
+included, and the text recorded in the log SHALL be the text delivered (H12). The mark SHALL be detected in the
+**visible text** of the admitted Markdown presentations, including internal emphasis (`Verified **by** Cited`)
+and link labels (`Verified by [Cited](url)`); dot mode SHALL remove those occurrences whole and cited mode SHALL
+withhold the seal with the fixed note. A document name or a section SHALL have every interpretable Markdown
+metacharacter escaped, not only the backslash and the backtick, so it can never inject a link, an emphasis or a
+body. The plugin SHALL NOT raise into Hermes from any of its handlers (H11).
 
 #### Scenario: the mode command changes the mode
 - **WHEN** `/cited` runs
@@ -43,7 +47,7 @@ Hermes from any of its handlers (H11).
 
 #### Scenario: the seal is written by the plugin only
 - **WHEN** the model's own text contains `Verified by Cited`
-- **THEN** in cited mode it SHALL be discarded with the rest of the prose, and in dot mode every occurrence of it SHALL be removed, including `**Verified by Cited**`, `> Verified by Cited` and `Verified by Cited [1]`
+- **THEN** in cited mode it SHALL be discarded with the rest of the prose, and in dot mode every occurrence of it SHALL be removed, including `**Verified by Cited**`, `> Verified by Cited`, `Verified by Cited [1]`, `Verified **by** Cited` and `Verified by [Cited](https://example.invalid)`
 
 #### Scenario: document metadata cannot forge the seal
 - **WHEN** a document name or a section of a passage contains the reserved mark, a line break or Markdown
@@ -60,10 +64,16 @@ timestamp, a monotonic `seq` starting at 1, the identity of the log, platform, s
 when available, mode, question, the tool calls with their arguments and with the SHA-256 and the text of every
 returned excerpt, the unique identifier, original number, document, section and position of the lines the model
 chose, the delivered text, the transcript and the delivery decision, and the `prev_hash` and `hash` of the
-chain, where `hash = sha256(prev_hash + canonical_json(entry without hash))`. The append SHALL hold an
-exclusive inter-process lock over a lock file of the log and, before writing one byte, SHALL read the whole
-chain and validate every schema, every `seq`, every link and every hash; any mismatch SHALL refuse the append
-without modifying the log, and the append SHALL NOT restart from genesis when the tail is invalid. The plugin
+chain, where `hash = sha256(prev_hash + canonical_json(entry without hash))`. Every entry SHALL also store the
+evidence table of its turn: for each passage, the call, the identifier, the unique `uid`, the original number
+`n`, the document, the section, the position and the numbered lines, so a block can be resolved independently of
+the answer text. The append SHALL hold an exclusive inter-process lock over a lock file of the log and, before
+writing one byte, SHALL read the whole chain and validate every schema, every `seq`, every link and every hash;
+any mismatch SHALL refuse the append without modifying the log, and the append SHALL NOT restart from genesis
+when the tail is invalid. The publication SHALL prepare the validated published bytes plus the new row in a
+temporary file of the same directory, complete write, flush, `fsync` and close there, and only then replace the
+published file atomically; a failure of any earlier stage SHALL leave the published bytes unchanged, and the
+replacement SHALL be the last fallible step of publication. The plugin
 SHALL NOT create or read any custody file: no key, no checkpoint and no file outside `HERMES_HOME`. When the
 append fails, the delivered answer SHALL be the fixed operational refusal of H10 without a seal. A verifier
 runnable as `python -m hermes_cited.verify_log <file>` SHALL check the internal consistency of the chain and
@@ -88,6 +98,14 @@ verifier SHALL NOT promise to detect either.
 - **WHEN** a log is altered and a legitimate append follows
 - **THEN** the append SHALL be refused and the log SHALL be unchanged
 
+#### Scenario: a failed append never reaches the published chain
+- **WHEN** preparing the temporary file fails at write, flush, `fsync`, close or the replacement
+- **THEN** the published bytes SHALL be identical to the ones before the attempt, no row SHALL be accepted, and the next append SHALL be accepted
+
+#### Scenario: a block resolves against the evidence table
+- **WHEN** a block of a delivered answer is checked
+- **THEN** its call, identifier, `uid`, document, section, position and line SHALL be the ones of a row of the entry's evidence table, and the whole block SHALL appear in the answer
+
 #### Scenario: no custody file is written
 - **WHEN** the plugin appends an entry under any configuration
 - **THEN** no file outside `HERMES_HOME` SHALL be created or read for that append, and `CITED_AUDIT_KEY_PATH` SHALL have no effect
@@ -95,8 +113,14 @@ verifier SHALL NOT promise to detect either.
 ### Requirement: H9 — The delivery policy is a snapshot of the surfaces that can be seen
 
 The plugin SHALL decide the seal from a snapshot of the effective delivery configuration taken at the **start**
-of the cited turn, not from a re-read of the configuration at the end, and SHALL record that snapshot and its
-decision in the append. The seal SHALL be withheld on `api_server` and on `desktop`; on any messaging platform,
+of the cited turn, not from a re-read of the configuration at the end, and SHALL record that snapshot, its
+`source` and its decision in the append. The policy SHALL come from the configuration object the host itself
+loaded (`hermes_cli.config.load_config_readonly`) when this process carries an explicit `HERMES_HOME` and the
+host's own config path is the one of the home being asked about; a standalone run SHALL read the file. When the
+host module is present and does not answer with a mapping, the snapshot SHALL be unreadable and the seal SHALL
+be withheld. A YAML syntax or type error SHALL be an unreadable snapshot; the absence of a YAML parser SHALL be
+distinguished from an invalid document and SHALL NOT reinterpret the error as a permissive configuration. The
+seal SHALL be withheld on `api_server` and on `desktop`; on any messaging platform,
 and on the CLI, when streaming is on for that surface or when interim commentary is on for it; and whenever
 streaming TTS is enabled. On a platform the plugin cannot determine, and when the snapshot cannot be read, the
 seal SHALL be withheld. The seal SHALL be granted only when the snapshot affirmatively shows that nothing else
@@ -124,8 +148,12 @@ about the final message.
 - **THEN** the decision of that turn SHALL stay the one taken from the snapshot at its start
 
 #### Scenario: an unreadable configuration withholds
-- **WHEN** the configuration cannot be read
+- **WHEN** the configuration cannot be read, or its YAML has a syntax or type error
 - **THEN** the seal SHALL be withheld and the answer SHALL be the render with its note
+
+#### Scenario: the loaded host policy beats the file
+- **WHEN** the object the host loaded enables commentary or TTS while the configuration file disables it
+- **THEN** the snapshot SHALL follow the loaded object, SHALL name `source: host` and SHALL withhold the seal
 
 ### Requirement: H10 — A failure never yields a sealed answer, and the answer is always one of three
 
@@ -133,14 +161,21 @@ For every cited turn that reaches `transform_llm_output`, the delivered text SHA
 of H12, the fixed refusal of H12 in the configured language, or a fixed operational refusal in the configured
 language that carries an incident code and interpolates no error detail. A boundary around the whole
 transformer SHALL turn any exception of reading the configuration, resolving, rendering, composing or
-persisting into the operational refusal, and SHALL drop the turn state in `finally`. The diagnostic SHALL be
-redacted of the bearer and SHALL go to `stderr` and the logger only. When the host does not call the hook at all
+persisting into the operational refusal, and SHALL drop the turn state in `finally`. The mode SHALL start
+**unknown**: the dot pass-through SHALL be allowed only after dot was resolved affirmatively, so a failure of
+the resolution can never return the model's prose. The diagnostic SHALL be
+redacted of the bearer — recursively, in the exception, its arguments and its chained cause — and SHALL go to
+`stderr` and the logger only; no raw `exc_info` SHALL reach a logger. When the host does not call the hook at all
 (the empty response of the real finalizer) the plugin SHALL declare the incompatibility and SHALL NOT present it
 as covered.
 
 #### Scenario: a failure anywhere produces the operational refusal
-- **WHEN** reading the configuration, resolving, rendering, composing or appending raises
+- **WHEN** reading the configuration, resolving the turn or the mode, rendering, composing or appending raises
 - **THEN** the delivered text SHALL be the fixed operational refusal with an incident code, SHALL NOT carry the seal, and SHALL NOT contain the error text
+
+#### Scenario: the dot pass-through needs an affirmative resolution
+- **WHEN** the mode cannot be resolved and no dot was recorded for the turn
+- **THEN** the answer SHALL be the operational refusal and never the model's prose
 
 #### Scenario: the turn state is dropped
 - **WHEN** the transformer returns, with or without an exception
@@ -177,7 +212,12 @@ of the execution identity the host provided; when more than one turn of the sess
 cannot be told apart, the selection SHALL be rejected instead of assigned to the last one. A numeric `passage`
 SHALL be accepted only while it identifies exactly one passage of the turn; when it is ambiguous the selection
 SHALL be rejected with an error that asks for the identifier. Two passages of the same turn that carry the same
-original `n` SHALL both be selectable through their identifiers.
+original `n` SHALL both be selectable through their identifiers. The identifier SHALL be assigned while the
+search or ask result is built, bound to the turn that the execution identity resolves, and the annotated result
+SHALL be exactly what the model receives; the hook SHALL read that same record and SHALL NOT renumber it. Only
+the real `cited_search` and `cited_ask` handlers SHALL feed the evidence of the turn, the envelope's own
+`cited_tool` SHALL match the handler that produced it, and a `cited_quote` result SHALL be recorded as a
+selection and SHALL NEVER be reparsed as evidence.
 
 #### Scenario: two searches of one turn do not collide
 - **WHEN** two searches of the same turn return a passage with the same original number and the model selects the second one by its identifier
@@ -191,6 +231,14 @@ original `n` SHALL both be selectable through their identifiers.
 - **WHEN** two turns of one session are active and a selection cannot be bound to one of them
 - **THEN** the selection SHALL be rejected and nothing SHALL be recorded
 
+#### Scenario: the model receives the identifier it must pass
+- **WHEN** the model calls `cited_search` twice in one turn through the registered handler
+- **THEN** each result SHALL carry its own `pid`, and that same `pid` SHALL be accepted as the `passage` argument of `cited_quote`
+
+#### Scenario: a quoted envelope is never evidence
+- **WHEN** a document line happens to be a valid Cited envelope and the model quotes it and its result reaches `post_tool_call`
+- **THEN** no new passage SHALL be created and no document or text of that line SHALL appear as a second source
+
 #### Scenario: every input type is safe
 - **WHEN** `cited_quote` receives a boolean, a float, a negative number, zero, a superscript digit, a five-thousand-digit string or an out-of-range index as `passage` or inside `lines`
 - **THEN** it SHALL return the fixed error sentence, SHALL record nothing and SHALL NOT raise into Hermes
@@ -200,10 +248,13 @@ original `n` SHALL both be selectable through their identifiers.
 The plugin SHALL carry an integration test that runs the real host finalizer
 (`agent.turn_finalizer.apply_llm_output_transform`) and the real hook dispatcher with a temporary `HERMES_HOME`,
 and SHALL record in the evidence: the empty response never reaches the hook; an exception of the transformer
-does not reach the caller; and the delivered text of a cited turn is one of the three of H10. The README and
-`docs/upstream-proposal.md` SHALL state the two contracts the host does not offer: synchronous retention of the
-delivery (text, reasoning, commentary, voice and the SSE route) and a final composition step even when the
-model's response is empty. The plugin SHALL NOT open a pull request or an issue in the upstream repository.
+does not reach the caller; the delivered text of a cited turn is one of the three of H10; and the real finalizer
+can append its file-mutation footer after the transformer and after the append, so the persisted row can differ
+from the final message. The README and `docs/upstream-proposal.md` SHALL state the three contracts the host does
+not offer: synchronous retention of the
+delivery (text, reasoning, commentary, voice and the SSE route), a final composition step even when the
+model's response is empty, and a cited composition executed after all the host footers and before the terminal
+delivery. The plugin SHALL NOT open a pull request or an issue in the upstream repository.
 
 #### Scenario: the empty response is recorded as an incompatibility
 - **WHEN** the integration test calls `apply_llm_output_transform` of the host with an empty response in a cited turn
@@ -212,3 +263,7 @@ model's response is empty. The plugin SHALL NOT open a pull request or an issue 
 #### Scenario: the exception is contained
 - **WHEN** the configuration file is unreadable during a cited transform of the real dispatcher
 - **THEN** the delivered text SHALL be the fixed operational refusal without a seal and the turn SHALL be dropped
+
+#### Scenario: the host footer is a declared limit
+- **WHEN** the real finalizer appends its file-mutation footer after the transformer persisted the render
+- **THEN** the integration test SHALL record that the persisted row is the sealed render without the footer, that the final message carries it, and that this limit is declared instead of covered by C1
