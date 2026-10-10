@@ -12,8 +12,9 @@ Hecho por Katalis. Apache-2.0.
 - **Modo cited**: el modelo solo *elige*. Busca en Cited y luego llama a `cited_quote` con el identificador
   del pasaje y los renglones numerados que el usuario debe leer. El plugin descarta la prosa del modelo por
   completo y compone esos renglones **byte por byte**, cada uno con su documento, su sección y su marca
-  `[n]`, y agrega el sello `Verified by Cited`. Cuando no hay nada que elegir, la respuesta es la negativa
-  fija `No está en los documentos.`
+  `[n]`. El sello `Verified by Cited` se retiene — no se emite — mientras el host no exponga un contrato de
+  entrega acreditable, y la respuesta lleva la nota fija que lo dice (D11). Cuando no hay nada que elegir, la
+  respuesta es la negativa fija `No está en los documentos.`
 
 ## Requisitos
 
@@ -88,13 +89,13 @@ nota fija lo dice.
 
 - `/cited` enciende el modo cited para esta conversación; `/dot` lo apaga. La clave es la sesión cuando la
   superficie expone una y el perfil cuando no. `CITED_DEFAULT_MODE` fija el modo inicial. La confirmación de
-  `/cited` promete la fuente y el sello para el **mensaje final** de un turno cited, no para todo lo que una
-  superficie pudo haber mostrado mientras se escribía la respuesta, y el sello sigue la política de entrega
-  de abajo: se retiene en `api_server` y su ruta SSE, con streaming, con TTS de streaming, con comentarios
-  intermedios y cuando la superficie o la configuración no se pueden determinar. La confirmación de `/dot`
-  dice que ninguna respuesta se sella ni se reemplaza; el único caso en que el texto entregado se reemplaza
-  es una respuesta dot cuyo texto es *solo* la marca reservada `Verified by Cited`: se quita toda aparición
-  de la marca y, si no queda nada más, el texto pasa a ser la nota fija que lo dice.
+  `/cited` declara el alcance de la promesa: el **mensaje final** que compone el plugin, no los borradores que
+  una superficie pueda mostrar mientras se escribe la respuesta ni los avisos que el host agregue después.
+  También declara la condición del sello: **la marca no se emite hoy**, porque el host no expone un contrato
+  de entrega acreditable (D11), así que la respuesta lleva la nota fija que dice que el sello se retiene. La
+  confirmación de `/dot` dice que la marca reservada se retira de **cualquier** respuesta del modelo, en
+  cualquier presentación que el consumidor renderice; si no queda nada más, el texto pasa a ser la nota fija
+  que lo dice.
 - En modo cited, `pre_llm_call` inyecta las reglas: llama primero a Cited, elige los renglones con
   `cited_quote` y no escribas la respuesta. El texto del modelo se descarta por completo. Un render real,
   de `cited_quote` con `{"passage": "P1", "lines": [4]}` contra `cafe-la-horquilla.md · Precios`, es:
@@ -105,7 +106,10 @@ nota fija lo dice.
   - Afinacion de bicicleta: 380 pesos. [1]
   Fuente: cafe-la-horquilla.md - Precios
 
-  Verified by Cited
+  Note on delivery: the host does not expose a per-turn delivery policy that accredits the effective
+  receivers and the guarantee that the terminal message is the plugin's composition, so the plugin cannot
+  prove what was delivered. The verified seal is withheld here because something else may have been visible
+  before this answer was verified. The text above is still copied from the documents of this turn.
   ```
 
   Con `CITED_LANGUAGE=en` la plantilla de entrada es `From your documents:` y la negativa
@@ -119,12 +123,15 @@ nota fija lo dice.
 - Cuando no hay nada que mostrar, es decir, el modelo no llamó a `cited_quote`, hay un `status: refused` en
   cualquier punto del turno, o el turno no tuvo extractos, la respuesta es la negativa fija
   `No está en los documentos.` (en inglés, `It is not in the documents.`). Nunca lleva el sello.
-- El sello `Verified by Cited` solo lo agrega el plugin, solo después de persistir el texto exacto que se
-  entrega y solo si la política de entrega lo permite. La marca `[1]`, la fuente y el sello los genera el
-  plugin; el modelo no escribe ninguno.
+- El sello `Verified by Cited` solo lo agregaría el plugin, solo después de persistir el texto exacto que se
+  entrega y solo si la política de entrega lo permite **y** el host acredita la entrega del turno (D11).
+  Mientras el host no lo haga, la marca no se emite en ninguna ruta y la respuesta lo dice con la nota fija.
+  La marca `[1]` y la fuente las genera el plugin; el modelo no escribe ninguna.
 - El modo dot entrega el texto del modelo tal cual. Se quita toda aparición de la marca reservada
-  `Verified by Cited`, incluida su presentación en Markdown; si el texto era solo la marca, lo que se
-  entrega es la nota fija que lo dice.
+  `Verified by Cited` de todo el documento, en cualquier presentación que el consumidor renderice: markup
+  Markdown, énfasis, enlaces inline y por referencia, entidades nombradas y numéricas y saltos suaves
+  incluidos. Si la limpieza no puede completarse, lo que se entrega es una nota fija segura y nunca el texto
+  sin transformar del modelo. Si el texto era solo la marca, lo que se entrega es la nota fija que lo dice.
 - Los totales y otros valores calculados quedan fuera de esta ronda: pertenecen a la misión de documentos,
   donde una herramienta los calcula por código y registra la procedencia.
 
@@ -144,18 +151,19 @@ ellos, y cubre cada superficie del host que entrega texto o voz:
 
 | Superficie | El sello |
 |---|---|
-| `api_server` (la ruta SSE de la app de escritorio) | Siempre se retiene. Esa superficie arma su propio stream, que ninguna configuración de aquí alcanza. |
-| `desktop` | Siempre se retiene, por la misma razón: la app cablea su propio stream SSE. |
-| Plataforma de mensajería (Telegram, Slack, Discord, WeCom, Feishu, DingTalk, QQ y similares) | Se retiene cuando el `streaming` efectivo está encendido para esa plataforma. |
-| Comentario intermedio del asistente (`display.interim_assistant_messages`) | Se retiene cuando los mensajes intermedios están encendidos para la plataforma del turno. |
-| TTS de streaming (`tts.auto_tts`) | Se retiene cuando `tts.auto_tts` está encendido: la voz es una entrega que el turno no puede recuperar. |
-| Una plataforma que el plugin no puede resolver | Se retiene: no puede probar que nada más haya sido visible. |
-| Una configuración que no se puede leer | Se retiene, por la misma razón. |
-| CLI | Se retiene con `display.streaming: true` o con el comentario intermedio encendido. Con ambos apagados, el sello se otorga. `--format stream-json` igual emite eventos `text`, así que **quien consuma ese formato debe mostrar solo el registro terminal `result`**; un consumidor que concatene `text`, razonamiento o comentarios vería el borrador. |
+| Toda superficie | **Retenido.** El host de esta versión no expone ninguna política por turno de los receptores efectivos ni garantía de que el mensaje terminal sea la composición del plugin, así que el punto único de capacidad (`delivery.accredited_delivery()`) responde "no acreditado" y la marca no se emite (D11). Una versión futura del host que ofrezca ambas mitades vuelve a encender el sello, y solo una prueba del host real lo demuestra. |
+| `api_server` (la ruta SSE de la app de escritorio) | La superficie legible nunca queda limpia: esa superficie arma su propio stream, que ninguna configuración de aquí alcanza. |
+| `desktop` | La superficie legible nunca queda limpia, por la misma razón: la app cablea su propio stream SSE. |
+| Plataforma de mensajería (Telegram, Slack, Discord, WeCom, Feishu, DingTalk, QQ y similares) | La superficie legible no queda limpia cuando el `streaming` efectivo está encendido para esa plataforma. |
+| Comentario intermedio del asistente (`display.interim_assistant_messages`) | No queda limpia cuando los mensajes intermedios están encendidos para la plataforma del turno. |
+| TTS de streaming (`tts.auto_tts`) | No queda limpia cuando `tts.auto_tts` está encendido: la voz es una entrega que el turno no puede recuperar. |
+| Una plataforma que el plugin no puede resolver | No queda limpia: no puede probar que nada más haya sido visible. |
+| Una configuración que no se puede leer, o un `FailedConfigRead` | No queda limpia, por la misma razón. |
+| CLI | No queda limpia con `display.streaming: true` o con el comentario intermedio encendido. Con ambos apagados la superficie legible queda limpia, y el sello igual se retiene porque el host no está acreditado. `--format stream-json` igual emite eventos `text`, así que **quien consuma ese formato debe mostrar solo el registro terminal `result`**; un consumidor que concatene `text`, razonamiento o comentarios vería el borrador. |
 
-Una superficie de solo entrada (`local`, un webhook) nunca entrega un borrador a un usuario, así que solo
-retiene por las razones que aplican a toda superficie. Cuando el sello se retiene, la respuesta lleva una
-nota fija que nombra la superficie y qué apagar.
+Una superficie de solo entrada (`local`, un webhook) nunca entrega un borrador a un usuario, así que su
+superficie legible queda limpia salvo que aplique otra razón. Cuando el sello se retiene, la respuesta lleva
+una nota fija que nombra la superficie y qué apagar, o la acreditación que falta.
 
 La configuración exacta del gateway:
 
@@ -174,11 +182,11 @@ tts:
 ```
 
 `display.streaming` es solo del CLI; el gateway resuelve primero
-`display.platforms.<plataforma>.streaming`. El plugin otorga el sello solo cuando la instantánea muestra de
-forma afirmativa que nada más pudo haber sido visible. `docs/upstream-proposal.md` (inglés) especifica el
-hook de política de entrega por turno que Hermes necesitaría para cerrar este hueco en todas las
-superficies, incluida la ruta SSE, con archivo y línea de cada punto que toca. No se abrió ningún pull
-request ni issue aguas arriba.
+`display.platforms.<plataforma>.streaming`. El plugin otorgaría el sello solo cuando la instantánea muestre de
+forma afirmativa que nada más pudo haber sido visible **y** el host acredite la entrega del turno; mientras
+el host no lo haga, la marca se retiene en toda ruta. `docs/upstream-proposal.md` (inglés) especifica las dos
+mitades de ese contrato: el hook de política de entrega por turno y la frontera de composición terminal, con
+archivo y línea de cada punto que toca. No se abrió ningún pull request ni issue aguas arriba.
 
 ## El registro de consistencia
 
@@ -187,8 +195,14 @@ modos: la marca UTC, un `seq` monotónico, la identidad del log, la plataforma, 
 de turno, el usuario cuando existe, el modo, la pregunta, las llamadas a Cited con sus argumentos y el
 SHA-256 **y el texto** de cada extracto devuelto, el `pid` y el número original de cada renglón elegido con
 su documento, su sección y su posición, el texto entregado, la transcripción que el plugin habría devuelto
-sin el sello, la instantánea de entrega con su decisión y el resultado del verificador, más `prev_hash` y
-`hash`. La cadena es `hash = sha256(prev_hash + canonical_json(entry sin hash))`.
+sin el sello, la instantánea de entrega con su decisión, el resultado del verificador y la
+`composition_note` fija que dice qué es la fila, más `prev_hash` y `hash`. La cadena es
+`hash = sha256(prev_hash + canonical_json(entry sin hash))`.
+
+**La fila registra la composición del plugin.** El host puede mostrar borradores mientras se genera la
+respuesta y agregar avisos propios al final (el pie de mutaciones, una explicación de salida anormal), así que
+la fila **no** es constancia del mensaje terminal. La `composition_note` dice exactamente eso dentro de la
+entrada.
 
 El append toma un lock exclusivo entre procesos sobre `<log>.lock` y, **antes de escribir un byte**, lee
 toda la cadena y valida cada esquema, `seq`, enlace y hash. Cualquier discrepancia rechaza el append y deja
@@ -225,8 +239,8 @@ directorio como `hermes_plugins.<slug>` y nunca lo instala como paquete de nivel
 Para cada turno cited que llega a `transform_llm_output`, y en una ruta del host que no agrega texto después
 de ese hook, el texto entregado es exactamente uno de tres:
 
-1. el render de los renglones textuales que eligió el modelo, con la marca, la fuente y el sello cuando la
-   instantánea de entrega del turno lo permite;
+1. el render de los renglones textuales que eligió el modelo, con la marca y la fuente, y la nota fija que
+   dice que el sello se retiene: la marca misma no se emite mientras el host no acredite la entrega;
 2. la negativa fija localizada `No está en los documentos.` (en inglés, `It is not in the documents.`),
    cuando no hay nada que mostrar, cuando Cited se negó, o cuando ningún bloque elegido pasa la revisión por
    construcción;
@@ -239,10 +253,13 @@ tres formas y el plugin no reclama esta frontera para esas rutas. El tercer cont
 `docs/upstream-proposal.md` pide la frontera de composición que cerraría ese hueco.
 
 Una sola frontera alrededor de todo el transformador convierte cualquier excepción de leer la configuración,
-resolver, renderizar, componer o persistir en la tercera respuesta. El diagnóstico se redacta del bearer y
+resolver, renderizar, componer o persistir en la tercera respuesta. El código de incidente se genera sin
+lanzar nunca: si la dependencia de entropía falla, se usa un código de reserva constante, así que la salida de
+emergencia no depende de entropía, disco, configuración ni logger. El diagnóstico se redacta del bearer y
 va solo al logger y a `stderr`, nunca a la respuesta. El estado del turno se suelta en un `finally`, así que
 la falla de un turno no puede filtrarse al siguiente. El modo dot conserva su propio contrato y nunca
-responde con una negativa, porque en modo dot el plugin nunca prometió el texto.
+responde con una negativa, porque en modo dot el plugin nunca prometió el texto; cuando la limpieza de la
+marca no puede completarse, entrega una nota fija segura y nunca `None`.
 
 ## Incompatibilidades del host
 
@@ -253,8 +270,7 @@ responde con una negativa, porque en modo dot el plugin nunca prometió el texto
   cubierto.
 - **El host puede entregar un borrador antes del veredicto.** Los deltas de las superficies de arriba
   llegan al usuario antes de que corra `transform_llm_output`, y ningún hook de plugin puede retenerlos. El
-  sello es la única señal afirmativa que este plugin puede dar, y la retiene donde no puede probar lo
-  contrario.
+  plugin no puede ver los receptores efectivos del turno, así que retiene la marca en toda ruta.
 - **El host puede agregar texto después del veredicto.** El finalizador real aplica `transform_llm_output`,
   persiste el renglón y solo después agrega su propio texto, como el footer de las mutaciones de archivo que
   fallaron (`agent/turn_finalizer.py:645-647`). El mensaje final puede entonces diferir del render que
@@ -331,14 +347,14 @@ ronda 2 ni de la ronda 3 tocó el puerto 3240.
 | `hermes plugins install "file:///…" --enable --yes-deps` | instalado en `$HERMES_HOME/plugins/hermes-cited` y habilitado |
 | El loader real | el plugin instalado carga con el gestor de plugins de Hermes y registra sus tres hooks |
 | La pregunta de precio en la ruta MCP | el stream llama a `mcp__cited__cited_search` y responde **380 pesos** con la cita de `cafe-la-horquilla.md · Precios` |
-| La pregunta de precio en modo cited | el stream llama a la `cited_search` nativa y luego a `cited_quote`; la respuesta entregada es el render del plugin, con `Fuente: cafe-la-horquilla.md - Precios` y la marca `[1]`, y el sello retenido por comentarios intermedios, como muestra la [transcripción](openspec/changes/hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) |
-| `What guarantee on repairs does bike-workshop-policies.md state?` | el render lleva **90 days** desde `bike-workshop-policies.md · Guarantee`, con el sello retenido por comentarios intermedios en la misma [transcripción](openspec/changes/hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) |
+| La pregunta de precio en modo cited | el stream llama a la `cited_search` nativa y luego a `cited_quote`; la respuesta entregada es el render del plugin, con `Fuente: cafe-la-horquilla.md - Precios` y la marca `[1]`, y el sello retenido porque el host no acredita la entrega, como muestra la [transcripción](openspec/changes/hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) |
+| `What guarantee on repairs does bike-workshop-policies.md state?` | el render lleva **90 days** desde `bike-workshop-policies.md · Guarantee`, con el sello retenido en la misma [transcripción](openspec/changes/hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) |
 | Una pregunta que los samples no responden | exactamente `No está en los documentos.`, sin dato y sin sello |
 | El registro de consistencia de esos turnos | una entrada por turno con el conteo exacto; `python -m hermes_cited.verify_log` desde el plugin instalado reporta la consistencia interna de la cadena y sale 0; alterar una entrada, quitar una de en medio, reordenarla o introducir un hueco lo hace salir 1, mientras que un corte de sufijo completo o un archivo reescrito con todos los hashes recalculados queda con consistencia interna, que es el límite documentado de la revisión |
-| Modo dot | se entrega el texto del modelo, se quita cualquier sello reservado y la entrada se registra con el verificador marcado como no aplicado |
+| Modo dot | se entrega el texto del modelo, se quita cualquier marca reservada en toda presentación, y la entrada se registra con el verificador marcado como no aplicado |
 | El contrato cited | casos adversariales prueban que un valor cambiado, un sujeto movido, una subcadena, la prosa libre y un sello falsificado nunca llegan a la respuesta entregada |
-| La frontera | una falla al leer la configuración, resolver, renderizar o persistir entrega la negativa operativa fija con un código de incidente, y el texto de un turno cited siempre es uno de los tres |
-| La política de entrega (fixtures, aparte de la corrida de arriba) | `api_server`, `desktop`, una plataforma desconocida y una configuración ilegible retienen el sello; también lo retienen `streaming` encendido para una plataforma de mensajería, `interim_assistant_messages` encendido y `tts.auto_tts` encendido; en un fixture sintético de CLI quieto, el CLI con `display.streaming: false` y el comentario apagado sella, y un cambio de la configuración después de que arrancó el turno no cambia su decisión |
+| La frontera | una falla al leer la configuración, resolver, renderizar o persistir entrega la negativa operativa fija con un código de incidente, incluso cuando falla la dependencia de entropía de ese código, que entonces usa el código de reserva constante, y el texto de un turno cited siempre es uno de los tres |
+| La política de entrega (fixtures, aparte de la corrida de arriba) | `api_server`, `desktop`, una plataforma desconocida y una configuración ilegible marcan la superficie legible como no limpia; también lo hacen `streaming` encendido para una plataforma de mensajería, `interim_assistant_messages` encendido y `tts.auto_tts` encendido; en un fixture sintético de CLI quieto la superficie legible queda limpia y el sello igual se retiene porque el host no está acreditado, y un cambio de la configuración después de que arrancó el turno no cambia su decisión |
 | La respuesta vacía | el finalizador real regresa sin invocar el hook, y el plugin reporta eso como una incompatibilidad del host en lugar de cubrirla |
 | La skill `cited` | registrada por el plugin y presente en el árbol instalado, con la regla de `cited_quote` y la nota de que los comandos son del plugin |
 
