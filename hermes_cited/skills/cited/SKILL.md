@@ -31,6 +31,14 @@ In the MCP route, without the native plugin, the same two tools appear as
 
 - Transmit what Cited returned without changing a datum: the answer, the passages, the excerpts, the
   numbers, the document names and the citation numbers. Never round, convert, translate or reword a value.
+- In cited mode, copy each sentence or line that carries a number, a price, a unit, a date or a code
+  between `« »` exactly as an excerpt of the turn writes it, with its subject, on its own line, and
+  exactly once. Never write a datum outside `« »`, not even to announce or repeat the quotation. A
+  valid answer is:
+  `«Afinación de bicicleta: 380 pesos.»`
+  `Fuente: cafe-la-horquilla.md, Precios [1].`
+  A value glued to a subject the excerpt does not give it (`Espresso: «380 pesos.»`) is refused, and
+  so is a value repeated outside the quotation.
 - Cite each passage by its number, like [1], and name the document and its section.
 - When Cited refuses, pass the refusal on. When the passages do not hold the answer, say plainly that it
   is not in the documents. Never fill that gap from the web or from general knowledge.
@@ -41,10 +49,16 @@ In the MCP route, without the native plugin, the same two tools appear as
 
 ## The two modes
 
+The two modes, the verifier and the audit log belong to the **native plugin** (`hermes-cited`). In the
+MCP-only route the same two tools exist, but `/cited`, `/dot`, the verifier and the audit log do not:
+there is no plugin to run them.
+
 - **Mode dot** (`/dot`, the default): Cited is used when it helps, and the answer is not verified.
 - **Mode cited** (`/cited`): before the turn, the strict rules are injected: answer only from the
-  passages Cited returns in that same turn. Afterwards a deterministic verifier checks every number,
-  unit, price and code of the answer against those passages. An answer that passes ends with
-  `Verified by Cited` and its sources; an answer with a value no passage contains is replaced by a
-  refusal that names it. Never state in cited mode anything you did not read in a passage.
+  excerpts Cited returns in that same turn. Afterwards a deterministic verifier accepts a datum only
+  when the whole sentence or line that carries it appears verbatim inside an excerpt of the turn.
+  An answer that passes ends with `Verified by Cited` and its sources; an answer with a value no
+  excerpt contains is replaced by a refusal that names it. Never state in cited mode anything you did
+  not read in an excerpt. On a messaging platform whose streaming is on, the seal is withheld and the
+  answer says so, because a draft may already have been visible.
 - `CITED_DEFAULT_MODE` sets the mode a conversation starts in (`dot` unless it says `cited`).

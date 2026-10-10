@@ -49,6 +49,45 @@ def _read_body(stream) -> str:
         return ""
 
 
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Every request here is authenticated, so no redirect is ever followed (H6).
+
+    Returning ``None`` makes the opener raise the 3xx as an ``HTTPError`` instead of issuing a
+    second request to whatever origin the ``Location`` header names.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _opener() -> urllib.request.OpenerDirector:
+    """A private opener. The global opener is never installed, so no other client changes."""
+    return urllib.request.build_opener(_RefuseRedirects)
+
+
+def _open(request, timeout):
+    return _opener().open(request, timeout=timeout)
+
+
+def _string_values(value):
+    """Every string inside a parsed JSON value, for the reflection check of the token (M2)."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield from _string_values(key)
+            yield from _string_values(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _string_values(item)
+
+
+def reflects_secret(value, secret: str) -> bool:
+    if not secret:
+        return False
+    return any(secret in text for text in _string_values(value))
+
+
 def call_tool_full(name: str, arguments: dict, settings: Settings) -> CitedResult:
     """Call one Cited tool and return the text and the structured content Cited answered with."""
     endpoint = endpoint_of(settings.url)
@@ -74,10 +113,18 @@ def call_tool_full(name: str, arguments: dict, settings: Settings) -> CitedResul
     timeout = max(int(settings.timeout_ms or 0), 1) / 1000.0
 
     try:
-        response = urllib.request.urlopen(request, timeout=timeout)
+        response = _open(request, timeout)
     except urllib.error.HTTPError as error:
         status = error.code
         body = _read_body(error)
+        if 300 <= status < 400:
+            raise _fail(
+                "Cited answered a redirect ({0}) at {1}. This client refuses to follow it, so the "
+                "bearer is never sent to another origin. Point CITED_URL at the final address.".format(
+                    status, endpoint
+                ),
+                token,
+            )
         if status == 401:
             raise _fail(
                 "Cited rejected the bearer (401). Check that CITED_MCP_TOKEN is the token of that "
@@ -141,6 +188,12 @@ def call_tool_full(name: str, arguments: dict, settings: Settings) -> CitedResul
         code = error.get("code") if isinstance(error, dict) else "?"
         message = error.get("message") if isinstance(error, dict) else str(error)
         raise _fail("Cited refused the call with the JSON-RPC error {0}: {1}".format(code, message), token)
+    if reflects_secret(envelope, token):
+        raise _fail(
+            "Cited answered with a body that reflects the bearer token. The answer was discarded "
+            "and nothing of it is shown or recorded.",
+            token,
+        )
 
     result = envelope.get("result")
     if not isinstance(result, dict):

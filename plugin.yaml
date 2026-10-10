@@ -22,6 +22,8 @@ optional_env:
     description: How long one call to Cited may take, in milliseconds. 30000 by default.
   - name: CITED_DEFAULT_MODE
     description: The mode a conversation starts in, dot or cited. dot by default.
+  - name: CITED_AUDIT_KEY_PATH
+    description: Where the HMAC key of the audit checkpoint lives. %APPDATA%\Katalis\hermes-cited\audit.key by default. It is never the bearer of Cited and never lives inside HERMES_HOME.
 provides_tools:
   - cited_search
   - cited_ask

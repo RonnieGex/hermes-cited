@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from .client import CitedError, call_tool_full
+from .client import CitedError, call_tool_full, redact
 from .config import settings_from_env
 
 TOOLSET = "cited"
@@ -103,14 +103,24 @@ def ask(args, **kwargs) -> str:
 
 
 def _call(name, arguments, build) -> str:
+    token = ""
     try:
         settings = settings_from_env()
+        token = settings.token
         result = call_tool_full(name, arguments, settings)
     except CitedError as error:
         return str(error)
     except Exception as error:
-        return "Cited could not be called: {0}: {1}".format(type(error).__name__, error)
-    return build(result, arguments)
+        return redact(
+            "Cited could not be called: {0}: {1}".format(type(error).__name__, error), token
+        )
+    built = build(result, arguments)
+    if token and token in built:
+        return (
+            "Cited answered with a result that reflects the bearer token. The answer was discarded "
+            "and nothing of it is shown or recorded."
+        )
+    return built
 
 
 def _search_envelope(result, arguments) -> str:
@@ -179,29 +189,58 @@ def _places_of(envelope: dict):
                 yield place
 
 
-def grounding_texts(envelope: dict) -> list:
-    """Everything Cited returned in one result: its text and the excerpt of every place."""
-    grounding = []
-    text = envelope.get("text")
-    if isinstance(text, str) and text.strip():
-        grounding.append(text)
+def grounding_excerpts(envelope: dict) -> list:
+    """The evidence of one Cited result: only the non-empty excerpt of every passage or citation.
+
+    The transport text, the query, the generated answer, the headings, the positions and the counts
+    are deliberately left out: a turn must never verify itself (B2/D2).
+    """
+    excerpts = []
     for place in _places_of(envelope):
         excerpt = place.get("excerpt")
         if isinstance(excerpt, str) and excerpt.strip():
-            grounding.append(excerpt)
-    return grounding
+            excerpts.append(excerpt)
+    return excerpts
+
+
+def excerpt_pairs(envelope: dict) -> list:
+    """``(sha256, text)`` of every excerpt, so the log can prove its digests later (H5)."""
+    from .audit import excerpt_digest
+
+    pairs = []
+    for place in _places_of(envelope):
+        excerpt = place.get("excerpt")
+        if isinstance(excerpt, str):
+            pairs.append((excerpt_digest(excerpt), excerpt))
+    return pairs
+
+
+def citation_numbers(envelope: dict) -> list:
+    """The numbers the turn's passages and citations carry, for the ``[n]`` check of H4."""
+    numbers = []
+    for place in _places_of(envelope):
+        number = place.get("n")
+        if isinstance(number, int) and number > 0 and number not in numbers:
+            numbers.append(number)
+    return numbers
+
+
+def refusals_of(envelope: dict) -> list:
+    """The refusal sentences of a ``cited_ask`` result, so the turn answers with a refusal (D2)."""
+    if envelope.get("cited_tool") != "cited_ask" or envelope.get("status") != "refused":
+        return []
+    answer = envelope.get("answer")
+    return [answer.strip()] if isinstance(answer, str) and answer.strip() else ["Cited refused."]
+
+
+def redact_result(raw: str, token: str) -> str:
+    """A visible result with the bearer replaced, for the last line of defence of H6."""
+    return redact(raw, token)
 
 
 def excerpt_digests(envelope: dict) -> list:
     """The SHA-256 of every excerpt Cited returned, for the audit entry (H5)."""
-    from .audit import excerpt_digest
-
-    digests = []
-    for place in _places_of(envelope):
-        excerpt = place.get("excerpt")
-        if isinstance(excerpt, str):
-            digests.append(excerpt_digest(excerpt))
-    return digests
+    return [digest for digest, _ in excerpt_pairs(envelope)]
 
 
 def source_labels(envelope: dict) -> list:

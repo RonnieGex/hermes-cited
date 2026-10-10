@@ -1,15 +1,25 @@
-"""The native Hermes Agent plugin: registration, the cited-mode turn and the audit log (H2-H6)."""
+"""The native Hermes Agent plugin: registration, the cited-mode turn and the audit log (H2-H6, H9, H10).
+
+The cited-mode verifier is extractive (D2): it only accepts a datum that is copied verbatim from an
+excerpt Cited returned in the same turn. The delivery policy (D1) is checked per turn: on a surface
+whose streaming is on, the seal is withheld and the answer says so. A turn whose answer cannot be
+recorded is refused without a seal instead of being delivered as verified (H10).
+"""
 
 from __future__ import annotations
 
 import json
+import logging
 import os
+import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import audit, modes, tools, verifier
+from . import audit, delivery, modes, tools, verifier
 from .config import settings_from_env
+
+logger = logging.getLogger(__name__)
 
 SKILL_PATH = Path(__file__).resolve().parent / "skills" / "cited" / "SKILL.md"
 
@@ -24,15 +34,22 @@ SKILL_DESCRIPTION = (
 CITED_RULES = (
     "Cited mode is on for this turn.\n"
     "1. Call the `cited_search` or `cited_ask` tool first, before any other tool or any knowledge of "
-    "your own, and answer only from the passages it returns.\n"
-    "2. Every number, unit, price, date and code you state must appear literally in a passage Cited "
-    "returned in this turn. Copy values exactly; never round, convert, translate or guess them.\n"
-    "3. Keep the citation marks such as [1] and name the source document and its section.\n"
-    "4. When Cited refuses, or its passages do not hold the answer, say plainly that it is not in the "
+    "your own, and answer only from the excerpts it returns.\n"
+    "2. Copy every fact verbatim. Each sentence or line that carries a number, a price, a unit, a "
+    "date or a code must be written between « » exactly as an excerpt of this turn writes it, with "
+    "its subject, on its own line, and exactly once. For example: «Afinación de bicicleta: 380 "
+    "pesos.» Never reword, round, convert, translate or move a value to another subject.\n"
+    "3. Never write a number, price, unit, date or code outside « » anywhere in the answer, not even "
+    "to announce, repeat or summarise the quotation. The only exception is a citation mark such as "
+    "[1]. A valid answer looks like this:\n"
+    "«Afinación de bicicleta: 380 pesos.»\n"
+    "Fuente: cafe-la-horquilla.md, Precios [1].\n"
+    "4. Keep the citation marks such as [1] and name the source document and its section.\n"
+    "5. When Cited refuses, or its excerpts do not hold the answer, say plainly that it is not in the "
     "documents. Never fill that gap from the web or from general knowledge.\n"
-    "5. A deterministic verifier checks this answer before the user sees it. Anything it cannot find "
-    "in the passages of this turn makes the whole answer be replaced by a refusal naming the value it "
-    "could not verify, so do not state anything you did not read in a passage.\n"
+    "6. A deterministic verifier checks this answer before delivery. A datum that is not copied "
+    "verbatim from an excerpt of this turn, or that appears outside « », makes the whole answer be "
+    "replaced by a refusal naming it, so do not state anything you did not read in an excerpt.\n"
 )
 
 _MAX_TURNS = 64
@@ -61,30 +78,47 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _secret() -> str:
+    try:
+        return settings_from_env().token
+    except Exception:
+        return os.environ.get("CITED_MCP_TOKEN", "").strip()
+
+
 class Turn:
     """What one turn of one session knows: its question, its mode and what Cited returned."""
 
-    def __init__(self):
+    def __init__(self, session_id="", turn_id=""):
+        self.session_id = str(session_id or "")
+        self.turn_id = str(turn_id or "")
         self.question = ""
         self.platform = ""
         self.user = ""
         self.mode = ""
         self.calls = []
-        self.grounding = []
+        self.excerpts = []
+        self.citations = []
+        self.refusals = []
         self.sources = []
 
     def note_call(self, envelope, tool_name, args, status):
         digests = tools.excerpt_digests(envelope) if envelope else []
+        texts = [text for _, text in tools.excerpt_pairs(envelope)] if envelope else []
         self.calls.append(
             {
                 "tool": tool_name,
                 "args": args if isinstance(args, dict) else {},
                 "status": status or "ok",
                 "excerpt_sha256": digests,
+                "excerpt_texts": texts,
             }
         )
         if envelope:
-            self.grounding.extend(tools.grounding_texts(envelope))
+            self.excerpts.extend(tools.grounding_excerpts(envelope))
+            for number in tools.citation_numbers(envelope):
+                if number not in self.citations:
+                    self.citations.append(number)
+            self.refusals.extend(tools.refusals_of(envelope))
             for label in tools.source_labels(envelope):
                 if label not in self.sources:
                     self.sources.append(label)
@@ -102,7 +136,7 @@ def _turn_of(session_id, turn_id, create=False):
             if len(_TURNS) >= _MAX_TURNS:
                 for stale in list(_TURNS)[: len(_TURNS) - _MAX_TURNS + 1]:
                     _TURNS.pop(stale, None)
-            turn = Turn()
+            turn = Turn(session_id, turn_id)
             _TURNS[key] = turn
         return turn
 
@@ -150,6 +184,25 @@ def register(ctx) -> None:
         description=SKILL_DESCRIPTION,
         frontmatter={"name": "cited", "description": SKILL_DESCRIPTION},
     )
+    _warn_about_streaming(state)
+
+
+def _warn_about_streaming(state) -> None:
+    """A load-time diagnostic when cited mode is the default and a surface streams (D1)."""
+    try:
+        if modes.resolve_mode(state, "") != "cited":
+            return
+        config = delivery.read_config(hermes_home())
+        for platform in delivery.MESSAGING_PLATFORMS + ("cli",):
+            if delivery.streaming_surface(platform) and delivery.effective_streaming(platform, config):
+                logger.warning(
+                    "hermes-cited: cited mode is on and streaming is enabled for '%s'. On that "
+                    "surface the seal is withheld and the answer says so. Set streaming off to get "
+                    "`Verified by Cited`.",
+                    platform,
+                )
+    except Exception:
+        return
 
 
 def _pre_llm_call(state):
@@ -197,43 +250,76 @@ def _transform_llm_output(state):
         if platform and not turn.platform:
             turn.platform = str(platform)
         mode = turn.mode or modes.resolve_mode(state, session_id)
+        secret = _secret()
+        seal_withheld = False
         if mode == "cited":
-            verification = verifier.verify(text, turn.grounding)
-            if verification.ok:
-                final = verifier.seal(verification, turn.sources)
-            else:
-                final = verifier.refusal(verification)
+            if turn.refusals:
                 verification = verifier.Verification(
-                    text=final,
+                    text="",
                     ok=False,
-                    claims=verification.claims,
-                    ungrounded=verification.ungrounded,
-                    has_grounding=verification.has_grounding,
+                    claims=(),
+                    ungrounded=(),
+                    has_grounding=bool(turn.excerpts),
                 )
+                final = verifier.refusal(verification, refused_reason="; ".join(turn.refusals))
+            else:
+                verification = verifier.verify(text, turn.excerpts, turn.citations)
+                if verification.ok:
+                    if delivery.seal_allowed(turn.platform or platform, home=hermes_home()):
+                        final = verifier.seal(verification, turn.sources)
+                    else:
+                        final = "{0}\n\n{1}".format(
+                            verification.text.rstrip(), delivery.withheld_note(turn.platform or platform)
+                        )
+                        seal_withheld = True
+                else:
+                    final = verifier.refusal(verification)
+                    verification = verifier.Verification(
+                        text=final,
+                        ok=False,
+                        claims=verification.claims,
+                        ungrounded=verification.ungrounded,
+                        has_grounding=verification.has_grounding,
+                    )
             applied = True
         else:
             final = text
             verification = verifier.Verification(
-                text=text, ok=False, claims=(), ungrounded=(), has_grounding=bool(turn.grounding)
+                text=text,
+                ok=False,
+                claims=(),
+                ungrounded=(),
+                has_grounding=bool(turn.excerpts),
             )
             applied = False
-        _write_entry(turn, mode, final, verification, applied)
+        _entry, error = _write_entry(turn, mode, final, verification, applied, secret, seal_withheld)
+        if error and mode == "cited":
+            final = verifier.operational_refusal(error)
+            verification = verifier.Verification(
+                text=final,
+                ok=False,
+                claims=(),
+                ungrounded=(),
+                has_grounding=bool(turn.excerpts),
+            )
+            applied = False
+            print("hermes-cited: the audit entry could not be written: {0}".format(error), file=sys.stderr)
         _drop_turn(session_id, turn_id)
         return final if mode == "cited" else None
 
     return transform_llm_output
 
 
-def _write_entry(turn, mode, final, verification, applied):
+def _write_entry(turn, mode, final, verification, applied, secret, seal_withheld=False):
     entry = {
         "ts": _now(),
         "platform": turn.platform,
-        "session": "",
+        "session": turn.session_id,
+        "turn_id": turn.turn_id,
         "user": turn.user,
         "mode": mode,
         "question": turn.question,
         "tool_calls": turn.calls,
-        "excerpts": [audit.excerpt_digest(item) for item in turn.grounding],
         "sources": turn.sources,
         "response": final,
         "verifier": {
@@ -241,14 +327,15 @@ def _write_entry(turn, mode, final, verification, applied):
             "ok": bool(verification.ok),
             "claims": list(verification.claims),
             "ungrounded": list(verification.ungrounded),
-            "grounding": len(turn.grounding),
+            "grounding": len(turn.excerpts),
+            "seal_withheld": bool(seal_withheld),
         },
     }
+    entry = audit.redact(entry, secret)
     try:
-        audit.append_entry(audit_path(), entry)
-    except Exception:
-        return None
-    return entry
+        return audit.append_entry(audit_path(), entry), None
+    except Exception as error:
+        return None, audit.redact("{0}: {1}".format(type(error).__name__, error), secret)
 
 
 def read_settings():
