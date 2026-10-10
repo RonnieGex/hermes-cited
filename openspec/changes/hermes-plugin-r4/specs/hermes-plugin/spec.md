@@ -309,11 +309,11 @@ amends C1 to C4 of the round 4 contract as recorded in the round 6 mission and i
 
 #### Scenario: no route emits the seal
 - **WHEN** a cited turn is delivered on a quiet CLI, on a quiet messaging platform or on any other surface
-- **THEN** the answer SHALL NOT contain the mark, SHALL carry the fixed note that names the unaccredited delivery, and the entry SHALL record `verified: false` and `seal_withheld: true`
+- **THEN** the plugin SHALL NOT emit the mark as a seal (a documentary line that contains the phrase is data and is shown as data), the answer SHALL carry the fixed note that names the unaccredited delivery, and the entry SHALL record `verified: false` and `seal_withheld: true`
 
-#### Scenario: the capability point is the only blocker
-- **WHEN** the capability point is turned on and every surface the snapshot can read is quiet
-- **THEN** the same fixture SHALL emit the seal, proving that the absence of the host contract is what withholds it
+#### Scenario: the capability point gates the seal in the synthetic fixture
+- **WHEN** the capability point is turned on in the synthetic fixture and every surface the snapshot can read is quiet
+- **THEN** that fixture SHALL emit the seal, proving that the capability point is what gates it; a publishable activation SHALL also restore the protection of the mark with the render semantics of the host, as H18 requires, so this fixture alone never authorises one
 
 #### Scenario: the record names its own scope
 - **WHEN** an entry is read
@@ -350,8 +350,9 @@ only assertion.
 
 ### Requirement: H18 — The reserved mark is not protected while the seal does not exist (D12)
 
-With D11 the plugin emits no seal on any route, so no authentic seal exists that anyone could forge. The
-protection of the reserved mark SHALL therefore be **retired**: `strip_mark`, `contains_mark`,
+The plugin SHALL NOT protect the reserved mark while the seal does not exist: with D11 it emits no seal on any
+route, so no authentic seal exists that anyone could forge. The protection of the reserved mark SHALL therefore be
+**retired**: `strip_mark`, `contains_mark`,
 `consumer_visible`, `SanitizationFailed` and the fixed sanitisation notes SHALL NOT exist in the product, and
 the retired code SHALL stay in the history of the repository instead of remaining dead in the tree. Dot mode
 SHALL return the model's text **intact** — the transformer SHALL answer `None` and the host SHALL keep the
