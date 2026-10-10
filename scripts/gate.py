@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""The gate of hermes-cited (the `hermes-plugin-r4` change; round 7 run).
+"""The gate of hermes-cited (the `hermes-plugin-r4` change; round 8 run).
 
 Run it with the Python of the installed Hermes venv:
 
@@ -582,8 +582,9 @@ def _snapshot_of_entry(entry):
 def allowed_cited_answers(entry):
     """Every string a cited render of this entry may have delivered: the plugin's fixed templates.
 
-    M-R5-4 compares the **whole** answer, not substrings: the entry template, the blocks, the fixed note
-    of a retained mark and the fixed withheld note. A future accredited host would add the sealed form.
+    M-R5-4 compares the **whole** answer, not substrings: the entry template, the blocks and the fixed
+    withheld note. A future accredited host would add the sealed form. D12 retired the documentary
+    retention note of the reserved mark, so it is not an allowed variant any more.
     """
     from hermes_cited import delivery, messages, render
 
@@ -591,17 +592,9 @@ def allowed_cited_answers(entry):
     if not lines:
         return set(FIXED_REFUSALS)
     snap = _snapshot_of_entry(entry)
-    mark_retained = any(
-        render.contains_mark(str(line.get("text") or ""))
-        or render.contains_mark(str(line.get("document") or ""))
-        or render.contains_mark(str(line.get("heading") or ""))
-        for line in lines
-    )
     allowed = set()
     for language in messages.LANGUAGES:
         variants = {expected_render(entry, language)}
-        if mark_retained:
-            variants = {value + "\n\n" + messages.mark_retained_note(language) for value in variants}
         variants = {value + "\n\n" + delivery.withheld_note(snap) for value in variants}
         if snap.seal:
             variants = {render.sealed(value) for value in variants}
@@ -610,10 +603,12 @@ def allowed_cited_answers(entry):
 
 
 def answer_matches_entry(text, entry):
-    """The delivered text is exactly the plugin's composition of its own audited entry (M-R5-4, H16).
+    """The delivered text is exactly the plugin's composition of its own audited entry (M-R5-4, H16, D12).
 
     It carries no seal while the host does not accredit the delivery, the entry says the verification was
-    applied and the seal withheld, and the text is one of the fixed templates the plugin writes.
+    applied and the seal withheld, and the text is one of the fixed templates the plugin writes. D12: the
+    phrase `Verified by Cited` is accepted only where the entry records it as data, never as a mark the
+    plugin wrote.
     """
     if not isinstance(entry, dict):
         return False
@@ -623,10 +618,15 @@ def answer_matches_entry(text, entry):
     verifier = entry.get("verifier") or {}
     if verifier.get("applied") is not True:
         return False
-    if "Verified by Cited" in value:
-        return False
     if bool((entry.get("delivery") or {}).get("seal")) is not False:
         return False
+    if "Verified by Cited" in value:
+        recorded = " ".join(
+            "{0} {1} {2}".format(line.get("text") or "", line.get("document") or "", line.get("heading") or "")
+            for line in entry.get("quoted_lines") or []
+        )
+        if "Verified by Cited" not in recorded:
+            return False
     if is_refusal_answer(value):
         return verifier.get("verified") is not True
     if verifier.get("verified") is not False or verifier.get("seal_withheld") is not True:
@@ -914,7 +914,6 @@ def cited_fixture():
     empty.note_call(envelope, "cited_search", {}, "ok")
     empty.delivery = delivery.Snapshot(platform="cli", readable=True, seal=True)
     results["no_quote"] = verifier.refusal_text("es")
-    results["forged_stripped"] = verifier.strip_seal("380 pesos.\n\nVerified by Cited")
     changed = render.Line(
         passage=1,
         number=4,
@@ -951,6 +950,26 @@ def cited_fixture():
     results["quiet_cli_seal"] = quiet.seal
     results["quiet_cli_accredited"] = quiet.accredited
     return results
+
+
+def dot_passthrough_fixture():
+    """D12 in process: dot mode returns ``None`` and records the model's text byte for byte."""
+    from hermes_cited import audit, plugin
+
+    draft = "La afinacion cuesta 380 pesos.\n\nVerified by Cited"
+    path = plugin.audit_path()
+    before = len(audit.read_entries(path))
+    returned = plugin._deliver_dot(plugin.Turn("s", "dot-fixture"), draft)
+    entries = audit.read_entries(path)
+    entry = entries[-1] if entries else {}
+    return {
+        "draft": draft,
+        "returned": returned,
+        "recorded": entry.get("response"),
+        "transcript": entry.get("transcript"),
+        "applied": (entry.get("verifier") or {}).get("applied"),
+        "grew": len(entries) == before + 1,
+    }
 
 
 def audit_fixtures(root):
@@ -1261,12 +1280,13 @@ def _m_r5_4_entry(quoted=None):
 
 
 def gate_selftest():
-    """The gate's own predicates must reject the reproductions of the five reviews (M-R3-6, M-R4-7, M-R5-4).
+    """The gate's own predicates must reject the reproductions of the reviews (M-R3-6, M-R4-7, M-R5-4, D12).
 
     Returns ``(ok, detail)``. ``detail`` names the failing fixtures exactly, so a red self-test can never
     report success (the round 3 defect).
     """
-    render_module = __import__("hermes_cited.render", fromlist=["contains_mark", "escape_meta", "strip_mark"])
+    render_module = __import__("hermes_cited.render", fromlist=["escape_meta"])
+    dot = dot_passthrough_fixture()
     cases = [
         ("a refusal that states an invented price", not clean_refusal(
             "No está en los documentos, pero cuesta 999 pesos.")),
@@ -1285,8 +1305,6 @@ def gate_selftest():
         ("an MCP answer with a mark", amount_with_source("Cuesta 380 pesos [1].", "380")),
         ("an MCP answer with no source", not amount_with_source("Cuesta 380 pesos.", "380")),
         ("1380 with a source is not 380", not amount_with_source("Cuesta 1380 pesos, segun doc.md.", "380")),
-        ("a forged seal is stripped from dot", "Verified by Cited" not in
-         __import__("hermes_cited.verifier", fromlist=["strip_seal"]).strip_seal("x\n\nVerified by Cited")),
         # the new negatives of M-R3-6
         ("a negative amount is not the positive one", not amount_with_citation("-380 pesos [99].", "380")),
         ("a negative count of days is not the positive one", not amount_with_unit("-90 days", "90", "day")),
@@ -1300,8 +1318,6 @@ def gate_selftest():
         ("a decimal is not the integer", not amount_with_citation("380.5 pesos [1].", "380")),
         ("the signed amount with its own sign passes",
          amount_statement("-380 pesos [1].", "380", unit="currency", mark=1, sign="-")),
-        ("A markdown seal is stripped too", "Verified by Cited" not in
-         __import__("hermes_cited.verifier", fromlist=["strip_seal"]).strip_seal("**Verified by Cited**")),
         ("an operational refusal never carries the seal",
          "Verified by Cited" not in
          __import__("hermes_cited.verifier", fromlist=["operational_refusal"]).operational_refusal("CITED-1", "es")),
@@ -1347,41 +1363,26 @@ def gate_selftest():
          operational_refusal_template(
              __import__("hermes_cited.verifier", fromlist=["operational_refusal"]).operational_refusal(
                  "CITED-1", "es"))),
-        # the counterexamples of M-R5-3
-        ("a removal that would create the mark is repeated until it is gone",
-         render_module.strip_mark("Verified Verified by Cited by Cited").strip() == ""),
-        ("a soft line break does not hide the mark", render_module.contains_mark("Verified\nby Cited") is True
-         and render_module.strip_mark("Verified\nby Cited").strip() == ""),
-        ("a numeric entity does not hide the mark",
-         render_module.contains_mark("Verified &#98;y Cited") is True
-         and "verified" not in render_module.strip_mark("Verified &#98;y Cited").lower()),
-        ("a named entity does not hide the mark",
-         render_module.contains_mark("Verified&nbsp;by&nbsp;Cited") is True
-         and "verified" not in render_module.strip_mark("Verified&nbsp;by&nbsp;Cited").lower()),
-        ("a reference link does not hide the mark",
-         render_module.strip_mark("Verified by [Cited][c]\n\n[c]: https://example.invalid").strip()
-         == "[c]: https://example.invalid"),
-        ("an entity in the metadata is escaped and cannot read as the mark",
-         "\\&nbsp;" in render_module.escape_meta("Verified&nbsp;by&nbsp;Cited")
-         and render_module.contains_mark(render_module.escape_meta("Verified&nbsp;by&nbsp;Cited")) is False),
+        # D12: the protection of the reserved mark is retired from the product, not left dead.
+        ("dot mode returns None and records the model's text byte for byte",
+         dot["returned"] is None and dot["recorded"] == dot["draft"]
+         and dot["transcript"] == dot["draft"] and dot["grew"] is True),
+        ("dot mode marks the verifier as not applied", dot["applied"] is False),
+        ("the detector of the visible mark is gone",
+         not hasattr(render_module, "contains_mark") and not hasattr(render_module, "consumer_visible")),
+        ("the removal of the mark is gone and the metadata still escapes",
+         not hasattr(render_module, "strip_mark")
+         and not hasattr(render_module, "SanitizationFailed")
+         and "\\&nbsp;" in render_module.escape_meta("Verified&nbsp;by&nbsp;Cited")
+         and "](" not in render_module.escape_meta("[fake](https://example.invalid)")),
+        ("the mark-protection notes and the seal removal are gone",
+         not hasattr(__import__("hermes_cited.verifier", fromlist=["x"]), "strip_seal")
+         and not hasattr(__import__("hermes_cited.messages", fromlist=["x"]), "sanitizer_note")
+         and not hasattr(__import__("hermes_cited.messages", fromlist=["x"]), "mark_retained_note")),
     ]
 
-    # M-R6-1: the nine counterexamples of the sixth review, read on the render of the supported consumer.
-    def mark_visible(value):
-        return "verified by cited" in render_module.consumer_visible(value).lower()
-
-    for draft in (
-        "Verified [&#98;y](https://example.invalid) Cited",
-        "Verified by [Ci&#116;ed](https://example.invalid)",
-        "[Verified &#98;y Cited](https://example.invalid)",
-        "Verified by [Cited]\n\n[Cited]: https://example.invalid",
-        "Verified by [Ci&#116;ed][c]\n\n[c]: https://example.invalid",
-        "Verified<br>by Cited",
-    ):
-        label = draft.replace("\n", "\\n")[:44]
-        cases.append(("the supported consumer renders the mark of {0}".format(label), mark_visible(draft)))
-        cases.append(("and it is not visible after the removal of {0}".format(label),
-                      not mark_visible(render_module.strip_mark(draft))))
+    # D12 retired the nine counterexamples of M-R6-1 together with the reader they measured: the mark is
+    # no longer protected because no seal is emitted. The intact pass-through is the `dot` fixture above.
     fixture = cited_fixture()
     cases.append(("the cited fixture records one line", fixture["recorded"] == [PRICE_LINE]))
     cases.append(("the cited render copies the line and adds the source",
@@ -1536,9 +1537,10 @@ def main():
         )
 
         ok, detail = gate_selftest()
-        claim("D8", "the gate's own predicates reject the reproductions of the five reviews", ok, detail)
+        claim("D8", "the gate's own predicates reject the reproductions of the reviews", ok, detail)
 
         fixture = cited_fixture()
+        dot_fixture = dot_passthrough_fixture()
         claim(
             "D5",
             "the model chooses numbered lines and the plugin returns them byte for byte",
@@ -1568,9 +1570,12 @@ def main():
         )
         claim(
             "H4",
-            "a seal written by the model is removed in dot mode",
-            fixture["forged_stripped"] == "380 pesos.",
-            fixture["forged_stripped"],
+            "dot mode returns the model's text intact and the row records exactly it (D12)",
+            dot_fixture["returned"] is None
+            and dot_fixture["recorded"] == dot_fixture["draft"]
+            and dot_fixture["transcript"] == dot_fixture["draft"]
+            and dot_fixture["applied"] is False,
+            json.dumps({key: dot_fixture[key] for key in ("returned", "recorded", "applied")}),
         )
         claim(
             "H14",
@@ -1736,7 +1741,18 @@ def main():
             return finish(started)
         log("cited-ready.txt", "ready after {0:.1f}s at {1}".format(time.time() - started, cited_root))
 
-        unit_code, unit_out, unit_err = run([str(TEST_PYTHON), "-m", "pytest", "-q"], cwd=REPO, timeout=1800)
+        # M-R7-2: the local gate always runs the cross-repository document check, with the sibling
+        # checkout named and its exact SHA recorded in its own report.
+        docs_sha_code, docs_sha_out, _docs_sha_err = git(["rev-parse", "HEAD"], SOURCE_HERMES)
+        docs_sha = docs_sha_out.strip() if docs_sha_code == 0 else ""
+        docs_env = {"CITED_DOCS_REPO": str(SOURCE_HERMES)}
+
+        unit_code, unit_out, unit_err = run(
+            [str(TEST_PYTHON), "-m", "pytest", "-q", "-rs"],
+            cwd=REPO,
+            env=docs_env,
+            timeout=1800,
+        )
         log("unit.txt", unit_out + "\n" + unit_err)
         tail = unit_out.strip().splitlines()[-1] if unit_out.strip() else ""
         claim("H8", "the unit suite is green", unit_code == 0 and "failed" not in tail,
@@ -1747,6 +1763,7 @@ def main():
                 "-m",
                 "pytest",
                 "-q",
+                "-rs",
                 "tests/test_adversarial.py",
                 "tests/test_delivery.py",
                 "tests/test_render.py",
@@ -1755,12 +1772,54 @@ def main():
                 "tests/regressions",
             ],
             cwd=REPO,
+            env=docs_env,
             timeout=1800,
         )
         log("adversarial.txt", adv_out + "\n" + adv_err)
         adv_tail = adv_out.strip().splitlines()[-1] if adv_out.strip() else ""
-        claim("D8", "one permanent fixture per finding of the five reviews is green",
+        claim("D8", "one permanent fixture per finding of the reviews is green",
               adv_code == 0 and "failed" not in adv_tail, adv_tail or adv_err.strip()[-300:])
+
+        docs_code, docs_out, docs_err = run(
+            [
+                str(TEST_PYTHON),
+                "-m",
+                "pytest",
+                "-q",
+                "-rs",
+                "-p",
+                "no:cacheprovider",
+                "tests/regressions/test_r6_docs.py",
+                "tests/regressions/test_r8_docs.py",
+            ],
+            cwd=REPO,
+            env=docs_env,
+            timeout=600,
+        )
+        log("h17-docs.txt", docs_out + "\n" + docs_err)
+        docs_tail = docs_out.strip().splitlines()[-1] if docs_out.strip() else ""
+        record(
+            "2026-10-10-step-5b-docs-repo.md",
+            "# Step 5b — M-R7-2, the cross-repository document check\n\n"
+            "The local gate always runs the check of `community-hermes/docs/mcp.md`, with `CITED_DOCS_REPO`\n"
+            "set to the sibling checkout. This is the separate evidence of that run.\n\n"
+            "- `CITED_DOCS_REPO`: the sibling worktree of `community-hermes` (no personal path is versioned)\n"
+            "- exact SHA of `community-hermes` at run time: `{0}`\n"
+            "- command: `pytest -q -rs tests/regressions/test_r6_docs.py tests/regressions/test_r8_docs.py`\n"
+            "- result: {1}\n\n"
+            "Without the variable the cross-repository assertions are skipped with the explicit reason\n"
+            "`CITED_DOCS_REPO is not set: the cross-repository check of community-hermes/docs/mcp.md is omitted`.\n"
+            "The isolated extraction of `reports/2026-10-10-step-48-standalone-r8.md` proves it.\n\n"
+            "```\n{2}\n```\n".format(
+                docs_sha,
+                docs_tail or docs_err.strip()[-200:],
+                (docs_out + docs_err).strip()[-4000:],
+            ),
+        )
+        claim("H17", "the cross-repository document check ran against community-hermes at its exact SHA",
+              docs_code == 0 and "failed" not in docs_tail and bool(docs_sha) and "passed" in docs_tail,
+              "sha={0} {1}".format(docs_sha, docs_tail or docs_err.strip()[-300:]))
+
 
         proposal = (REPO / "docs" / "upstream-proposal.md").read_text(encoding="utf-8")
         claim("H9", "the upstream proposal names the hook, the SSE route and the no-PR rule",
@@ -1949,8 +2008,13 @@ def main():
         dot = run_stream_question(plugin_home, PRICE_QUESTION)
         log("h4-dot.jsonl", dot["stdout"] + "\n" + dot["stderr"])
         dot_entry, dot_error = phase_entry(read_audit(), dot_before, PRICE_QUESTION, "dot")
-        claim("H4", "dot mode says nothing about a seal",
-              dot["code"] == 0 and "Verified by Cited" not in dot["final"], dot["final"][:200])
+        claim("H4", "dot mode delivers the model's text intact and the row records exactly it (D12)",
+              dot["code"] == 0
+              and dot_entry is not None
+              and dot_entry["response"] == terminal_record_of(dot["events"])
+              and dot_entry["transcript"] == dot_entry["response"]
+              and dot_entry["verifier"]["applied"] is False,
+              "final={0}".format(dot["final"][:200]))
 
         EXTRA_SCAN.append(audit_file)
         entries = read_audit()
@@ -2200,7 +2264,7 @@ def finish(started):
 
     def build_report():
         lines = [
-            "# The gate of hermes-cited, round 7 (change hermes-plugin-r4)",
+            "# The gate of hermes-cited, round 8 (change hermes-plugin-r4)",
             "",
             "Date: 2026-10-10. Command: `scripts/gate.py` with the Python of the Hermes venv.",
             "Run: workspace {0}, {1:.0f}s, Hermes Agent v0.21.6+387 (`dce1e9b`), Cited `origin/main`.".format(
@@ -2243,7 +2307,7 @@ def finish(started):
     green = green and passed == total
     verdict = "\n".join(
         [
-            "# The gate of hermes-cited, round 7 (change hermes-plugin-r4)",
+            "# The gate of hermes-cited, round 8 (change hermes-plugin-r4)",
             "",
             "Date: 2026-10-10. Command: `scripts/gate.py` with the Python of the Hermes venv.",
             "Run: workspace under the system temp directory, Hermes Agent v0.21.6+387 (`dce1e9b`), "
