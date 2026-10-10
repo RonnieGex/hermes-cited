@@ -1,4 +1,4 @@
-"""The two native tools: schemas, envelopes, clear unconfigured errors and no token leak (H2, H6)."""
+"""The three native tools: schemas, envelopes, clear unconfigured errors and no token leak (H2, H6, H11)."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from hermes_cited import tools
 def test_the_schemas_use_the_cited_parameter_names():
     search = tools.SEARCH_SCHEMA
     ask = tools.ASK_SCHEMA
+    quote = tools.QUOTE_SCHEMA
     assert search["properties"]["query"]["type"] == "string"
     assert search["required"] == ["query"]
     assert search["properties"]["limit"]["minimum"] == 1
@@ -19,14 +20,18 @@ def test_the_schemas_use_the_cited_parameter_names():
     assert ask["properties"]["question"]["type"] == "string"
     assert ask["properties"]["sessionId"]["type"] == "string"
     assert ask["required"] == ["question"]
+    assert quote["required"] == ["passage", "lines"]
+    assert quote["properties"]["passage"]["type"] == "integer"
+    assert quote["properties"]["lines"]["type"] == "array"
+    assert quote["properties"]["lines"]["items"]["type"] == "integer"
 
 
 def test_the_toolset_and_the_tool_names():
     assert tools.TOOLSET == "cited"
-    assert tools.TOOL_NAMES == ("cited_search", "cited_ask")
+    assert tools.TOOL_NAMES == ("cited_search", "cited_ask", "cited_quote")
 
 
-def test_search_returns_the_passages_with_their_excerpt(cited_env):
+def test_search_returns_the_passages_with_their_numbered_lines(cited_env):
     raw = tools.search({"query": "precio"})
     envelope = json.loads(raw)
     assert envelope["cited_tool"] == "cited_search"
@@ -34,6 +39,10 @@ def test_search_returns_the_passages_with_their_excerpt(cited_env):
     assert envelope["passages"][0]["n"] == 1
     assert envelope["passages"][0]["excerpt"].startswith("Precios")
     assert envelope["passages"][0]["document"] == "cafe-la-horquilla.md"
+    from hermes_cited import render
+
+    assert envelope["passages"][0]["lines"] == render.numbered_lines(envelope["passages"][0]["excerpt"])
+    assert envelope["passages"][0]["lines"][3]["line"] == 4
 
 
 def test_ask_returns_the_answer_and_its_citations(cited_env):
@@ -43,6 +52,7 @@ def test_ask_returns_the_answer_and_its_citations(cited_env):
     assert envelope["status"] == "answered"
     assert "380 pesos" in envelope["answer"]
     assert envelope["citations"][0]["excerpt"] == "Afinacion de bicicleta: 380 pesos."
+    assert envelope["citations"][0]["lines"][0]["text"] == "Afinacion de bicicleta: 380 pesos."
     assert "Sources:" in envelope["text"]
 
 
@@ -183,6 +193,15 @@ def test_source_labels_name_the_document_and_the_section(cited_env):
     envelope = tools.parse_tool_result(tools.ask({"question": "precio"}))
     labels = tools.source_labels(envelope)
     assert labels == ["cafe-la-horquilla.md - Precios"]
+
+
+def test_quote_places_keep_the_order_and_the_source(cited_env):
+    envelope = tools.parse_tool_result(tools.search({"query": "precio"}))
+    places = tools.evidence_places(envelope)
+    assert [place["n"] for place in places] == [1, 2]
+    assert places[0]["document"] == "cafe-la-horquilla.md"
+    assert places[0]["heading"] == "Precios"
+    assert places[0]["lines"][3]["text"] == "- Afinacion de bicicleta: 380 pesos."
 
 
 @pytest.mark.parametrize("name", ["cited_search", "cited_ask"])

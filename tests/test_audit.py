@@ -1,4 +1,4 @@
-"""The hash-chained audit log, its checkpoint and its verifier (H5, M3, M4, D3)."""
+"""The hash-chained audit log, its checkpoint, its custody and its verifier (H5, M3, M4, D3, D6)."""
 
 from __future__ import annotations
 
@@ -304,3 +304,122 @@ def test_concurrent_processes_keep_one_chain(tmp_path):
     count, error = audit.verify_file(path)
     assert error is None
     assert count == 20
+
+
+def test_the_key_is_created_before_the_first_row(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    assert not audit.key_path().exists()
+    audit.append_entry(path, _payload(1))
+    assert audit.key_path().exists()
+    assert audit.load_existing_key()
+
+
+def test_a_second_append_reuses_the_same_identity(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    first = audit.append_entry(path, _payload(1))
+    second = audit.append_entry(path, _payload(2))
+    assert first["log_id"] == second["log_id"]
+
+
+def test_an_empty_log_whose_identity_is_registered_cannot_start_a_new_chain(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    _chain(path, 3)
+    path.write_text("", encoding="utf-8")
+    with pytest.raises(audit.AuditError):
+        audit.append_entry(path, _payload(9))
+
+
+def test_a_deleted_log_whose_identity_is_registered_cannot_start_a_new_chain(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    _chain(path, 3)
+    path.unlink()
+    with pytest.raises(audit.AuditError):
+        audit.append_entry(path, _payload(9))
+
+
+def test_an_unregistered_chain_is_refused(tmp_path):
+    """A non-empty log whose path no custody record knows is not adopted."""
+    path = tmp_path / "audit.jsonl"
+    _chain(path, 2)
+    audit.registry_path().write_text("{}", encoding="utf-8")
+    with pytest.raises(audit.AuditError):
+        audit.append_entry(path, _payload(3))
+
+
+def test_a_full_rollback_is_detected(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    _chain(path, 3)
+    saved_log = path.read_bytes()
+    saved_checkpoint = audit.checkpoint_path(path).read_bytes()
+    audit.append_entry(path, _payload(4))
+    path.write_bytes(saved_log)
+    audit.checkpoint_path(path).write_bytes(saved_checkpoint)
+    count, error = audit.verify_file(path)
+    assert error is not None
+    assert "high-water" in error or "high water" in error
+
+
+def test_a_lost_key_is_not_recreated_on_read(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    _chain(path, 2)
+    key = audit.key_path()
+    key.unlink()
+    count, error = audit.verify_file(path)
+    assert error is not None
+    assert not key.exists()
+
+
+def test_a_lost_key_refuses_the_append(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    _chain(path, 2)
+    audit.key_path().unlink()
+    with pytest.raises(audit.AuditError):
+        audit.append_entry(path, _payload(3))
+
+
+def test_a_key_inside_the_home_is_rejected(tmp_path, monkeypatch):
+    home = tmp_path / "hermes-home"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setenv("CITED_AUDIT_KEY_PATH", str(home / "audit.key"))
+    with pytest.raises(audit.AuditError):
+        audit.load_existing_key()
+    with pytest.raises(audit.AuditError):
+        audit.append_entry(home / "cited" / "audit.jsonl", _payload(1))
+
+
+def test_the_default_key_path_is_outside_the_home(tmp_path, monkeypatch):
+    home = tmp_path / "hermes-home"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.delenv("CITED_AUDIT_KEY_PATH", raising=False)
+    path = audit.key_path()
+    assert home not in path.parents
+
+
+def test_a_pending_transaction_is_completed_by_the_next_append(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    _chain(path, 1)
+    entry = audit.read_entries(path)[-1]
+    audit.checkpoint_path(path).unlink()
+    audit.write_pending(path, entry)
+    assert audit.verify_file(path)[1] is not None
+    audit.append_entry(path, _payload(2))
+    entries = audit.read_entries(path)
+    assert [item["seq"] for item in entries] == [1, 2]
+    assert audit.verify_file(path)[1] is None
+
+
+def test_a_forged_pending_record_is_refused(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    _chain(path, 1)
+    entry = dict(audit.read_entries(path)[-1])
+    entry["response"] = "tampered"
+    payload = {"log": str(path), "entry": entry}
+    target = audit.pending_path(path)
+    target.write_text(
+        json.dumps({"payload": payload, "mac": "0" * 64}, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(audit.AuditError):
+        audit.append_entry(path, _payload(2))

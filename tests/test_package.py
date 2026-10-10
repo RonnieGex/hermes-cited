@@ -1,4 +1,4 @@
-"""The repository as Hermes sees it: manifest, entry point, packaged skill, docs (H2, H3, H7)."""
+"""The repository as Hermes sees it: manifest, entry point, packaged skill, docs (H2, H3, H7, H11)."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ def test_the_manifest_is_valid_and_names_the_plugin():
     assert top["name"] == "hermes-cited"
     assert top["version"]
     assert top["kind"] == "standalone"
-    for tool in ("cited_search", "cited_ask"):
+    for tool in ("cited_search", "cited_ask", "cited_quote"):
         assert tool in lists["provides_tools"]
     for hook in ("pre_llm_call", "post_tool_call", "transform_llm_output"):
         assert hook in lists["provides_hooks"]
@@ -48,9 +48,14 @@ def test_the_manifest_is_valid_and_names_the_plugin():
         assert variable in lists["requires_env"]
 
 
+def test_the_manifest_documents_the_new_optional_variables():
+    text = (REPO / "plugin.yaml").read_text(encoding="utf-8")
+    assert "CITED_LANGUAGE" in text
+    assert "CITED_AUDIT_KEY_PATH" in text
+
+
 def test_the_entry_point_exposes_register():
     """Load the repository the way hermes_cli.plugins_loader loads a directory plugin."""
-    import importlib.util
     import sys
     import types
 
@@ -70,26 +75,39 @@ def test_the_entry_point_exposes_register():
     assert module.register.__name__ == "register"
 
 
-def test_the_packaged_skill_names_both_tools_and_both_modes():
+def test_the_packaged_skill_names_the_three_tools_and_both_modes():
     text = (REPO / "hermes_cited" / "skills" / "cited" / "SKILL.md").read_text(encoding="utf-8")
     assert text.startswith("---")
     assert "cited_search" in text
     assert "cited_ask" in text
+    assert "cited_quote" in text
     assert "/cited" in text
     assert "/dot" in text
     assert "MCP-only route" in text
     assert "native plugin" in text
 
 
-def test_the_two_readmes_exist_and_name_what_was_tested():
+def test_the_two_readmes_document_the_plugin_written_render():
     english = (REPO / "README.md").read_text(encoding="utf-8")
     spanish = (REPO / "README.es.md").read_text(encoding="utf-8")
-    assert "CITED_URL" in english and "CITED_URL" in spanish
-    assert "CITED_MCP_TOKEN" in english and "CITED_MCP_TOKEN" in spanish
-    assert "2026-10-10" in english and "2026-10-10" in spanish
-    assert "audit.key" in english and "audit.key" in spanish
-    assert "stream-json" in english and "stream-json" in spanish
-    assert "desktop" in english.lower() and "escritorio" in spanish.lower()
+    for text in (english, spanish):
+        assert "CITED_URL" in text
+        assert "CITED_MCP_TOKEN" in text
+        assert "CITED_DEFAULT_MODE" in text
+        assert "CITED_LANGUAGE" in text
+        assert "cited_quote" in text
+        assert "audit.key" in text
+        assert "stream-json" in text
+        assert "2026-10-10" in text
+    assert "Según tus documentos" in spanish
+    assert "From your documents" in english
+
+
+def test_the_readmes_document_the_custody_and_the_delivery_policy():
+    english = (REPO / "README.md").read_text(encoding="utf-8")
+    assert "high-water" in english.lower() or "high water" in english.lower()
+    assert "desktop" in english.lower()
+    assert "wecom" in english.lower()
 
 
 def test_the_upstream_proposal_names_the_hook_it_asks_for():
@@ -102,5 +120,6 @@ def test_the_upstream_proposal_names_the_hook_it_asks_for():
 
 
 def test_the_reports_live_inside_the_change():
+    assert (REPO / "openspec" / "changes" / "hermes-plugin-r3" / "reports").is_dir()
     assert (REPO / "openspec" / "changes" / "hermes-plugin-r2" / "reports").is_dir()
     assert (REPO / "openspec" / "changes" / "hermes-plugin" / "reports").is_dir()

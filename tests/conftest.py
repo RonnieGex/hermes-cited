@@ -309,3 +309,25 @@ def audit_key_path(tmp_path, monkeypatch):
     path = tmp_path / "audit.key"
     monkeypatch.setenv("CITED_AUDIT_KEY_PATH", str(path))
     return path
+
+
+@pytest.fixture(autouse=True)
+def plugin_turn_state():
+    """Each test starts with no in-process turn: the plugin keys its turns by session and turn id."""
+    try:
+        from hermes_cited import plugin
+
+        with plugin._TURNS_LOCK:
+            plugin._TURNS.clear()
+            plugin._ACTIVE.clear()
+    except Exception:
+        pass
+    yield
+    try:
+        from hermes_cited import plugin
+
+        with plugin._TURNS_LOCK:
+            plugin._TURNS.clear()
+            plugin._ACTIVE.clear()
+    except Exception:
+        pass
