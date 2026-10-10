@@ -1,70 +1,73 @@
-# LOOP_STATE · hermes-cited, change `hermes-plugin-r2`
+# LOOP_STATE · hermes-cited, change `hermes-plugin-r3`
 
 STATUS: DONE
-CHANGE: hermes-plugin-r2 (OpenSpec), delta over the capability `hermes-plugin`
-BRANCH: main (new repository, `git init`; no remote and no push)
-BASE: afccfa8 (`docs: the loop state closes the hermes-plugin change with GATE: GREEN`), round 1
-VERIFIED RUN: `scripts/gate.py` with the Python of the Hermes venv, `GATE: GREEN`, 38 of 38 claims in 304 s
+CHANGE: hermes-plugin-r3 (OpenSpec), delta over the capability `hermes-plugin`
+BRANCH: main (no remote and no push)
+BASE: `f0ba7cc` (`feat: the cited answer written by the plugin and the fail-closed log`), round 3
+VERIFIED RUN: `scripts/gate.py` with the Python of the Hermes venv, `GATE: GREEN`, 52 of 52 claims in 306 s
 AGENT: DeepSeek (implementer); the publication of `RonnieGex/hermes-cited`, the review and any upstream
 proposal are Fable's and Franc's
 DATE: 2026-10-10
 RUNTIME: Python 3.11.15 (the venv of Hermes), Hermes Agent v0.21.6+387 (commit `dce1e9b`) on Windows
-CONTRACT: `tasks/mision-cited-hermes-r2.md`; review resolved: `tasks/revision-codex-hermes-cited.md`
-DELIVERY: `tasks/entrega-cited-hermes-r2.md`
+CONTRACT: `tasks/mision-cited-hermes-r3.md`; review resolved: `tasks/revision-codex-hermes-cited-r2.md`
+DELIVERY: `tasks/entrega-cited-hermes-r3.md`
 
 ## Objective
 
-Resolve the three Blockers, the seven Majors and the Minor of the adversarial review of round 1, with the
-design decisions D1 to D4 of the mission on top of the review, until `scripts/gate.py` prints `GATE: GREEN`.
+Resolve the three Blockers, the five Majors and the Minor of the second adversarial review of Codex, with
+the design decisions D5 to D8 of the mission on top of the review, until `scripts/gate.py` prints
+`GATE: GREEN`. D5 replaces D2: in cited mode the model only chooses lines and the plugin writes the answer.
 
 ## Result
 
-`scripts/gate.py` ends with **GATE: GREEN, 38 of 38 claims in 304 s**, exit 0. Every claim asserts the
+`scripts/gate.py` ends with **GATE: GREEN, 52 of 52 claims in 306 s**, exit 0. Every claim asserts the
 property it names:
 
-- **D1/B1** the delivery policy: the effective streaming configuration is read and the seal is withheld on a
-  messaging surface whose streaming is on, with `docs/upstream-proposal.md` specifying the host hook (no PR
-  and no issue upstream).
-- **D2/B2/M1** the extractive verifier: the evidence is only a non-empty excerpt of the turn; a datum-bearing
-  reader-visible line is accepted only when it appears verbatim, quoted between `« »`; free text cannot carry
-  a datum; the citation marks are validated against the turn's map; a `refused` is an explicit refusal.
-- **D3/M3/M4** the log: `seq`, log identity, an exclusive inter-process lock around the append, a schema
-  validated before hashing and at verification, and an HMAC-authenticated checkpoint whose key lives outside
-  `HERMES_HOME`. Removing the last entry, cutting a suffix, rewriting and recomputing, rolling back the
-  checkpoint and a missing checkpoint all fail the verifier.
-- **D4/B3/M2/M5/M6/M7/m1** the redirect is refused before the second request; a reflected token is rejected in
-  success and error and redacted recursively in the log; a failed append is an operational refusal without a
-  seal; the gate was rewritten and proves the installed audit command from outside the checkout; the
-  documentation and the change status claim only what was verified.
+- **D5/H4/H11/H12** the model calls `cited_search` and then `cited_quote`; the plugin discards the model's
+  text whole and renders the chosen lines byte for byte with their source, their `[n]` mark and the seal;
+  a changed line, a substring, a moved subject, free prose and a forged seal never reach the answer; no
+  selection, a refusal or no excerpt is exactly the fixed refusal.
+- **D6/H5** the append validates the whole chain and authenticates the checkpoint before writing one byte,
+  crosses the result with a high-water mark per identity next to the key outside `HERMES_HOME`, allows
+  genesis only for an identity registered in custody, never creates the key on a read, rolls a failed row
+  back and rejects a key path inside `HERMES_HOME`. Every reproduction of B-R2-3 refuses the next append.
+- **D7/H9** the delivery policy uses the host's real `gateway.config.StreamingConfig` (`is_host: true`,
+  `host == plugin`); the CLI without streaming is the only explicit exception, the desktop withholds with
+  the D1 warning, and `wecom`, `feishu`, `dingtalk`, `qqbot` and an unknown platform withhold.
+- **D8** the gate predicates reject the fixtures of both reviews (`1380` is not `380`, `190` is not `90`,
+  the refusal with a datum), the seal is crossed with the audited entry of its own turn, a delivery
+  consumer measures the terminal record, and every artifact is written, redacted and scanned on disk before
+  the verdict. The report counts (`4 entries`) and the literal tool order are corrected.
 
 ## Progress
 
-- `openspec/changes/hermes-plugin-r2/`: proposal, design (D1 to D4), the spec delta (H4-H10) and tasks.
-- `openspec/changes/hermes-plugin-r2/reports/`: `hermes-facts-r2.md` (the delivery paths read in the Hermes
-  source), the gate table, the H1 and H8 transcripts.
-- `hermes_cited/`: `verifier.py` (extractive), `audit.py` (lock, `seq`, log identity, checkpoint, key outside
-  the home), `client.py` (private opener, reflection check), `tools.py` (excerpt evidence), `plugin.py`
-  (session/turn, delivery policy, operational refusal), `delivery.py` (new).
-- `tests/`: 189 cases, including `test_adversarial.py` (one fixture per finding) and `test_delivery.py`.
-- `docs/upstream-proposal.md` (English) and `.github/workflows/tests.yml` (added, not yet executed).
-- Round 1 reports moved to `openspec/changes/hermes-plugin/reports/`; `tasks.md`, `design.md`, `README.md`,
-  `README.es.md` and the skill corrected per m1.
-- `community-hermes` (`docs/hermes-agent`): `git merge origin/main` (`ef11f88`, PR #21 merged) and the
-  Hermes Agent documentation corrected in `docs/mcp.md`, `README.md` and `README.es.md`.
+- `openspec/changes/hermes-plugin-r3/`: proposal, design (D5 to D8), the spec delta (H4, H5, H9, H10
+  modified; H11, H12 added), tasks and `reports/` (the red run, the facts of D5 to D7, the H1 and E2E
+  transcripts, the gate table).
+- `hermes_cited/`: `render.py` (new), the reduced `verifier.py`, `tools.py` (the third tool and the numbered
+  lines), `plugin.py` (the render and the quote registry), `audit.py` (custody), `delivery.py` (the host
+  resolver), `config.py` (`CITED_LANGUAGE`), the skill and `plugin.yaml`.
+- `tests/`: 235 cases, including `test_render.py`, `test_gate.py` and the reproductions of both reviews in
+  `test_adversarial.py`.
+- `README.md` and `README.es.md`: the plugin-written render with a real example, the custody of D6 and the
+  delivery policy of D7.
+- `community-hermes` (`docs/hermes-agent`): `docs/mcp.md`, `README.md` and `README.es.md` state the new
+  cited mode and link the round 3 evidence.
 
 ## Hard rules respected
 
 - Every Hermes run of this round carried an explicit temporary `HERMES_HOME`; the gate refuses to run Hermes
-  outside the temp directory. Nothing was written under `%LOCALAPPDATA%\hermes` or `~/.hermes`.
-- Port 3240 and the live Cited were never touched. The test Cited is a temporary `git` worktree of
-  `origin/main` (`ef11f88`) built with webpack and served on 3246, stopped by PID.
-- No `hermes update`, no gateway, no bot, no push, no remote, no archive of a change. `DEEPSEEK_API_KEY` came
-  from the environment only. The ephemeral token was redacted before any artifact was written.
-- The real home incident of round 1 is preserved as RISK 3 in the delivery; it did not repeat.
+  outside the temp directory and worked under a temporary home of its own. Nothing was written under
+  `%LOCALAPPDATA%\hermes` or `~/.hermes`.
+- Port 3240 and the live Cited were never touched. The test Cited is a temporary worktree of `origin/main`
+  (`ef11f88`) built with webpack and served on 3246, stopped by PID.
+- No `hermes update`, no gateway, no bot, no push, no remote, no archive of a change. `DEEPSEEK_API_KEY`
+  came from the environment only. The ephemeral token was redacted before any artifact was written.
+- The real home incident of round 1 is preserved as RISK in the round 2 delivery; it did not repeat.
 
-## Round 1 (for the record)
+## Earlier rounds (for the record)
 
-The previous state closed `hermes-plugin` with `GATE: GREEN` (25 of 25, 248 s) on `a1ba154`. That state is
-superseded by this change: the review found Blockers the historical gate could not see, and the round 1 fact
-sheet assumed `display.streaming: false` on the CLI when the real default of `_cli_config_defaults()` is
-`true`.
+- Round 2 closed `hermes-plugin-r2` with `GATE: GREEN` (38 of 38, 304 s) on `f948a91`, but the second review
+  found three Blockers, five Majors and one Minor, so D5 replaces D2 and the code changes.
+- Round 1 closed `hermes-plugin` with `GATE: GREEN` (25 of 25, 248 s) on `a1ba154`; B2, B3, M2, M3 and M7
+  of that round stay solved and were not undone.
