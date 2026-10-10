@@ -3,16 +3,17 @@
 Cited en [Hermes Agent](https://github.com/NousResearch/hermes-agent): un plugin nativo de Python que le da
 a Hermes las herramientas de solo lectura de [Cited](https://github.com/RonnieGex/cited) como herramientas
 nativas, dos modos de conversación y un modo cited cuya respuesta **la escribe el plugin** a partir de los
-renglones exactos que eligió el modelo, con una bitácora auditable encadenada por hash y bajo custodia.
+renglones exactos que eligió el modelo, junto a un registro local de consistencia encadenado por hash de lo
+que se entregó.
 
 Hecho por Katalis. Apache-2.0.
 
 - **Modo dot** (el default): respuestas normales; Cited se usa cuando ayuda y la respuesta no se toca.
-- **Modo cited**: el modelo solo *elige*. Busca en Cited y luego llama a `cited_quote` con los renglones
-  numerados que el usuario debe leer. El plugin descarta la prosa del modelo por completo y compone esos
-  renglones **byte por byte**, cada uno con su documento, su sección y su marca `[n]`, y agrega el sello
-  `Verified by Cited`. Cuando no hay nada que elegir, la respuesta es la negativa fija
-  `No está en los documentos.`
+- **Modo cited**: el modelo solo *elige*. Busca en Cited y luego llama a `cited_quote` con el identificador
+  del pasaje y los renglones numerados que el usuario debe leer. El plugin descarta la prosa del modelo por
+  completo y compone esos renglones **byte por byte**, cada uno con su documento, su sección y su marca
+  `[n]`, y agrega el sello `Verified by Cited`. Cuando no hay nada que elegir, la respuesta es la negativa
+  fija `No está en los documentos.`
 
 ## Requisitos
 
@@ -52,7 +53,6 @@ corre el plugin):
 | `CITED_TIMEOUT_MS` | no | Cuánto puede tardar una llamada a Cited, en milisegundos. `30000` por omisión. |
 | `CITED_DEFAULT_MODE` | no | El modo con el que arranca una conversación, `dot` o `cited`. `dot` por omisión. |
 | `CITED_LANGUAGE` | no | El idioma del render de cited, `es` o `en`. `es` por omisión. Los renglones citados siempre son los bytes del documento. |
-| `CITED_AUDIT_KEY_PATH` | no | Dónde viven la llave HMAC del checkpoint y su high-water mark. Por omisión `%APPDATA%\Katalis\hermes-cited\audit.key`. Nunca está dentro de `HERMES_HOME` y nunca es el bearer de Cited. |
 
 Sin `CITED_URL` o `CITED_MCP_TOKEN` las herramientas de búsqueda responden una oración que nombra la
 variable faltante. Nunca lanzan una excepción hacia Hermes y Hermes sigue funcionando.
@@ -61,13 +61,25 @@ variable faltante. Nunca lanzan una excepción hacia Hermes y Hermes sigue funci
 
 | Herramienta | Entrada | Salida |
 |---|---|---|
-| `cited_search` | `query` (obligatoria), `limit` (1 a 8, 5 por omisión) | Los pasajes que coinciden, cada uno con `n`, `document`, `heading`, `position`, `excerpt` y sus `lines` numerados. |
-| `cited_ask` | `question` (obligatoria), `sessionId` (opcional) | `status` (`answered` o `refused`), `answer` y las `citations` numeradas, cada una con sus `lines`. |
-| `cited_quote` | `passage` (la `n` de un pasaje o cita de este turno), `lines` (sus números de renglón, en orden) | El texto exacto de esos renglones, y el plugin registra la elección para la respuesta. |
+| `cited_search` | `query` (obligatoria), `limit` (1 a 8, 5 por omisión) | Los pasajes que coinciden, cada uno con `pid`, `n`, `document`, `heading`, `position`, `excerpt` y sus `lines` numerados. |
+| `cited_ask` | `question` (obligatoria), `sessionId` (opcional) | `status` (`answered` o `refused`), `answer` y las `citations` numeradas, cada una con `pid` y sus `lines` numerados. |
+| `cited_quote` | `passage` (el `pid` de un pasaje o cita de este turno, como `P1`, o su número `n` mientras ese número no sea ambiguo), `lines` (sus números de renglón, en orden) | El texto exacto de esos renglones, y el plugin registra la elección para la respuesta. |
 
 Llaman a `POST <CITED_URL>/api/mcp` con el método JSON-RPC `tools/call` y
 `Authorization: Bearer <CITED_MCP_TOKEN>`. Son nativas y no una configuración MCP porque así la instalación
-es un paso y porque el plugin necesita ver cada resultado para componer la respuesta y escribir la bitácora.
+es un paso y porque el plugin necesita ver cada resultado para componer la respuesta y escribir el registro.
+
+## Un identificador por pasaje
+
+Cada pasaje y cada cita que devuelve una herramienta de cited en un turno recibe su propio identificador
+`pid`: `P1`, `P2`, y así en el orden en que los devolvieron las llamadas. `cited_quote` toma ese `pid`, no
+el número `n`, porque dos búsquedas del mismo turno pueden devolver las dos un pasaje 1 y entonces los
+números chocan. El turno guarda el mapeo del `pid` a la llamada, al `n` original del resultado de Cited, al
+documento, a la sección y a la posición. La marca `[n]` del render, la elección del modelo y el renglón del
+registro son la misma referencia. Un `passage` numérico se acepta solo mientras identifique exactamente un
+pasaje del turno; cuando es ambiguo, la elección se rechaza y el error pide el `pid`. Cuando un bloque
+elegido o un metadato del turno contiene la marca reservada `Verified by Cited`, el sello se retiene y una
+nota fija lo dice.
 
 ## Los dos modos
 
@@ -75,7 +87,7 @@ es un paso y porque el plugin necesita ver cada resultado para componer la respu
   superficie expone una y el perfil cuando no. `CITED_DEFAULT_MODE` fija el modo inicial.
 - En modo cited, `pre_llm_call` inyecta las reglas: llama primero a Cited, elige los renglones con
   `cited_quote` y no escribas la respuesta. El texto del modelo se descarta por completo. Un render real,
-  de `cited_quote` con `{"passage": 1, "lines": [4]}` contra `cafe-la-horquilla.md · Precios`, es:
+  de `cited_quote` con `{"passage": "P1", "lines": [4]}` contra `cafe-la-horquilla.md · Precios`, es:
 
   ```
   Según tus documentos:
@@ -86,14 +98,17 @@ es un paso y porque el plugin necesita ver cada resultado para componer la respu
   Verified by Cited
   ```
 
+  Con `CITED_LANGUAGE=en` la plantilla de entrada es `From your documents:` y la negativa
+  `It is not in the documents.`; los renglones citados nunca cambian de idioma.
+
 - Cada pasaje o cita se parte en renglones de forma determinista (por salto de línea; un párrafo sin saltos
   es un renglón) y se numera desde 1. Cada bloque mostrado es *idéntico* a un renglón completo de un extracto
   del turno: no hay normalización Unicode, ni subcadenas, ni listas de palabras, porque el plugin escribió el
   bloque desde el extracto mismo. Un valor, un sujeto o un sello que escriba el modelo nunca llegan a la
   respuesta.
-- Cuando no hay nada que mostrar —el modelo no llamó a `cited_quote`, Cited se negó o el turno no tuvo
-  extractos— la respuesta es la negativa fija `No está en los documentos.` (en inglés,
-  `It is not in the documents.`). Nunca lleva el sello.
+- Cuando no hay nada que mostrar, es decir, el modelo no llamó a `cited_quote`, hay un `status: refused` en
+  cualquier punto del turno, o el turno no tuvo extractos, la respuesta es la negativa fija
+  `No está en los documentos.` (en inglés, `It is not in the documents.`). Nunca lleva el sello.
 - El sello `Verified by Cited` solo lo agrega el plugin, solo después de persistir el texto exacto que se
   entrega y solo si la política de entrega lo permite. La marca `[1]`, la fuente y el sello los genera el
   plugin; el modelo no escribe ninguno.
@@ -101,19 +116,34 @@ es un paso y porque el plugin necesita ver cada resultado para componer la respu
 - Los totales y otros valores calculados quedan fuera de esta ronda: pertenecen a la misión de documentos,
   donde una herramienta los calcula por código y registra la procedencia.
 
-## Entrega: qué queda verificado y qué puede verse
+## Entrega: una instantánea al inicio del turno
 
-Hermes v0.21.6+387 entrega cada delta de texto a la pantalla, a la plataforma de mensajería y al TTS de
-streaming **antes** de que `transform_llm_output` decida. Ningún hook de plugin puede retener esos deltas:
-es una limitación del host, y este plugin la declara en lugar de esconderla. Resuelve el streaming efectivo
-con la clase real del host, `gateway.config.StreamingConfig`, así que `mode`, `enabled`, `transport` y el
-override por plataforma significan lo que Hermes significa con ellos.
+Hermes v0.21.6+387 entrega cada delta de texto a la pantalla, a la plataforma de mensajería, al comentario
+intermedio y al TTS de streaming **antes** de que `transform_llm_output` decida. Ningún hook de plugin puede
+retener esos deltas: es una limitación del host, y este plugin la declara en lugar de esconderla. La promesa
+del modo cited es sobre el **mensaje final**: el texto que entrega esta respuesta lo compone el plugin. No
+es una promesa sobre lo que un borrador pudo mostrar en pantalla mientras se escribía la respuesta.
 
-| Superficie | Qué hace el plugin |
+El plugin decide el sello a partir de una **instantánea tomada al inicio del turno cited** y la congela en
+el turno, así que un cambio de configuración durante el turno no puede cambiar una decisión ya tomada. La
+instantánea resuelve el streaming efectivo con la clase real del host, `gateway.config.StreamingConfig`, así
+que `mode`, `enabled`, `transport` y el override por plataforma significan lo que Hermes significa con
+ellos, y cubre cada superficie del host que entrega texto o voz:
+
+| Superficie | El sello |
 |---|---|
-| Mensajería (Telegram, Slack, Discord, WeCom, Feishu, DingTalk, QQ y similares) y cualquier plataforma que el plugin no conozca | Lee la configuración efectiva de streaming y, si está encendido, retiene el sello y lo dice en la respuesta. Para recibir el sello, apaga el streaming en modo cited: `streaming.enabled: false`, o `display.platforms.<plataforma>.streaming: false`. |
-| CLI | La única excepción explícita, y solo con `display.streaming: false`. Con el streaming del CLI encendido, el sello se retiene igual que en cualquier otra superficie. Cuando está apagado, `--format stream-json` igual emite eventos `text`, así que **quien consuma ese formato debe mostrar solo el registro terminal `result`**; un consumidor que concatene `text`, razonamiento o comentarios vería el borrador. |
-| App de escritorio | Retiene el sello. La app cablea su propio stream SSE, que ninguna configuración de aquí alcanza: **puede verse el borrador mientras se escribe**. El texto igual se copia de los documentos del turno y queda registrado. |
+| `api_server` (la ruta SSE de la app de escritorio) | Siempre se retiene. Esa superficie arma su propio stream, que ninguna configuración de aquí alcanza. |
+| `desktop` | Siempre se retiene, por la misma razón: la app cablea su propio stream SSE. |
+| Plataforma de mensajería (Telegram, Slack, Discord, WeCom, Feishu, DingTalk, QQ y similares) | Se retiene cuando el `streaming` efectivo está encendido para esa plataforma. |
+| Comentario intermedio del asistente (`display.interim_assistant_messages`) | Se retiene cuando los mensajes intermedios están encendidos para la plataforma del turno. |
+| TTS de streaming (`tts.auto_tts`) | Se retiene cuando `tts.auto_tts` está encendido: la voz es una entrega que el turno no puede recuperar. |
+| Una plataforma que el plugin no puede resolver | Se retiene: no puede probar que nada más haya sido visible. |
+| Una configuración que no se puede leer | Se retiene, por la misma razón. |
+| CLI | Se retiene con `display.streaming: true` o con el comentario intermedio encendido. Con ambos apagados, el sello se otorga. `--format stream-json` igual emite eventos `text`, así que **quien consuma ese formato debe mostrar solo el registro terminal `result`**; un consumidor que concatene `text`, razonamiento o comentarios vería el borrador. |
+
+Una superficie de solo entrada (`local`, un webhook) nunca entrega un borrador a un usuario, así que solo
+retiene por las razones que aplican a toda superficie. Cuando el sello se retiene, la respuesta lleva una
+nota fija que nombra la superficie y qué apagar.
 
 La configuración exacta del gateway:
 
@@ -121,60 +151,46 @@ La configuración exacta del gateway:
 streaming:
   enabled: false                 # interruptor maestro; `transport: off` también apaga
 display:
+  streaming: false               # solo del CLI
+  interim_assistant_messages: false
   platforms:
     telegram:
       streaming: false           # solo estrecha; nunca enciende streaming por sí sola
+      interim_assistant_messages: false
+tts:
+  auto_tts: false
 ```
 
 `display.streaming` es solo del CLI; el gateway resuelve primero
-`display.platforms.<plataforma>.streaming`. `docs/upstream-proposal.md` (inglés) especifica el hook de
-política de entrega por turno que Hermes necesitaría para cerrar este hueco en todas las superficies,
-incluida la ruta SSE, con archivo y línea de cada punto. No se abrió ningún pull request ni issue aguas
-arriba.
+`display.platforms.<plataforma>.streaming`. El plugin otorga el sello solo cuando la instantánea muestra de
+forma afirmativa que nada más pudo haber sido visible. `docs/upstream-proposal.md` (inglés) especifica el
+hook de política de entrega por turno que Hermes necesitaría para cerrar este hueco en todas las
+superficies, incluida la ruta SSE, con archivo y línea de cada punto que toca. No se abrió ningún pull
+request ni issue aguas arriba.
 
-## La bitácora
+## El registro de consistencia
 
-Cada respuesta agrega una entrada a `$HERMES_HOME/cited/audit.jsonl`, en ambos modos: la marca UTC, un `seq`
-monotónico, la identidad del log, la plataforma, la sesión, el identificador de turno, el usuario cuando
-existe, el modo, la pregunta, las llamadas a Cited con sus argumentos y el SHA-256 **y el texto** de cada
-extracto devuelto, **los renglones que eligió el modelo**, las fuentes, la respuesta final y el resultado
-del verificador, más `prev_hash` y `hash`. La cadena es
-`hash = sha256(prev_hash + canonical_json(entry))`.
+Cada respuesta entregada agrega un renglón, un objeto JSON, a `$HERMES_HOME/cited/audit.jsonl`, en ambos
+modos: la marca UTC, un `seq` monotónico, la identidad del log, la plataforma, la sesión, el identificador
+de turno, el usuario cuando existe, el modo, la pregunta, las llamadas a Cited con sus argumentos y el
+SHA-256 **y el texto** de cada extracto devuelto, el `pid` y el número original de cada renglón elegido con
+su documento, su sección y su posición, el texto entregado, la transcripción que el plugin habría devuelto
+sin el sello, la instantánea de entrega con su decisión y el resultado del verificador, más `prev_hash` y
+`hash`. La cadena es `hash = sha256(prev_hash + canonical_json(entry sin hash))`.
 
 El append toma un lock exclusivo entre procesos sobre `<log>.lock` y, **antes de escribir un byte**, lee
-toda la cadena, valida cada esquema, `seq`, enlace y hash, autentica el checkpoint contra la llave y cruza el
-resultado con un high-water mark por identidad que vive junto a la llave, fuera de `HERMES_HOME`. Cualquier
-discrepancia rechaza el append y deja el log y el checkpoint intactos; el append nunca reinicia desde
-génesis. El génesis solo se permite para una identidad nueva registrada en la custodia, nunca porque un
-archivo desapareció.
+toda la cadena y valida cada esquema, `seq`, enlace y hash. Cualquier discrepancia rechaza el append y deja
+el archivo intacto: un append nunca reinicia la cadena desde génesis. Cuando el append falla, la respuesta
+cited es la negativa operativa fija sin sello, porque una respuesta rechazada no es una respuesta
+entregada.
 
-El append es una transacción recuperable. Registra una fila pendiente autenticada con MAC en la custodia,
-agrega la fila, escribe el checkpoint y actualiza la custodia. Si un paso posterior falla, la fila se revierte,
-de modo que la fila registrada es la respuesta que realmente se entregó; si la reversión misma no puede
-correr, el registro pendiente autentica la conclusión en el siguiente append. La llave se crea **antes de la
-primera fila** y nunca al leer: si se pierde, se falla cerrado y se exige recuperación explícita.
-`CITED_AUDIT_KEY_PATH` dentro de `HERMES_HOME` se rechaza.
+El registro sirve para revisar y reproducir cada respuesta. **No** es a prueba de manipulación frente a
+quien controla la PC: alguien que reescribe el archivo y recalcula la cadena produce un archivo que queda
+con consistencia interna. Ese es el alcance exacto de su `consistencia interna`, y es lo que revisa el
+verificador. Para el registro no se escribe ni se lee ninguna llave ni ningún archivo fuera de
+`HERMES_HOME`. La auditoría con custodia es una propiedad del lado del servidor, y llega con Cited Ledger.
 
-Después de cada append el plugin reescribe un checkpoint autenticado con HMAC (`<log>.checkpoint`) con el
-conteo de entradas, el hash final y la identidad del log. Su llave vive **fuera de `HERMES_HOME`**, por
-omisión en `%APPDATA%\Katalis\hermes-cited\audit.key`, y nunca es el bearer de Cited. El verificador exige el
-checkpoint y el high-water mark:
-
-- una entrada alterada, quitada o reordenada rompe la cadena;
-- una entrada quitada del final, o un sufijo cortado, puede dejar la cadena internamente consistente, pero
-  ya no coincide con el checkpoint;
-- una cadena reescrita y con todos los hashes recalculados sin la llave no autentica;
-- un checkpoint regresado a uno viejo mientras el log conserva sus entradas ya no coincide en conteo ni en
-  hash final;
-- un log y su checkpoint regresados **juntos** quedan por debajo del high-water mark que vive con la llave;
-- un checkpoint ausente, una llave ausente y una cadena no registrada son errores, no un pase.
-
-**Alcance exacto de la custodia:** se detecta un cambio de quien no tenga la carpeta de la llave. Si el log,
-su checkpoint y el high-water mark se regresan juntos por alguien con escritura también en esa carpeta, solo
-la custodia remota puede notarlo: eso llega con Cited Ledger. La llave prueba autenticidad, no inmutabilidad
-remota.
-
-Verifícala desde el plugin instalado, que es donde el módulo es importable:
+Verifícalo desde el plugin instalado, que es donde el módulo es importable:
 
 ```powershell
 Push-Location (Join-Path $env:HERMES_HOME 'plugins/hermes-cited')
@@ -183,13 +199,48 @@ try {
 } finally {
     Pop-Location
 }
-# OK: 4 entries, the chain and its checkpoint verify.   (salida 0)
-# BROKEN: the log is below its high-water mark: ...     (salida 1)
+# OK: 4 entries, the chain is internally consistent (this is not a custody check; see the README).  (salida 0)
+# BROKEN: entry 3 was altered: its hash does not match its content.                                 (salida 1)
 ```
 
 Usa explícitamente el Python de Hermes cuando `python` no sea ese intérprete. Correr el módulo desde otro
 directorio falla con `ModuleNotFoundError: No module named 'hermes_cited'`: Hermes importa un plugin de
 directorio como `hermes_plugins.<slug>` y nunca lo instala como paquete de nivel superior.
+
+## La frontera de un turno cited
+
+Para cada turno cited que llega a `transform_llm_output`, el texto entregado es exactamente uno de tres:
+
+1. el render de los renglones textuales que eligió el modelo, con la marca, la fuente y el sello cuando la
+   instantánea de entrega del turno lo permite;
+2. la negativa fija localizada `No está en los documentos.` (en inglés, `It is not in the documents.`),
+   cuando no hay nada que mostrar, cuando Cited se negó, o cuando ningún bloque elegido pasa la revisión por
+   construcción;
+3. la negativa operativa fija localizada con un código de incidente, sin sello y sin interpolar ningún
+   detalle del error.
+
+Una sola frontera alrededor de todo el transformador convierte cualquier excepción de leer la configuración,
+resolver, renderizar, componer o persistir en la tercera respuesta. El diagnóstico se redacta del bearer y
+va solo al logger y a `stderr`, nunca a la respuesta. El estado del turno se suelta en un `finally`, así que
+la falla de un turno no puede filtrarse al siguiente. El modo dot conserva su propio contrato y nunca
+responde con una negativa, porque en modo dot el plugin nunca prometió el texto.
+
+## Incompatibilidades del host
+
+- **Una respuesta vacía del modelo nunca llega al hook.** `agent/turn_finalizer.py:501` del host fijado
+  regresa antes de invocar `transform_llm_output` cuando el texto del modelo es falso. Un turno cited cuya
+  respuesta del modelo es vacía se entrega vacío: el plugin no compone nada y el registro no recibe ningún
+  renglón para ese turno, porque nada se compuso y nada entregó el plugin. El plugin no presenta eso como
+  cubierto.
+- **El host puede entregar un borrador antes del veredicto.** Los deltas de las superficies de arriba
+  llegan al usuario antes de que corra `transform_llm_output`, y ningún hook de plugin puede retenerlos. El
+  sello es la única señal afirmativa que este plugin puede dar, y la retiene donde no puede probar lo
+  contrario.
+
+El contrato que este plugin le pide a Hermes es una política de entrega resuelta una vez por turno que
+retenga texto, razonamiento, comentario intermedio, voz y la ruta SSE hasta el veredicto, más un paso final
+de composición ejecutado una vez por turno cited antes de persistir y entregar, incluso cuando el texto del
+modelo es vacío. `docs/upstream-proposal.md` trae el archivo y la línea de cada punto que cambiaría.
 
 ## La skill `cited`
 
@@ -197,7 +248,7 @@ El plugin incluye una skill `cited` y la registra con `ctx.register_skill`, así
 disponibles del agente mientras el plugin está habilitado. Dice cuándo usar cada herramienta, que el plugin
 escribe la respuesta cited y que el modelo solo elige renglones con `cited_quote`, que una negativa de Cited
 se pasa tal cual y que en modo cited nada se completa con el conocimiento del modelo. En la ruta solo-MCP
-existen las dos herramientas de búsqueda, pero `/cited`, `/dot`, `cited_quote`, el render y la bitácora no:
+existen las dos herramientas de búsqueda, pero `/cited`, `/dot`, `cited_quote`, el render y el registro no:
 no hay plugin que los corra.
 
 ## La ruta MCP, sin instalar nada
@@ -229,8 +280,14 @@ Todo lo de abajo se corrió el 2026-10-10 con Hermes Agent **v0.21.6+387 (`dce1e
 (`--provider deepseek -m deepseek-flash`), un Cited compilado desde `origin/main` (`ef11f88`, el PR #21 ya
 fusionado) en su propio worktree temporal y servido en `127.0.0.1:3246` con los cuatro documentos de su
 `samples/`, y un `HERMES_HOME` temporal. `scripts/gate.py`, corrido con el Python del venv de Hermes,
-afirma las propiedades e imprime `GATE: GREEN`; su salida y las transcripciones están dentro del cambio
-(`openspec/changes/hermes-plugin-r3/reports/`).
+afirma las propiedades e imprime `GATE: GREEN`; su salida y las transcripciones están dentro de los cambios
+(`openspec/changes/hermes-plugin-r3/reports/` y `openspec/changes/hermes-plugin-r4/reports/`).
+
+La ronda 4 (2026-10-10) retiró la custodia local del registro, así que lo que queda es el registro de
+consistencia encadenado que se describe arriba, sin llave y sin ningún archivo fuera de `HERMES_HOME`.
+También tomó la decisión de entrega con una instantánea al inicio del turno, agregó `api_server`, el
+comentario intermedio y el TTS de streaming a las superficies que retienen el sello, le dio a cada pasaje su
+`pid` y puso una sola frontera alrededor de todo el transformador cited.
 
 **El `%LOCALAPPDATA%\hermes` real no se escribió ni se usó como destino de ninguna corrida de esta ronda.**
 La corrida aislada final y su puerta usan solo homes temporales. Una corrida histórica de la ronda 1,
@@ -242,7 +299,7 @@ ronda 2 ni de la ronda 3 tocó el puerto 3240.
 
 | Qué | Resultado |
 |---|---|
-| La suite unitaria (`pytest`) | verde: el cliente y su rechazo de redirecciones, las tres herramientas, el verificador por construcción, el render escrito por el plugin, la custodia del log con su high-water mark y su transacción, el resolutor de entrega del host, los modos y la skill empaquetada, más un caso adversarial por hallazgo de ambas revisiones |
+| La suite unitaria (`pytest`) | verde: el cliente y su rechazo de redirecciones, las tres herramientas y el `pid` por turno, el verificador por construcción, el render escrito por el plugin, el registro de consistencia encadenado y su lock entre procesos, la frontera con sus tres respuestas posibles, la instantánea de entrega de cada superficie, los modos y la skill empaquetada, más un caso adversarial por hallazgo de las revisiones |
 | `hermes mcp test cited` | conectó, `Tools discovered: 2` (`cited_search`, `cited_ask`) |
 | `hermes plugins install "file:///…" --enable --yes-deps` | instalado en `$HERMES_HOME/plugins/hermes-cited` y habilitado |
 | El loader real | el plugin instalado carga con el gestor de plugins de Hermes y registra sus tres hooks |
@@ -250,10 +307,12 @@ ronda 2 ni de la ronda 3 tocó el puerto 3240.
 | La pregunta de precio en modo cited | el stream llama a la `cited_search` nativa y luego a `cited_quote`; la respuesta entregada es el render del plugin, con `Fuente: cafe-la-horquilla.md - Precios`, la marca `[1]` y el sello |
 | "Is there a guarantee on repairs at the bike workshop?" | el render lleva **90 days** desde `bike-workshop-policies.md · Guarantee`, sellado |
 | Una pregunta que los samples no responden | exactamente `No está en los documentos.`, sin dato y sin sello |
-| La bitácora de esos turnos | una entrada por turno, conteo exacto, `python -m hermes_cited.verify_log` desde el plugin instalado dice `OK` y sale 0; alterar una entrada, cortar un sufijo, reescribir y recalcular, regresar el checkpoint, regresar log y checkpoint juntos, o arrancar sin la llave la hacen salir 1 |
+| El registro de consistencia de esos turnos | una entrada por turno con el conteo exacto; `python -m hermes_cited.verify_log` desde el plugin instalado reporta la consistencia interna de la cadena y sale 0; alterar una entrada, cortar un sufijo, reordenar o introducir un hueco lo hace salir 1, mientras que un archivo reescrito con todos los hashes recalculados queda con consistencia interna, que es el límite documentado de la revisión |
 | Modo dot | se entrega el texto del modelo, se quita cualquier sello reservado y la entrada se registra con el verificador marcado como no aplicado |
 | El contrato cited | casos adversariales prueban que un valor cambiado, un sujeto movido, una subcadena, la prosa libre y un sello falsificado nunca llegan a la respuesta entregada |
-| La política de entrega | con `streaming.enabled: true` o `mode: edit`, una respuesta cited en `telegram`, `wecom`, `feishu`, `dingtalk`, `qqbot` o una plataforma desconocida retiene el sello y lo dice; el CLI con `display.streaming: false` sella, el CLI con streaming encendido y el escritorio lo retienen |
+| La frontera | una falla al leer la configuración, resolver, renderizar o persistir entrega la negativa operativa fija con un código de incidente, y el texto de un turno cited siempre es uno de los tres |
+| La política de entrega | `api_server`, `desktop`, una plataforma desconocida y una configuración ilegible retienen el sello; también lo retienen `streaming` encendido para una plataforma de mensajería, `interim_assistant_messages` encendido y `tts.auto_tts` encendido; el CLI con `display.streaming: false` y el comentario apagado sella, y un cambio de la configuración después de que arrancó el turno no cambia su decisión |
+| La respuesta vacía | el finalizador real regresa sin invocar el hook, y el plugin reporta eso como una incompatibilidad del host en lugar de cubrirla |
 | La skill `cited` | registrada por el plugin y presente en el árbol instalado, con la regla de `cited_quote` y la nota de que los comandos son del plugin |
 
 No se probó en esta ronda: un bot real de Telegram/Slack/Discord/WeCom (la política de entrega se prueba en
@@ -266,16 +325,16 @@ instalación contra la URL pública de GitHub.
   antes de cualquier segunda petición, así que una redirección nunca puede llevar el bearer a otro origen.
 - Antes de construir cualquier resultado visible, en éxito y en error, el cliente rechaza una respuesta que
   refleje el token en cualquier cadena; la respuesta se descarta y nada de ella se muestra ni se registra.
-- Antes de calcular el hash y agregar, cada campo de la entrada de la bitácora se redacta recursivamente,
+- Antes de calcular el hash y agregar, cada campo de la entrada del registro se redacta recursivamente,
   incluidos la pregunta, los argumentos, los extractos, la respuesta y los errores.
 - `401`, `403`, `404`, `405`, un timeout y una falla de red se convierten cada uno en una oración distinta
   que el modelo puede leer. El plugin nunca escribe un secreto en un log, un resultado de herramienta, el
-  archivo de bitácora ni la evidencia.
+  archivo del registro ni la evidencia.
 - El plugin es de solo lectura contra Cited: nunca escribe un documento y nunca llama a un modelo por su
   cuenta. Solo `cited_ask` puede guardar un turno, y solo cuando quien llama pasa un `sessionId`.
-- La llave del checkpoint y el high-water mark viven fuera de `HERMES_HOME`; la llave se crea antes de la
-  primera fila, nunca al leer, y nunca es el bearer de Cited. Una ruta de llave dentro de `HERMES_HOME` se
-  rechaza.
+- El registro de consistencia es un archivo local solo para revisar y reproducir. No es custodia y no es a
+  prueba de manipulación: quien controla la máquina puede reescribirlo y recalcular la cadena. Para él no se
+  crea ni se lee ninguna llave, y no se escribe ningún archivo fuera de `HERMES_HOME`.
 
 ## Licencia
 

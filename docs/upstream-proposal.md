@@ -1,4 +1,4 @@
-# Proposal for Hermes Agent: a per-turn delivery policy
+# Proposal for Hermes Agent: a synchronous delivery contract and a final composition step
 
 Status: design note for the Hermes Agent maintainers. **No pull request and no issue was opened by
 this repository.** Franc (the owner of `RonnieGex/hermes-cited`) decides whether this is proposed
@@ -7,14 +7,25 @@ upstream.
 Reader: someone who knows Hermes Agent v0.21.6+387 (commit `dce1e9b`) and its plugin API. Every line
 number below was read in that checkout.
 
+## The two contracts Hermes does not offer today
+
+1. **Synchronous retention of the delivery.** A plugin can replace the final answer
+   (`transform_llm_output`), but it cannot stop the answer from being *delivered* while it is still
+   being written: the draft reaches the screen, the messaging surface, the SSE route and streaming
+   TTS before the verdict exists.
+2. **A final composition step even when the model's response is empty.** The finalizer returns before
+   the hook when the text is false, so a turn whose answer is empty is delivered empty and no plugin
+   can compose it.
+
+In a "cited" mode that promises that no unverified value reaches the user, both gaps are the
+difference between a guarantee and a wish. The plugin's round 4 contract (D10 to D14) states exactly
+what it can promise: the **final message** is one of three fixed forms, and the seal is withheld on
+every surface where something else could have been seen.
+
 ## The problem
 
-A plugin can replace the final answer (`transform_llm_output`), but it cannot stop the answer from
-being *delivered* while it is still being written. A verifier therefore runs too late: the user has
-already seen the draft. In a "cited" mode that promises that no unverified value reaches the user,
-that gap is the difference between a guarantee and a wish.
-
-Measured in `dce1e9b`, with a real agent object and a recording receiver:
+A verifier therefore runs too late: the user has
+already seen the draft. Measured in `dce1e9b`, with a real agent object and a recording receiver:
 
 - `agent/stream_delivery.py:331` delivers the delta (`delivered = self._deliver_to_stream_callbacks(text)`).
 - `agent/stream_delivery.py:332` only then enqueues the observer hook (`on_stream_delta`).
@@ -92,24 +103,69 @@ Also relevant: `agent/chat_completion_helpers.py:2908, 3302, 3674, 3958`,
 `agent/turn_tool_round.py:159-161, 186-189` and `agent/codex_runtime.py:1190` emit text outside
 `_fire_stream_delta`; they need the same buffer.
 
-### Why a hook and not a plugin
+## The second contract: compose the final answer even when the model's text is empty
 
-The plugin cannot reach any of the points above: `ctx.register_hook` accepts observer names only, the
-stream hooks are asynchronous and lossy, and the finalizer's return contract has no hold. A plugin
-that claimed "the user never sees the draft" without this change would be making a promise the host
-does not keep.
+`agent/turn_finalizer.py:501-502` returns before invoking any hook when ``final_response`` is false:
+
+```python
+    if not final_response:
+        return final_response, False, None
+```
+
+The same early return is reached from the two call sites of the finalizer
+(`agent/turn_finalizer.py:628` and `:655`). A cited-mode turn whose model answer is empty is therefore
+delivered empty: the plugin's `transform_llm_output` never runs, it cannot compose the render of the
+chosen lines and it cannot write the row of that answer. That is not "covered by a fallback": the
+plugin cannot see the turn at all.
+
+### The two contracts, in one line each
+
+- **Synchronous retention of the delivery**: hold every outbound channel of the turn (text, reasoning,
+  commentary and voice) until the finalizer produces its verdict, and release it then.
+- **A final composition step even when the model's response is empty**: call the output hooks once with an
+  empty text so the plugin can compose the answer, instead of returning before the hooks.
+
+### Proposal
+
+A cited-mode plugin has already declared, at the start of the turn, that it wants to compose the
+answer (`pre_llm_call` returned its context). Give that a consequence:
+
+1. Add to the delivery policy of the first contract a flag
+   ``compose_on_empty: True``, resolved once per turn.
+2. When the turn ends with an empty or whitespace-only ``final_response`` and the flag is set, call
+   the output hooks **once** with ``response_text=""``, before persisting and before delivering, and
+   use the returned string as the final answer. The hook is then the only composer, exactly as it is
+   for a non-empty turn.
+3. Keep the call idempotent per ``turn_id`` (the guard at `agent/turn_finalizer.py:497-500`) so a
+   recovery path that also calls the finalizer cannot compose twice.
+4. A hook that raises leaves the empty text untouched and the incident reaches the same diagnostic a
+   failing hook reaches today (`agent/turn_finalizer.py:104-111`); the host keeps working.
+5. Surface the outcome in ``--format stream-json`` and in the SSE route, so a consumer can tell an
+   empty model answer from a composed one.
+
+Until that exists, `hermes-cited` declares the incompatibility: the README and the delivery report say
+that a cited turn with an empty model answer is delivered empty, with no render, no seal and no row,
+because the plugin is never asked.
 
 ## What `hermes-cited` does meanwhile
 
-Until this policy exists, the plugin enforces what it can and says what it cannot:
+Until these contracts exist, the plugin enforces what it can and says what it cannot: the two missing
+contracts are **synchronous retention of the delivery** and **a final composition step even when the model's
+response is empty**.
 
-- **Messaging** (Telegram, Slack, Discord and the rest): the plugin reads the effective
-  configuration (`streaming.enabled` plus `display.platforms.<platform>.streaming`) and, when
-  streaming is on, withholds the seal and tells the user why.
+- **Every surface whose text it cannot retain**: the plugin takes a snapshot of the effective delivery
+  configuration at the **start** of the cited turn and withholds the seal when anything else could
+  have been seen. In round 4 that covers `api_server` (the SSE route of the desktop app), `desktop`,
+  any messaging platform whose streaming is on, interim assistant commentary
+  (`display.interim_assistant_messages`), streaming TTS (`tts.auto_tts`), an unknown platform and a
+  configuration it cannot read. The withheld note names the surface and the switch.
 - **CLI**: the streaming consumer is documented (`--format stream-json` shows only the terminal
-  `result` record), and `display.streaming: false` removes the draft entirely.
-- **Desktop**: the app wires its own SSE stream; the README says plainly that a draft may be visible
-  while the answer is written.
+  `result` record), and `display.streaming: false` plus
+  `display.interim_assistant_messages: false` remove the draft entirely.
+- **Empty responses**: declared as the host incompatibility above, with the integration test that
+  proves it (`tests/test_host.py`).
+- The promise of cited mode is about the **final message**: the render of the chosen lines, the fixed
+  refusal, or the fixed operational refusal with an incident code.
 
 ## Configuration reference used by the plugin
 
