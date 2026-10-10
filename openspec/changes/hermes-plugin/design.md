@@ -46,9 +46,16 @@ profile entry, then `CITED_DEFAULT_MODE`, then `dot`. This fails safe: an unknow
 cited-mode seal only ever appears when the mode was explicitly cited.
 
 **The verifier is deterministic and bounded.** It extracts numbers, units, prices and codes from the final text with
-regular expressions and checks each one against the concatenation of the excerpts Cited returned in that turn,
-after normalizing thousands separators, accents, case and English/Spanish singular-plural pairs. It never calls a
+regular expressions and checks each one against the excerpts Cited returned in that turn. It never calls a
 model and never consults the question. A turn with no Cited result at all in cited mode cannot pass.
+
+> **Round 2 corrects this.** The adversarial review of 2026-10-09 (`tasks/revision-codex-hermes-cited.md`)
+> proved that the round 1 verifier accepted a changed datum (a currency, a sign, a date, a code, a written
+> numeral, a unit), did not do singular/plural equivalence, and — worse — accepted a datum whose association
+> with its subject was swapped. It also included the query echo and the `cited_ask` answer in the evidence,
+> so a turn with no passage could verify itself. `hermes-plugin-r2` replaces it with the extractive verifier:
+> the evidence is only a non-empty excerpt of the turn, and a datum-bearing line is accepted only when the
+> reader-visible line, quoted between `« »`, appears verbatim in it.
 
 **One log entry per response.** The entry is appended in `transform_llm_output`, which is the single point that sees
 the final text and the mode. Cited-mode entries carry the verifier outcome and the excerpt digests; dot-mode entries
@@ -67,5 +74,7 @@ Hermes keeps working.
   numbers that are not in a passage.
 - Logging dot-mode turns means a session with no Cited call still appends an entry. The schema records
   `verificador.applied = false`, so nothing claims verification that did not happen.
-- `transform_llm_output` is idempotent per `turn_id`; the plugin therefore keys its per-turn buffer by
-  `(session_id, turn_id)` and falls back to the newest buffer of the session when a caller omits `turn_id`.
+- `transform_llm_output` is idempotent per `turn_id`; the plugin keys its per-turn buffer by
+  `(session_id, turn_id)`. Hermes always passes a `turn_id` (`agent/turn_context.py:586-590`). A caller that
+  omits both values collapses to one shared buffer key; there is **no** fallback to the newest buffer of the
+  session. Round 2 records the `session_id` and the `turn_id` in the audit entry and keeps this key.
