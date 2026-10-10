@@ -25,7 +25,14 @@ removal cannot complete, the delivered text SHALL be a fixed safe note and never
 text or `None` (H16). The mark SHALL be detected in the
 **visible text** of the admitted Markdown presentations, including internal emphasis (`Verified **by** Cited`)
 and link labels (`Verified by [Cited](url)`); dot mode SHALL remove those occurrences whole and cited mode SHALL
-withhold the seal with the fixed note. A document name or a section SHALL have every interpretable Markdown
+withhold the seal with the fixed note. The visible text SHALL be the one the **same Markdown consumer the host
+uses** produces (`markdown_it` of the Hermes installation): the document is rendered, every tag is replaced by
+a space, every entity is decoded and the whitespace is collapsed, so an entity inside a link label, a shortcut
+reference resolved against its definition and the line break an HTML `<br>` renders are one mark (M-R6-1). The
+removal SHALL map every visible character back to the span of the original document that produced it, so the
+whole construct goes with the mark; the postcondition SHALL be checked **on that render**, not on the detector
+again, and a removal that cannot complete after a bounded number of passes SHALL deliver the fixed safe note
+and never the model's untransformed text. A document name or a section SHALL have every interpretable Markdown
 metacharacter escaped, not only the backslash and the backtick, so it can never inject a link, an emphasis or a
 body. The plugin SHALL NOT raise into Hermes from any of its handlers (H11).
 
@@ -53,6 +60,14 @@ body. The plugin SHALL NOT raise into Hermes from any of its handlers (H11).
 - **WHEN** the model's own text contains `Verified by Cited`
 - **THEN** in cited mode it SHALL be discarded with the rest of the prose, and in dot mode every occurrence of it SHALL be removed, including `**Verified by Cited**`, `> Verified by Cited`, `Verified by Cited [1]`, `Verified **by** Cited`, `Verified by [Cited](https://example.invalid)`, `Verified\nby Cited`, `Verified &#98;y Cited` and `Verified by [Cited][c]`
 
+#### Scenario: an entity, a reference and an HTML break do not hide the mark
+- **WHEN** a model answer renders the reserved mark through an entity inside a link label (`Verified [&#98;y](https://example.invalid) Cited`), an entity inside the label of an inline link (`Verified by [Ci&#116;ed](https://example.invalid)`), a whole link whose label carries it (`[Verified &#98;y Cited](https://example.invalid)`), a shortcut reference resolved against its definition (`Verified by [Cited]` with `[Cited]: https://example.invalid`), an explicit reference with an entity (`Verified by [Ci&#116;ed][c]` with `[c]: https://example.invalid`) or an HTML line break (`Verified<br>by Cited`)
+- **THEN** the detection SHALL read the render of the supported consumer, dot mode SHALL remove the whole occurrence and re-check the render, and cited mode SHALL keep the documentary line as data and add the fixed documentary note with `verified=false`
+
+#### Scenario: a removal that cannot complete delivers the fixed safe note
+- **WHEN** the render still shows the mark after the bounded removal passes
+- **THEN** the delivered text SHALL be the fixed safe note, the row SHALL be that same text, and the model's untransformed text SHALL never be delivered
+
 #### Scenario: document metadata cannot forge the seal
 - **WHEN** a document name or a section of a passage contains the reserved mark, a line break or Markdown
 - **THEN** the metadata SHALL be shown escaped in a single line, the seal SHALL be withheld and a fixed note SHALL be delivered in its place
@@ -63,12 +78,15 @@ body. The plugin SHALL NOT raise into Hermes from any of its handlers (H11).
 
 ### Requirement: H5 — Local consistency record of delivered answers
 
-The plugin SHALL append one entry per delivered response to `$HERMES_HOME/cited/audit.jsonl` with: UTC
+The plugin SHALL append one entry per **plugin composition whose append succeeds** to
+`$HERMES_HOME/cited/audit.jsonl` with: UTC
 timestamp, a monotonic `seq` starting at 1, the identity of the log, platform, session, turn identifier, user
 when available, mode, question, the tool calls with their arguments and with the SHA-256 and the text of every
 returned excerpt, the unique identifier, original number, document, section and position of the lines the model
-chose, the delivered text, the transcript and the delivery decision, and the `prev_hash` and `hash` of the
-chain, where `hash = sha256(prev_hash + canonical_json(entry without hash))`. Every entry SHALL also store the
+chose, the composed text, the transcript and the delivery decision, and the `prev_hash` and `hash` of the
+chain, where `hash = sha256(prev_hash + canonical_json(entry without hash))`. A persistence refusal SHALL
+produce no row, so the record is the plugin's composition when the append succeeds and never a claim about the
+terminal message. Every entry SHALL also store the
 evidence table of its turn: for each passage, the call, the identifier, the unique `uid`, the original number
 `n`, the document, the section, the position and the numbered lines, so a block can be resolved independently of
 the answer text. The append SHALL hold an exclusive inter-process lock over a lock file of the log and, before
@@ -171,11 +189,13 @@ message.
 - **WHEN** every surface the snapshot can read is quiet, because the host exposes no per-turn accredited delivery
 - **THEN** the answer SHALL be the plugin's composition with the fixed note and SHALL NOT carry the seal
 
-### Requirement: H10 — A failure never yields a sealed answer, and the answer is always one of three
+### Requirement: H10 — A failure never yields a sealed answer, and the plugin's composition is one of three
 
-For every cited turn that reaches `transform_llm_output`, the delivered text SHALL be exactly one of: the render
+For every cited turn that reaches `transform_llm_output`, the plugin's composition SHALL be exactly one of: the render
 of H12, the fixed refusal of H12 in the configured language, or a fixed operational refusal in the configured
-language that carries an incident code and interpolates no error detail. A boundary around the whole
+language that carries an incident code and interpolates no error detail. This requirement bounds that
+composition and not the terminal message: the host may add its own text after the hook, so the delivered message
+can differ from it (H16). A boundary around the whole
 transformer SHALL turn any exception of reading the configuration, resolving, rendering, composing or
 persisting into the operational refusal, and SHALL drop the turn state in `finally`. The mode SHALL start
 **unknown**: the dot pass-through SHALL be allowed only after dot was resolved affirmatively, so a failure of
@@ -321,3 +341,27 @@ amends C1 to C4 of the round 4 contract as recorded in the round 6 mission and i
 #### Scenario: the reserved mark is data, not state
 - **WHEN** a document name, a section or a chosen line carries the reserved mark
 - **THEN** the metadata SHALL be escaped including the entity ampersand, the line SHALL keep its bytes as data, the seal SHALL be withheld and the fixed note SHALL be delivered
+
+### Requirement: H17 — The installed skill and the public documents state the implemented policy (M-R6-2)
+
+The skill the plugin registers with `ctx.register_skill` SHALL state that this version **does not emit** the seal
+`Verified by Cited`, SHALL show a real render that carries the fixed retention note instead of a render that ends
+in the mark, and SHALL describe the plugin's composition, the drafts the host may show while the answer is
+written, the empty response and the notices the host may add afterwards. The public documents — both READMEs, the
+packaged skill, `docs/upstream-proposal.md` and `community-hermes/docs/mcp.md` — SHALL replace every universal
+promise about the terminal message or the record with: *for a cited turn that reaches the hook, the plugin's
+composition is the documentary render, the fixed refusal or the operational refusal; the host may add text
+afterwards*. They SHALL describe the JSONL as the record of that composition when the append succeeds, so a
+persistence refusal produces no row, and dot mode as the model's text with the mark removed and a fixed note when
+the removal leaves nothing. The number and the names of the three pending host-side contracts SHALL be aligned in
+every one of them. A test SHALL read the skill the plugin really registers and SHALL search the public documents
+for the old promises with a list of **forbidden** phrases; checking that the new phrases appear SHALL NOT be the
+only assertion.
+
+#### Scenario: the registered skill declares the retained seal
+- **WHEN** the skill the plugin registers is read
+- **THEN** it SHALL say that this version does not emit the seal, SHALL carry no render that ends in the mark, and SHALL name the plugin's composition, the drafts, the empty response and the additions of the host
+
+#### Scenario: an old promise cannot survive in a public document
+- **WHEN** the public documents are searched for the forbidden phrases of the previous contract
+- **THEN** no document SHALL contain one, and each SHALL carry the replacement wording and the three pending contracts by name

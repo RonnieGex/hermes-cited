@@ -206,6 +206,41 @@ is the round 6 mission itself plus this design entry.
   the final message and the condition of the seal; `/dot` states that the mark is removed from any answer.
   The READMEs, the proposal, `community-hermes/docs/mcp.md` and the public Cited table follow D11.
 
+## D18 — round 7: the visible mark is read with the host's Markdown consumer, and the published documents say only what the plugin composes
+
+The sixth review (`tasks/revision-codex-hermes-cited-r6.md`) found two publication blockers.
+
+- **M-R6-1 — the mark evaded the sanitisation by combining syntax.** The round 6 detector built the
+  visible characters with its own hand-written reading of the Markdown, so it copied the characters of a
+  link label without decoding the entities inside it, it never resolved a shortcut reference against its
+  definition, and it did not read the line break an HTML `<br>` renders. `Verified [&#98;y](url) Cited`,
+  `Verified by [Ci&#116;ed](url)`, `[Verified &#98;y Cited](url)`, `Verified by [Cited]` with its
+  definition, `Verified by [Ci&#116;ed][c]` with its definition and `Verified<br>by Cited` all rendered the
+  reserved mark and none of them was detected. The fix of M-R6-1 is: **the detection reads the visible text
+  of the same Markdown consumer the host uses**, `markdown_it` of the Hermes installation — the render is
+  produced, its tags are replaced by a space, its entities are decoded and its whitespace is collapsed —
+  and the removal maps the visible characters it finds back to the spans of the original document, so the
+  whole presentation goes with the mark. The postcondition of `strip_mark` is checked **on that render**
+  and not on the detector again, the removal repeats a bounded number of times, and when it cannot complete
+  the transformer delivers the fixed safe note that already exists. In cited mode the documentary line stays
+  as data and the answer carries the documentary note with `verified=false`. The nine counterexamples of the
+  review's annex become permanent fixtures under `tests/regressions/`, driven by the real loader, dispatcher
+  and JSONL, with compliance assertions (the mark is absent from the visible text of the render in dot mode
+  and the note is present in cited mode) checked with the independent renderer.
+- **M-R6-2 — the installed skill and parts of the documentation still promised the pre-D11 contract.** The
+  skill `ctx.register_skill` installs still said the plugin adds the seal and showed a render that ends in
+  `Verified by Cited`; `community-hermes/docs/mcp.md`, both READMEs and `docs/upstream-proposal.md` still
+  universalised the terminal message and the record. They are replaced by the wording the review gives:
+  *for a cited turn that reaches the hook, the plugin's composition is the documentary render, the fixed
+  refusal or the operational refusal; the host may add text afterwards*. The record is described as the
+  plugin's composition when the append succeeds, so a persistence refusal produces no row; dot mode is
+  described as the model's text with the mark removed and a fixed note when it is left empty; and the number
+  and the names of the three pending host-side contracts are aligned in every public document. A new test
+  reads the skill the plugin really registers and hunts the old promises in the public documents with a list
+  of forbidden phrases, instead of only checking that the new ones appear.
+
+D11 is not changed by this round, and no Hermes change is needed to close either blocker.
+
 ## D15 — the gate measures what it names
 
 M-R3-6 listed four predicates that accepted wrong data and one self-test that reported success while failing.
