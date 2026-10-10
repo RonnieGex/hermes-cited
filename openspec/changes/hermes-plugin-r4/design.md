@@ -241,6 +241,39 @@ The sixth review (`tasks/revision-codex-hermes-cited-r6.md`) found two publicati
 
 D11 is not changed by this round, and no Hermes change is needed to close either blocker.
 
+**Round 8 supersedes the mark protection of this entry.** D12 of `tasks/mision-cited-hermes-r8.md` retires the
+reader of the visible mark and the removal of dot mode that M-R6-1 describes: see D19 below. The rest of D18
+(the wording of the plugin's composition, the skill and the record) stays.
+
+## D19 — round 8: the reserved mark is not protected while the seal does not exist (D12)
+
+The seventh review (`tasks/revision-codex-hermes-cited-r7.md`) reopened the protection of the reserved mark
+(M-R7-1): the round 7 reader of the host's Markdown consumer replaced every tag with a space, so it inserted
+spaces the render does not have and opened three new evasions while discarding legitimate text; the route
+without the consumer did not even guarantee the safe note. D12 of the round 8 mission (approved by Fable)
+settles the scope: with D11 the plugin emits no seal on any route, so **no authentic seal exists that anyone
+could forge**, and the protection is retired.
+
+- **The sanitisation is retired, not left dead.** `strip_mark`, `contains_mark`, `consumer_visible`,
+  `consumer_mark`, `mark_spans`, `SanitizationFailed` and the fixed sanitisation notes are gone from
+  `render.py`, `verifier.py`, `messages.py` and `plugin.py`; `git log` keeps them.
+- **Dot mode passes the text through (D12.1).** The transformer returns `None`, the host keeps the model's
+  text, and the row records exactly that string. A failure of the pass-through also returns `None`, because
+  dot never promised the text.
+- **A documentary line with the phrase is data (D12.2).** Cited mode keeps the line as it came from the
+  document, adds no documentary retention note, and keeps the general withheld note that says this version
+  emits no seal in every cited composition.
+- **The documents say it in plain language (D12.3).** Both READMEs, the packaged skill,
+  `docs/upstream-proposal.md` and `community-hermes/docs/mcp.md` state that nothing in dot mode is verified,
+  whatever the text says, and that this version writes no seal, so the phrase `Verified by Cited` in an
+  answer never comes from the plugin.
+- **The activation of the seal protects the mark again (D12.4).** The activation section of
+  `docs/upstream-proposal.md` and this design require whoever turns the capability point on to protect the
+  reserved mark again with the render semantics of the host, checked against its consumer.
+- **C1 is amended (D12.5).** The bullet of the reserved mark of C1 (M-R3-3 of
+  `tasks/mision-cited-hermes-r4.md`) is replaced by D12; the traceability is the round 8 mission plus this
+  entry and requirements H4 and H18 of the spec delta.
+
 ## D15 — the gate measures what it names
 
 M-R3-6 listed four predicates that accepted wrong data and one self-test that reported success while failing.
