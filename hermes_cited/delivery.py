@@ -17,6 +17,13 @@ When the configuration cannot be read, or the platform is unknown, the seal is w
 promises a verified-only delivery it cannot prove. The promise of H12 is about the **final message**; the
 temporary deltas of the surfaces this module withholds on are the limit that ``docs/upstream-proposal.md``
 asks Hermes to close with a synchronous retention contract.
+
+Round 5 (M-R4-2) reads the object the host itself has loaded (``hermes_cli.config.load_config_readonly``),
+not the file: the file can disagree with the configuration the running host is using, and reading it before
+the turn does not prove the loaded state. When the host module is present but does not answer with a
+mapping, the snapshot is unreadable and the seal is withheld; a standalone run, with no host on the path,
+falls back to the file. A YAML syntax or type error is an unreadable snapshot too: a missing parser is
+distinguished from an invalid document instead of reinterpreting the error as a permissive configuration.
 """
 
 from __future__ import annotations
@@ -32,6 +39,10 @@ try:  # the real resolver of the host, when the plugin runs inside Hermes
 except Exception:  # the plugin venv of a plain test run has no host on the path
     HOST_STREAMING = None
     HOST_STREAMING_VERSION = ""
+
+
+class UnreadableConfig(Exception):
+    """The effective configuration of this execution cannot be read or trusted (M-R4-2)."""
 
 #: The platforms whose delivery the host streams through its own route rather than through the plugin's
 #: configuration. ``api_server`` is the SSE route of the desktop app (M-R3-4): it always withholds.
@@ -134,6 +145,7 @@ class Snapshot:
     tts: bool = False
     sse: bool = False
     known_platform: bool = False
+    source: str = ""
     reasons: tuple = field(default_factory=tuple)
     seal: bool = False
 
@@ -146,6 +158,7 @@ class Snapshot:
             "tts": self.tts,
             "sse": self.sse,
             "known_platform": self.known_platform,
+            "source": self.source,
             "reasons": list(self.reasons),
             "seal": self.seal,
             "host_streaming_version": HOST_STREAMING_VERSION,
@@ -224,11 +237,27 @@ def _scalar(value: str):
     return text
 
 
+def _reject_unbalanced_flow(value: str, key: str) -> None:
+    """Refuse an unclosed flow collection instead of reading it as a value (M-R4-2).
+
+    ``streaming: [`` is not a nested mapping with a missing parser: it is invalid YAML, and reading it as
+    a scalar would turn a syntax error into a permissive configuration.
+    """
+    text = str(value).strip()
+    pairs = {"[": "]", "{": "}"}
+    if not text or text[0] not in pairs:
+        return
+    closing = pairs[text[0]]
+    if text.count(text[0]) != text.count(closing) or not text.endswith(closing):
+        raise ValueError("the configuration is not valid YAML: unclosed flow collection at {0}".format(key))
+
+
 def simple_yaml(text: str) -> dict:
     """A tiny reader for the small nested mapping Hermes writes in ``config.yaml``.
 
     It is only used when PyYAML is not importable (the plugin must not depend on it): the plugin
-    venv of a plain test run has no ``yaml`` module, while the Hermes venv does.
+    venv of a plain test run has no ``yaml`` module, while the Hermes venv does. An unclosed flow
+    collection is a ``ValueError``, never a permissive value.
     """
     root: dict = {}
     stack = [(-1, root)]
@@ -249,6 +278,7 @@ def simple_yaml(text: str) -> dict:
         parent = stack[-1][1]
         value = value.strip()
         if value:
+            _reject_unbalanced_flow(value, key)
             parent[key] = _scalar(value)
         else:
             node: dict = {}
@@ -258,17 +288,71 @@ def simple_yaml(text: str) -> dict:
 
 
 def read_config(home=None) -> dict:
+    """The configuration file of this home, parsed strictly (M-R4-2).
+
+    A missing parser falls back to :func:`simple_yaml`; a syntax or type error of PyYAML propagates, so
+    the caller can produce an unreadable snapshot instead of a permissive one.
+    """
     path = Path(home) / "config.yaml" if home else _default_home() / "config.yaml"
     if not path.exists():
         return {}
     text = path.read_text(encoding="utf-8", errors="replace")
     try:
         import yaml
-
-        loaded = yaml.safe_load(text)
-        return loaded if isinstance(loaded, dict) else {}
-    except Exception:
+    except ImportError:
         return simple_yaml(text)
+    loaded = yaml.safe_load(text)
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        raise ValueError("the configuration is not a mapping")
+    return loaded
+
+
+def host_config(home=None):
+    """The configuration object the host has loaded, or ``None`` when this is not a host process.
+
+    ``hermes_cli.config.load_config_readonly`` is the host's own merged object (defaults, ``config.yaml``,
+    managed scope and environment expansion, cached on the file signature). A plugin that read the file
+    itself could disagree with the object the host is really using, which is the defect of M-R4-2. When
+    the module is not on the path this is a standalone run and the file is the only policy; when it is
+    present and does not answer with a mapping, the caller withholds the seal.
+
+    The host loader resolves its path from the environment, so it is consulted only when this process
+    carries an explicit ``HERMES_HOME``; and when a caller names a ``home``, the loaded object is used
+    only if the host's own config path is the one of that home. Otherwise the object belongs to another
+    home and cannot prove anything about this one.
+    """
+    if not os.environ.get("HERMES_HOME", "").strip():
+        return None
+    try:
+        from hermes_cli.config import get_config_path, load_config_readonly
+    except ImportError as error:
+        name = str(getattr(error, "name", "") or "")
+        if name in ("", "hermes_cli", "hermes_cli.config"):
+            return None
+        raise UnreadableConfig("{0}: {1}".format(type(error).__name__, error))
+    if home is not None:
+        try:
+            if Path(get_config_path()).resolve() != (Path(home) / "config.yaml").resolve():
+                return None
+        except Exception:
+            return None
+    try:
+        values = load_config_readonly()
+    except Exception as error:
+        raise UnreadableConfig("{0}: {1}".format(type(error).__name__, error))
+    if not isinstance(values, dict):
+        raise UnreadableConfig("the host configuration is not a mapping")
+    return values
+
+
+def effective_config(home=None):
+    """The frozen effective policy of this execution: the host object first, the file when standalone."""
+    values = host_config(home)
+    if values is None:
+        return read_config(home)
+    return values
 
 
 def _default_home() -> Path:
@@ -356,21 +440,31 @@ def effective_streaming(platform: str, config: dict = None, home=None) -> bool:
 
 
 def snapshot(platform: str, home=None, config: dict = None) -> Snapshot:
-    """The frozen delivery snapshot of one turn, taken at its start (H9, D13).
+    """The frozen delivery snapshot of one turn, taken at its start (H9, D13, M-R4-2).
 
-    It never raises: an unreadable or unparseable configuration produces a snapshot that withholds.
+    It never raises: an unreadable or unparseable configuration produces a snapshot that withholds. The
+    policy comes from the host's loaded object when there is a host, from the file in a standalone run,
+    and from ``config`` when a caller supplies it; ``source`` names which one was used.
     """
     name = str(platform or "").strip().lower()
     try:
-        values = config if config is not None else read_config(home)
+        if config is not None:
+            values, source = config, "supplied"
+        else:
+            host = host_config(home)
+            if host is None:
+                values, source = read_config(home), "file"
+            else:
+                values, source = host, "host"
         if not isinstance(values, dict):
-            raise ValueError("the configuration is not a mapping")
+            raise UnreadableConfig("the configuration is not a mapping")
     except Exception:
         return Snapshot(
             platform=name,
             readable=False,
             sse=name in SSE_PLATFORMS,
             known_platform=name in MESSAGING_PLATFORMS or name in ("cli",) or name in SSE_PLATFORMS,
+            source="unreadable",
             reasons=("unreadable",),
             seal=False,
         )
@@ -404,6 +498,7 @@ def snapshot(platform: str, home=None, config: dict = None) -> Snapshot:
         tts=tts,
         sse=sse,
         known_platform=known,
+        source=source,
         reasons=tuple(reasons),
         seal=not reasons,
     )

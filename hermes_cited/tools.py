@@ -16,6 +16,9 @@ from .config import settings_from_env
 
 TOOLSET = "cited"
 TOOL_NAMES = ("cited_search", "cited_ask", "cited_quote")
+#: The handlers whose result is real evidence of Cited. ``cited_quote`` returns document text, so it is
+#: a selection and never a source of new evidence (B-R4-2).
+EVIDENCE_TOOLS = ("cited_search", "cited_ask")
 
 DEFAULT_SEARCH_LIMIT = 5
 MAX_SEARCH_LIMIT = 8
@@ -197,8 +200,13 @@ def _passage_of(raw, with_lead: bool = False) -> dict:
     return passage
 
 
-def parse_tool_result(raw) -> dict:
-    """Recover the envelope of a Cited tool result; ``None`` when the string is not one."""
+def parse_tool_result(raw, expected=None) -> dict:
+    """Recover the envelope of a Cited tool result; ``None`` when the string is not one.
+
+    ``expected`` names the handler that produced the result: the envelope's own ``cited_tool`` must match
+    it, so a document that happens to be a valid envelope can never be presented as another call's
+    evidence (B-R4-2).
+    """
     if not isinstance(raw, str) or not raw.strip():
         return None
     try:
@@ -206,6 +214,8 @@ def parse_tool_result(raw) -> dict:
     except ValueError:
         return None
     if not isinstance(data, dict) or data.get("cited_tool") not in TOOL_NAMES:
+        return None
+    if expected is not None and data.get("cited_tool") != expected:
         return None
     return data
 
@@ -215,6 +225,21 @@ def _places_of(envelope: dict):
         for place in envelope.get(key) or []:
             if isinstance(place, dict):
                 yield place
+
+
+def envelope_places(envelope: dict) -> list:
+    """The place objects of an envelope, as the model received them, with their identifiers (M-R4-3)."""
+    return [place for place in _places_of(envelope or {})]
+
+
+def evidence_objects(envelope: dict) -> list:
+    """The place objects of an envelope that carry a non-empty excerpt, in order (M-R4-3)."""
+    objects = []
+    for place in _places_of(envelope or {}):
+        excerpt = place.get("excerpt")
+        if isinstance(excerpt, str) and excerpt.strip():
+            objects.append(place)
+    return objects
 
 
 def grounding_excerpts(envelope: dict) -> list:
@@ -269,6 +294,37 @@ def evidence_places(envelope: dict) -> list:
                 "pid": "",
                 "call": 0,
                 "uid": "",
+            }
+        )
+    return places
+
+
+def bound_places(envelope: dict) -> list:
+    """The places of an envelope that already carry the identifiers the handler assigned (M-R4-3).
+
+    The internal passage keeps the same ``pid``, ``call`` and ``uid`` the model received, so the hook
+    never renumbers a passage that was already bound.
+    """
+    places = []
+    for place in _places_of(envelope):
+        excerpt = place.get("excerpt")
+        if not isinstance(excerpt, str) or not excerpt.strip():
+            continue
+        number = place.get("n") if isinstance(place.get("n"), int) else 0
+        heading = place.get("heading") if isinstance(place.get("heading"), str) else ""
+        document = place.get("document") if isinstance(place.get("document"), str) else ""
+        position = place.get("position") if isinstance(place.get("position"), int) else 0
+        places.append(
+            {
+                "n": number,
+                "document": document,
+                "heading": heading,
+                "position": position,
+                "excerpt": excerpt,
+                "lines": render.numbered_lines(excerpt),
+                "pid": str(place.get("pid") or ""),
+                "call": int(place.get("call") or 0) if isinstance(place.get("call"), int) else 0,
+                "uid": str(place.get("uid") or ""),
             }
         )
     return places

@@ -13,6 +13,14 @@ opened a new hole in Windows. What this module records is what was really delive
 for reviewing and reproducing an answer, and it is **not** tamper-proof against whoever controls the
 machine. Audited custody belongs to the server side (Cited Ledger). ``git log`` keeps the custody code of
 rounds 2 and 3 if it is ever wanted back.
+
+Round 5 (M-R4-1) publishes one entry by writing the validated published text plus the new row into a
+temporary file of the same directory, completing write, flush, ``fsync`` and close there, and only then
+replacing the published file atomically. A failure of any earlier stage leaves the published chain
+byte-identical, and the replacement is the last fallible step of publication, so its success can never be
+turned into a refusal. What remains outside the record is the interruption of the process **between**
+publishing the row and delivering the answer: the row exists and nothing was shown. That is declared, not
+promised away.
 """
 
 from __future__ import annotations
@@ -21,6 +29,7 @@ import hashlib
 import json
 import os
 import secrets
+import tempfile
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -134,7 +143,10 @@ def _locked(lock_file: Path):
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         except OSError:
             pass
-        handle.close()
+        try:
+            handle.close()
+        except OSError:
+            pass
 
 
 def read_entries(path) -> list:
@@ -197,18 +209,73 @@ def tail_of(entries) -> tuple:
     return len(entries), entries[-1]["hash"], entries[0]["log_id"]
 
 
-def _append_line(log: Path, entry: dict) -> None:
-    with open(log, "a", encoding="utf-8", newline="\n") as handle:
-        handle.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+def _serialize(entry: dict) -> str:
+    return json.dumps(entry, ensure_ascii=False, sort_keys=True)
+
+
+def _published_text(log: Path) -> str:
+    """The bytes of the published log, with the final line break the append needs."""
+    if not log.exists():
+        return ""
+    text = log.read_text(encoding="utf-8")
+    if text and not text.endswith("\n"):
+        text += "\n"
+    return text
+
+
+def _create_temp(log: Path) -> Path:
+    """A temporary file of the same directory, so the replacement is a rename and never a copy."""
+    handle, name = tempfile.mkstemp(dir=str(log.parent), prefix=log.name + ".", suffix=".tmp")
+    os.close(handle)
+    return Path(name)
+
+
+def _open_temp(path):
+    """The write handle of a prepared temporary file; a seam for the failure fixtures of M-R4-1."""
+    return open(path, "w", encoding="utf-8", newline="\n")
+
+
+def _write_temp_file(path, text: str) -> None:
+    """Write, flush, ``fsync`` and close the prepared file; any failure propagates (M-R4-1)."""
+    handle = _open_temp(path)
+    try:
+        handle.write(text)
         handle.flush()
         os.fsync(handle.fileno())
+    finally:
+        handle.close()
+
+
+def _discard(path) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def _publish(temp, log: Path) -> None:
+    """The last publishing operation: an atomic replacement of the published file (M-R4-1)."""
+    os.replace(str(temp), str(log))
+
+
+def _publish_replacement(log: Path, text: str) -> None:
+    temp = None
+    try:
+        temp = _create_temp(log)
+        _write_temp_file(temp, text)
+        _publish(temp, log)
+        temp = None
+    finally:
+        if temp is not None:
+            _discard(temp)
 
 
 def append_entry(path, payload: dict, key_path_override=None) -> dict:
     """Append one entry to the chain, or refuse without touching the log.
 
-    ``key_path_override`` is accepted and ignored so that the callers and the command lines of rounds 2 and
-    3 keep working; round 4 has no key.
+    Under the inter-process lock the whole chain is validated and the new file is prepared outside the
+    published one; only then is it replaced atomically. ``key_path_override`` is accepted and ignored so
+    that the callers and the command lines of rounds 2 and 3 keep working; round 4 has no key.
     """
     log = Path(path)
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -227,7 +294,8 @@ def append_entry(path, payload: dict, key_path_override=None) -> dict:
         entry["hash"] = ""
         validate_entry(entry)
         entry["hash"] = entry_hash(entry)
-        _append_line(log, entry)
+        text = "{0}{1}\n".format(_published_text(log), _serialize(entry))
+        _publish_replacement(log, text)
     return entry
 
 

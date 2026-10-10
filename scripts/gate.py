@@ -408,37 +408,57 @@ UNIT_CLASSES = {
 SIGNS = {"": r"", "-": r"-\s*", "+": r"\+\s*"}
 
 
-def amount_statement(text, amount, unit=None, mark=None, sign="", cite=False):
-    """One bound statement: sign, exact amount, unit of the right class and a mark of the selection.
+def _statement_window(text, index):
+    """The rest of the line that holds *index*: a citation is resolved inside its own line (M-R4-7)."""
+    end = text.find("\n", index)
+    return text[index:] if end < 0 else text[index:end]
 
-    M-R3-6: the old predicates ignored the sign, accepted a nearby unit of another class and accepted
-    any mark. This one parses a single statement: the amount must be a standalone token (never inside
-    ``1380`` or ``380.5`` and never the tail of ``-380`` when no sign was asked for), the sign must be
-    exactly the requested one, the unit must belong to the requested class, and the citation mark must be
-    the one that was resolved against the passage the run selected. ``cite=True`` requires a mark at all;
-    ``mark=None`` accepts any mark, a number accepts only that one and ``0`` accepts only no mark.
+
+def amount_statement(text, amount, unit=None, mark=None, sign="", cite=False):
+    """One bound statement: sign, exact amount, unit of the right class and the mark of its own line.
+
+    M-R3-6 parsed the sign, the amount and the unit; M-R4-7 binds the citation to the amount instead of
+    accepting a mark that appears anywhere in the text. The amount must be a standalone token (never
+    inside ``1380``, ``380.5`` or the tail of ``-380`` when no sign was asked for), the sign must be
+    exactly the requested one, the unit must belong to the requested class, and the mark must be the
+    first citation after the amount inside the same line — the render puts the mark at the end of the
+    block, and a mark that closes another statement is not this amount's citation. ``cite=True`` requires
+    a mark at all; ``mark=None`` accepts any mark, a number accepts only that one and ``0`` accepts only
+    no mark.
     """
     if not isinstance(text, str) or not text:
         return False
     number = re.escape(str(amount))
-    prefix = SIGNS.get(sign, r"")
-    pattern = r"(?<![\w.,]){0}{1}(?![\d.,])".format(prefix, number)
     units = UNIT_CLASSES.get(unit) if unit else None
-    for match in re.finditer(pattern, text):
-        if sign == "" and match.start() > 0 and text[match.start() - 1] in "+-":
+    pattern = r"(?<![\w.,])(?P<sign>[+-]?)[ \t]*(?P<amount>{0})(?![\d.,])".format(number)
+    if units:
+        pattern += r"(?P<unit>[ \t\-]*(?:{0})(?![\w]))".format(
+            "|".join(re.escape(word) + r"s?" for word in units)
+        )
+    pattern += r"(?P<tail>[ \t.,;:]*)(?P<mark>\[\d+\])?"
+    for match in re.finditer(pattern, text, re.IGNORECASE):
+        found = match.group("sign") or ""
+        if found != sign:
             continue
-        window = text[match.end(): match.end() + 40].lower()
-        if units is not None and not any(re.match(r"[\s\-]*" + re.escape(word) + r"s?(?![\w])", window) for word in units):
-            continue
+        if sign == "":
+            before = text[: match.start()].rstrip(" \t")
+            if before and before[-1] in "+-":
+                continue
+        window = _statement_window(text, match.end())
+        if match.group("mark"):
+            digits = match.group("mark")[1:-1]
+        else:
+            later = re.search(r"\[(\d+)\]", window)
+            digits = later.group(1) if later else None
         if mark is None:
-            if not cite or re.search(r"\[\d+\]", text):
+            if not cite or digits is not None:
                 return True
             continue
         if mark == 0:
-            if not re.search(r"\[\d+\]", text):
+            if digits is None:
                 return True
             continue
-        if "[{0}]".format(mark) in text:
+        if digits == str(mark):
             return True
     return False
 
@@ -529,14 +549,41 @@ def line_is_from_entry(text, entry):
     return False
 
 
-def blocks_are_bound(entry, line):
-    """M-R3-6: one recorded block must be a full line of its own turn and carry a bound identifier.
+def _evidence_row(entry, line):
+    """The row of the evidence table the line names, or ``None`` (M-R4-7).
 
-    The check resolves the block against the selection, the source and the turn identifier of that run:
-    the recorded ``uid`` must name the entry's own turn, the ``pid`` must be a passage of that turn, the
-    document and the section must be the ones of that passage, and the ``[n]`` mark of the delivered
-    answer must be the number of that same identifier.
+    The table keeps the original metadata of every passage the search returned: call, pid, uid, number,
+    document, heading, position and the numbered lines. A block is bound only to its own row.
     """
+    if not isinstance(entry, dict) or not isinstance(line, dict):
+        return None
+    pid = str(line.get("pid") or "")
+    uid = str(line.get("uid") or "")
+    call = line.get("call")
+    if not pid or not uid or call is None:
+        return None
+    for row in entry.get("evidence") or []:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("pid") or "") == pid and str(row.get("uid") or "") == uid and row.get("call") == call:
+            return row
+    return None
+
+
+def _int_or_zero(value):
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def blocks_are_bound(entry, line):
+    """M-R3-6 and M-R4-7: one recorded block must resolve against its own evidence row.
+
+    The identifier must be the one of the table (``turn_id:call:pid``), the document, the section and the
+    position must be the original metadata of that row, the text must be one of its full lines, the
+    ``[n]`` mark and the escaped source must be the ones of that same row in the delivered answer. A
+    forged call, pid, document or position, or an answer that does not hold the block, is not bound.
+    """
+    from hermes_cited import render
+
     if not isinstance(entry, dict) or not isinstance(line, dict):
         return False
     text = line.get("text")
@@ -544,30 +591,49 @@ def blocks_are_bound(entry, line):
     uid = str(line.get("uid") or "")
     if not text or not pid or not uid:
         return False
-    if not uid.startswith("{0}:".format(entry.get("turn_id"))):
+    if uid != "{0}:{1}:{2}".format(entry.get("turn_id"), line.get("call"), pid):
         return False
-    if not line_is_from_entry(text, entry):
+    row = _evidence_row(entry, line)
+    if row is None:
+        return False
+    if str(row.get("document") or "") != str(line.get("document") or ""):
+        return False
+    if str(row.get("heading") or "") != str(line.get("heading") or ""):
+        return False
+    if _int_or_zero(row.get("position")) != _int_or_zero(line.get("position")):
+        return False
+    if text not in [str(item.get("text")) for item in row.get("lines") or [] if isinstance(item, dict)]:
         return False
     response = str(entry.get("response") or "")
     mark = "[{0}]".format(re.sub(r"\D", "", pid))
-    if mark not in response:
+    block = "{0} {1}".format(text, mark)
+    if block not in response:
         return False
-    source = ""
-    if line.get("document"):
-        source = str(line["document"])
-        if line.get("heading"):
-            source = "{0} - {1}".format(line["document"], line["heading"])
-    if source and source not in response:
-        return False
+    document = str(row.get("document") or "")
+    if document:
+        source = render.escape_meta(document)
+        heading = render.escape_meta(row.get("heading") or "") if row.get("heading") else ""
+        if heading:
+            source = "{0} - {1}".format(source, heading)
+        prefix = "Fuente: " if "Fuente:" in response else "Source: "
+        if "{0}{1}".format(prefix, source) not in response:
+            return False
     return True
 
 
 def every_block_is_bound(entries):
-    """M-R3-6: every block of every cited entry of the log, not only the entry of the price run."""
+    """M-R3-6: every block of every cited entry of the log, with the refusals excluded by name.
+
+    A refusal is a cited entry without blocks (the fixed refusal and the operational one), so it is
+    excluded explicitly instead of being skipped because its list happens to be empty.
+    """
     checked = 0
     cited = 0
     for entry in entries or []:
         if entry.get("mode") != "cited":
+            continue
+        response = str(entry.get("response") or "").strip()
+        if response in FIXED_REFUSALS or response.startswith("No puedo entregar") or response.startswith("I cannot deliver"):
             continue
         cited += 1
         lines = entry.get("quoted_lines") or []
@@ -576,9 +642,28 @@ def every_block_is_bound(entries):
         for line in lines:
             if not blocks_are_bound(entry, line):
                 return False, "entry {0} line {1} is not bound to its turn".format(
-                    entry.get("turn_id"), line.get("pid"))
+                    entry.get("turn_id"), (line or {}).get("pid"))
             checked += 1
     return cited > 0, "cited entries: {0}, blocks checked: {1}".format(cited, checked)
+
+
+def entry_of_run(entries, question, mode="cited"):
+    """The entry of one run, resolved again by the ``turn_id`` that run recorded (M-R4-7)."""
+    found = entry_for(entries, question, mode)
+    if found is None:
+        return None
+    return entry_for(entries, question, mode, turn_id=found.get("turn_id"))
+
+
+def bound_amount(entry, amount, unit=None, mark=None, sign="", cite=False):
+    """The delivered answer states the amount inside a block bound to the evidence of its own entry."""
+    if not isinstance(entry, dict):
+        return False
+    response = str(entry.get("response") or "")
+    if not amount_statement(response, amount, unit=unit, mark=mark, sign=sign, cite=cite):
+        return False
+    lines = entry.get("quoted_lines") or []
+    return bool(lines) and all(blocks_are_bound(entry, line) for line in lines)
 
 
 def recompute_digests(entries):
@@ -781,16 +866,17 @@ def audit_fixtures(root):
 
     path = root / "half-write.jsonl"
     chain(path, 1)
+    before = path.read_bytes()
 
-    def half_write(log, entry):
-        with open(log, "a", encoding="utf-8", newline="\n") as handle:
-            handle.write(json.dumps(entry)[:20])
+    def half_write(temp, text):
+        with open(temp, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(str(text)[:20])
             handle.flush()
             os.fsync(handle.fileno())
         raise OSError("synthetic failure after a partial write")
 
-    original = audit._append_line
-    audit._append_line = half_write
+    original = audit._write_temp_file
+    audit._write_temp_file = half_write
     try:
         try:
             audit.append_entry(path, payload(2))
@@ -798,8 +884,8 @@ def audit_fixtures(root):
         except OSError:
             results["half_write"] = "raised"
     finally:
-        audit._append_line = original
-    results["half_write_detected"] = audit.verify_file(path)[1] is not None
+        audit._write_temp_file = original
+    results["half_write_intact"] = path.read_bytes() == before
     try:
         audit.append_entry(path, payload(3))
         results["half_write_next_append"] = "appended"
@@ -965,6 +1051,26 @@ def gate_selftest():
         ("an operational refusal never carries the seal",
          "Verified by Cited" not in
          __import__("hermes_cited.verifier", fromlist=["operational_refusal"]).operational_refusal("CITED-1", "es")),
+        # the three counterexamples of M-R4-7
+        ("a sign separated by a space is not the plain amount",
+         not amount_statement("- 380 pesos [1]", "380", unit="currency", mark=1)),
+        ("a mark of another statement is not the bound citation",
+         not amount_statement("999 pesos [1]. Price: 380 pesos [99]", "380", unit="currency", mark=1)),
+        ("a forged block is not bound to its own row",
+         not blocks_are_bound(
+             {
+                 "turn_id": "t1",
+                 "mode": "cited",
+                 "response": "INVENTED_999 [1]\nFuente: forged.md - Elsewhere",
+                 "evidence": [],
+                 "quoted_lines": [
+                     {"pid": "P1", "uid": "t1:0:P1", "call": 0, "text": "INVENTED_999",
+                      "document": "forged.md", "heading": "Elsewhere", "position": 9}
+                 ],
+             },
+             {"pid": "P1", "uid": "t1:0:P1", "call": 0, "text": "INVENTED_999",
+              "document": "forged.md", "heading": "Elsewhere", "position": 9},
+         )),
     ]
     fixture = cited_fixture()
     cases.append(("the cited fixture records one line", fixture["recorded"] == [PRICE_LINE]))
@@ -982,9 +1088,9 @@ def gate_selftest():
     audits = audit_fixtures(REPO / ".tmp" / "gate-r4-selftest")
     cases.append(("a broken chain refuses the next append",
                   str(audits["removed_middle"]).startswith("refused") and audits["removed_middle_untouched"]))
-    cases.append(("a partial write is detected and refuses the next append",
-                  audits["half_write"] == "raised" and audits["half_write_detected"] is True
-                  and audits["half_write_next_append"] == "refused"))
+    cases.append(("a failed append never reaches the published chain",
+                  audits["half_write"] == "raised" and audits["half_write_intact"] is True
+                  and audits["half_write_next_append"] == "appended"))
     cases.append(("no custody file is created next to the log",
                   audits["files_next_to_the_log"] == ["audit.jsonl", "audit.jsonl.lock"]))
     cases.append(("a cut suffix is honestly reported as consistent",
@@ -1116,7 +1222,7 @@ def main():
         )
 
         ok, detail = gate_selftest()
-        claim("D8", "the gate's own predicates reject the reproductions of the three reviews", ok, detail)
+        claim("D8", "the gate's own predicates reject the reproductions of the four reviews", ok, detail)
 
         fixture = cited_fixture()
         claim(
@@ -1176,10 +1282,10 @@ def main():
         )
         claim(
             "H5",
-            "a partial write of a failed append is detected and refuses the next append",
-            audits["half_write"] == "raised" and audits["half_write_detected"] is True
-            and audits["half_write_next_append"] == "refused",
-            json.dumps({key: audits[key] for key in ("half_write", "half_write_detected", "half_write_next_append")}),
+            "a failed append never reaches the published chain and the next append is accepted",
+            audits["half_write"] == "raised" and audits["half_write_intact"] is True
+            and audits["half_write_next_append"] == "appended",
+            json.dumps({key: audits[key] for key in ("half_write", "half_write_intact", "half_write_next_append")}),
         )
         claim(
             "H5",
@@ -1305,13 +1411,14 @@ def main():
                 "tests/test_render.py",
                 "tests/test_verifier.py",
                 "tests/test_gate.py",
+                "tests/regressions",
             ],
             cwd=REPO,
-            timeout=900,
+            timeout=1800,
         )
         log("adversarial.txt", adv_out + "\n" + adv_err)
         adv_tail = adv_out.strip().splitlines()[-1] if adv_out.strip() else ""
-        claim("D8", "one fixture per finding of both reviews is green",
+        claim("D8", "one permanent fixture per finding of the four reviews is green",
               adv_code == 0 and "failed" not in adv_tail, adv_tail or adv_err.strip()[-300:])
 
         proposal = (REPO / "docs" / "upstream-proposal.md").read_text(encoding="utf-8")
@@ -1447,9 +1554,6 @@ def main():
         claim("H12", "(a) the price result is the plugin render of the line Cited returned",
               PRICE_LINE in price["final"] and PRICE_SOURCE in price["final"],
               price["final"][:300])
-        claim("H8", "(a) the price result carries the amount with its unit and its citation",
-              amount_with_citation(price["final"], "380"),
-              price["final"][:240])
 
         guarantee = run_stream_question(plugin_home, GUARANTEE_QUESTION)
         log("h2-guarantee.jsonl", guarantee["stdout"] + "\n" + guarantee["stderr"])
@@ -1458,12 +1562,8 @@ def main():
             guarantee = run_stream_question(plugin_home, GUARANTEE_FALLBACK_QUESTION)
             log("h2-guarantee-2.jsonl", guarantee["stdout"] + "\n" + guarantee["stderr"])
             guarantee_question = GUARANTEE_FALLBACK_QUESTION
-        claim("H8", "(b) the guarantee result carries 90 days with its unit and its citation",
-              guarantee["code"] == 0 and amount_with_unit(guarantee["final"], "90", "day")
-              and bool(re.search(r"\[\d+\]", guarantee["final"])),
-              guarantee["final"][:240])
         claim("H12", "(b) the guarantee result is the render of a full line of its excerpt",
-              GUARANTEE_LINE in guarantee["final"] and GUARANTEE_SOURCE in guarantee["final"],
+              guarantee["code"] == 0 and GUARANTEE_LINE in guarantee["final"] and GUARANTEE_SOURCE in guarantee["final"],
               guarantee["final"][:240])
 
         unanswered = run_stream_question(plugin_home, UNANSWERED_QUESTION)
@@ -1519,8 +1619,17 @@ def main():
                   for entry in entries
               ),
               "an entry is missing a field or marks the verifier wrongly")
-        price_entry = entry_for(entries, PRICE_QUESTION, "cited")
-        guarantee_entry = entry_for(entries, guarantee_question, "cited")
+        price_entry = entry_of_run(entries, PRICE_QUESTION, "cited")
+        guarantee_entry = entry_of_run(entries, guarantee_question, "cited")
+        claim("H8", "(a) the price amount is bound to the evidence row of its own turn",
+              bound_amount(price_entry, "380", unit="currency", cite=True),
+              json.dumps(price_entry or {})[:240])
+        claim("H8", "(b) the guarantee duration is bound to the evidence row of its own turn",
+              bound_amount(guarantee_entry, "90", unit="day", cite=True),
+              json.dumps(guarantee_entry or {})[:240])
+        bound_ok, bound_detail = every_block_is_bound(entries)
+        claim("H5", "every block of every cited entry resolves against its own evidence row",
+              bound_ok, bound_detail)
         claim("H5", "the lines a cited entry records are full lines of the excerpts of the turn",
               price_entry is not None
               and isinstance(price_entry.get("quoted_lines"), list)

@@ -15,6 +15,7 @@ resolving, rendering, composing or persisting produces that third one. The turn 
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import secrets
@@ -175,21 +176,20 @@ class Turn:
         self._call_count = 0
 
     def note_call(self, envelope, tool_name, args, status):
-        digests = tools.excerpt_digests(envelope) if envelope else []
-        texts = [text for _, text in tools.excerpt_pairs(envelope)] if envelope else []
-        call_index = self._call_count
-        self._call_count += 1
-        self.calls.append(
-            {
-                "tool": tool_name,
-                "args": args if isinstance(args, dict) else {},
-                "status": status or "ok",
-                "excerpt_sha256": digests,
-                "excerpt_texts": texts,
-            }
-        )
+        """Record one real evidence call; an envelope the handler already bound is not renumbered.
+
+        Round 5 (M-R4-3) assigns the identifiers while the search result is built, so this path reads the
+        ``pid``, ``call`` and ``uid`` the model received instead of assigning new ones.
+        """
         if not envelope:
             return
+        if self._is_registered(envelope):
+            return
+        digests = tools.excerpt_digests(envelope)
+        texts = [text for _, text in tools.excerpt_pairs(envelope)]
+        call_index = self._call_count
+        self._call_count += 1
+        self._record_tool_call(tool_name, args, status, digests, texts)
         for place in tools.evidence_places(envelope):
             self._passage_count += 1
             pid = "P{0}".format(self._passage_count)
@@ -197,6 +197,50 @@ class Turn:
             place["call"] = call_index
             place["uid"] = "{0}:{1}:{2}".format(self.turn_id, call_index, pid)
             self.passages.append(place)
+        self._note_evidence(envelope)
+
+    def note_quote_call(self, args, status):
+        """Record a ``cited_quote`` call as a selection; its text is never evidence (B-R4-2)."""
+        self._record_tool_call("cited_quote", args, status, [], [])
+
+    def bind_envelope(self, envelope, tool_name, args):
+        """Assign the identifiers of the turn to one evidence envelope and register it (M-R4-3).
+
+        The same record goes back to the model, to the render and to the log; the hook reads it out of the
+        result instead of renumbering the passage.
+        """
+        places = tools.evidence_objects(envelope)
+        if not places:
+            self.note_call(envelope, tool_name, args, "ok")
+            return json.dumps(envelope, ensure_ascii=False)
+        call_index = self._call_count
+        self._call_count += 1
+        for place in places:
+            self._passage_count += 1
+            pid = "P{0}".format(self._passage_count)
+            place["pid"] = pid
+            place["call"] = call_index
+            place["uid"] = "{0}:{1}:{2}".format(self.turn_id, call_index, pid)
+        self._record_tool_call(
+            tool_name, args, "ok", tools.excerpt_digests(envelope),
+            [text for _, text in tools.excerpt_pairs(envelope)],
+        )
+        self.passages.extend(tools.bound_places(envelope))
+        self._note_evidence(envelope)
+        return json.dumps(envelope, ensure_ascii=False)
+
+    def _record_tool_call(self, tool_name, args, status, digests, texts):
+        self.calls.append(
+            {
+                "tool": str(tool_name or ""),
+                "args": args if isinstance(args, dict) else {},
+                "status": status or "ok",
+                "excerpt_sha256": list(digests),
+                "excerpt_texts": list(texts),
+            }
+        )
+
+    def _note_evidence(self, envelope):
         self.excerpts.extend(tools.grounding_excerpts(envelope))
         for number in tools.citation_numbers(envelope):
             if number not in self.citations:
@@ -205,6 +249,14 @@ class Turn:
         for label in tools.source_labels(envelope):
             if label not in self.sources:
                 self.sources.append(label)
+
+    def _is_registered(self, envelope) -> bool:
+        """True when every evidence place of the envelope already carries an identifier of this turn."""
+        places = tools.evidence_objects(envelope)
+        if not places or not all(str(place.get("uid") or "") for place in places):
+            return False
+        known = {str(place.get("uid") or "") for place in self.passages}
+        return all(str(place.get("uid") or "") in known for place in places)
 
     def line_texts(self) -> set:
         """Every full line of every excerpt of the turn: the only text the render may display."""
@@ -369,7 +421,7 @@ def register(ctx) -> None:
         "cited_search",
         tools.TOOLSET,
         tools.SEARCH_SCHEMA,
-        tools.search,
+        _evidence_handler(tools.search),
         description=tools.SEARCH_DESCRIPTION,
         emoji="🔎",
     )
@@ -377,7 +429,7 @@ def register(ctx) -> None:
         "cited_ask",
         tools.TOOLSET,
         tools.ASK_SCHEMA,
-        tools.ask,
+        _evidence_handler(tools.ask),
         description=tools.ASK_DESCRIPTION,
         emoji="📎",
     )
@@ -454,12 +506,55 @@ def _text_of_message(user_message) -> str:
     return ""
 
 
+def _evidence_handler(build):
+    """The registered ``cited_search``/``cited_ask`` handler: the result carries the ``pid`` (M-R4-3).
+
+    The identifiers are assigned while the result is built and bound to the real turn of the execution, so
+    the model, the render and the log use the same record and the hook never renumbers it.
+    """
+
+    def handler(args=None, session_id="", task_id="", turn_id="", **kwargs):
+        result = build(args, **kwargs)
+        return _bind_result(result, args, session_id, turn_id, task_id)
+
+    return handler
+
+
+def _bind_result(result, args, session_id, turn_id, task_id):
+    if not isinstance(result, str):
+        return result
+    try:
+        envelope = tools.parse_tool_result(result)
+        if envelope is None:
+            return result
+        turn, _error = _resolve_active_turn(session_id, turn_id=turn_id, task_id=task_id)
+        if turn is None:
+            return result
+        return turn.bind_envelope(envelope, str(envelope.get("cited_tool") or ""), args)
+    except BaseException as error:
+        _report_failure("the evidence handler failed", incident_code(), error)
+        return result
+
+
 def _post_tool_call():
     def post_tool_call(tool_name="", args=None, result=None, session_id="", turn_id="", status="", **kwargs):
         if tool_name not in tools.TOOL_NAMES:
             return None
-        turn = _turn_of(session_id, turn_id, create=True)
-        turn.note_call(tools.parse_tool_result(result), tool_name, args, status)
+        if tool_name not in tools.EVIDENCE_TOOLS:
+            try:
+                turn = _turn_of(session_id, turn_id, create=False)
+            except BaseException:
+                turn = None
+            if turn is not None:
+                turn.note_quote_call(args if isinstance(args, dict) else {}, status)
+            return None
+        try:
+            turn = _turn_of(session_id, turn_id, create=True)
+            envelope = tools.parse_tool_result(result, tool_name)
+            if envelope is not None:
+                turn.note_call(envelope, tool_name, args, status)
+        except BaseException as error:
+            _report_failure("the post_tool_call hook failed", incident_code(), error)
         return None
 
     return post_tool_call
@@ -477,42 +572,89 @@ def _quote_handler(state):
             if error:
                 return "Cited could not quote: {0}.".format(error)
             return "\n".join(texts)
-        except BaseException:
-            logger.exception("hermes-cited: the cited_quote handler failed")
+        except BaseException as error:
+            _report_failure("the cited_quote handler failed", incident_code(), error)
             return "Cited could not quote this selection."
 
     return cited_quote
 
 
+def _recorded_mode(session_id, turn_id) -> str:
+    """The mode recorded for this turn, read before the boundary opens and without a fallible step."""
+    try:
+        with _TURNS_LOCK:
+            turn = _TURNS.get(_key(session_id, turn_id))
+            return str(turn.mode or "").strip().lower() if turn is not None else ""
+    except BaseException:
+        return ""
+
+
+def _operational_refusal(code) -> str:
+    """The fixed operational refusal, built so that no secondary failure can escape (B-R4-1)."""
+    try:
+        return verifier.operational_refusal(code, _safe_language())
+    except BaseException:
+        pass
+    try:
+        return messages.operational_text(messages.DEFAULT_LANGUAGE, code)
+    except BaseException:
+        return "CITED incident {0}: the answer could not be delivered as verified.".format(code)
+
+
+def _sanitized_diagnostic(message, code, error) -> str:
+    """One diagnostic with the bearer redacted from the whole formatted traceback (M-R4-5)."""
+    import traceback
+
+    body = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+    text = "hermes-cited: {0} (incident {1})\n{2}".format(message, code, body)
+    return audit.redact(text, _secret())
+
+
+def _report_failure(message, code, error) -> None:
+    """Emit only the sanitized diagnostic; never hand a raw traceback to a logger (M-R4-5)."""
+    try:
+        logger.error("%s", _sanitized_diagnostic(message, code, error))
+    except BaseException:
+        pass
+    try:
+        print(
+            "hermes-cited: incident {0}: {1}; see the log for the redacted traceback".format(code, message),
+            file=sys.stderr,
+        )
+    except BaseException:
+        pass
+
+
 def _transform_llm_output(state):
     def transform_llm_output(response_text="", session_id="", turn_id="", platform="", **kwargs):
-        turn = None
-        mode = "dot"
+        intent = _recorded_mode(session_id, turn_id)
+        mode = None
         try:
             text = response_text if isinstance(response_text, str) else str(response_text or "")
             turn = _turn_of(session_id, turn_id, create=True)
             if platform and not turn.platform:
                 turn.platform = str(platform)
-            mode = turn.mode or modes.resolve_mode(state, session_id)
+            recorded = str(turn.mode or "").strip().lower()
+            if recorded:
+                intent = recorded
+            mode = recorded or modes.resolve_mode(state, session_id)
             if mode != "cited":
                 return _deliver_dot(turn, text)
             language = _language()
             if turn.delivery is None:
                 turn.delivery = delivery.snapshot(turn.platform or platform, home=hermes_home())
             return _deliver_cited(turn, language)
-        except BaseException:
+        except BaseException as error:
             code = incident_code()
-            logger.exception("hermes-cited: the transformer failed (incident %s)", code)
-            print(
-                "hermes-cited: incident {0}: the cited-mode transformer failed; see the log for the "
-                "redacted traceback".format(code),
-                file=sys.stderr,
-            )
-            if mode != "cited":
+            _report_failure("the cited-mode transformer failed", code, error)
+            if mode == "dot" or (mode is None and intent == "dot"):
                 return None
-            return verifier.operational_refusal(code, _safe_language())
+            return _operational_refusal(code)
         finally:
-            _drop_turn(session_id, turn_id)
+            try:
+                _drop_turn(session_id, turn_id)
+            except BaseException:
+                pass
 
     return transform_llm_output
 
@@ -613,6 +755,22 @@ def _write_entry(
         "tool_calls": turn.calls,
         "sources": turn.sources,
         "refusals": list(turn.refusals),
+        "evidence": [
+            {
+                "call": place.get("call"),
+                "pid": place.get("pid"),
+                "uid": place.get("uid"),
+                "number": place.get("n"),
+                "document": place.get("document"),
+                "heading": place.get("heading"),
+                "position": place.get("position"),
+                "lines": [
+                    {"line": item.get("line"), "text": item.get("text")}
+                    for item in place.get("lines") or []
+                ],
+            }
+            for place in turn.passages
+        ],
         "quoted_lines": [
             {
                 "pid": line.pid,

@@ -10,6 +10,13 @@ a single line, so a metadata value can never inject a body or a mark; and ``cont
 transformer detect a mark inside a chosen line or a metadata value, in which case the seal is withheld and a
 fixed note is delivered instead (D13). ``strip_mark`` removes every occurrence of the mark from the model's
 text in dot mode, Markdown presentation included.
+
+Round 5 (M-R4-4) reads the mark in the **visible text** of the admitted Markdown presentations: internal
+emphasis (``Verified **by** Cited``) and link labels (``Verified by [Cited](url)``) are the same reserved
+mark, because that is what a reader sees. The detection builds the visible characters with the span of
+each one in the original text, so the removal takes the whole presentation with it, and ``escape_meta``
+escapes every interpretable Markdown metacharacter of a document or a section, not only the backslash and
+the backtick.
 """
 
 from __future__ import annotations
@@ -27,14 +34,17 @@ ENTRY = {"es": "Según tus documentos:", "en": "From your documents:"}
 REFUSAL = {"es": "No está en los documentos.", "en": "It is not in the documents."}
 SOURCE_PREFIX = {"es": "Fuente:", "en": "Source:"}
 
-#: The reserved mark with its optional Markdown decoration, as a fragment: `**Verified by Cited**`,
-#: `> Verified by Cited`, `Verified by Cited [1]`, `- Verified by Cited`.
-_DECORATION = r"[\s>*_#~`\-–—•·]*"
-_MARK = r"Verified by Cited"
-_MARK_FRAGMENT = r"{0}{1}{0}(?![\w])".format(_DECORATION, _MARK)
-_MARK_RE = re.compile(_MARK_FRAGMENT, re.IGNORECASE)
-_MARK_TOKEN = re.compile(r"^{0}[\s.,;:!?…¡¿«»\"'\[\]0-9]*$".format(_MARK_FRAGMENT), re.IGNORECASE)
-_EMPTY_AFTER_MARK = re.compile(r"^[\s>*_#~`\-–—•·.,;:!?…¡¿«»\"'\[\]0-9]*$")
+#: The visible text of the reserved mark: a run of whitespace between the words, so a line break or the
+#: markup of an emphasis does not hide it.
+_SEAL_RE = re.compile(r"verified\s+by\s+cited(?![\w])", re.IGNORECASE)
+#: A Markdown link or image: the label is the visible text and the target is not.
+_LINK_RE = re.compile(r"!?\[([^\]\n]*)\]\([^)\n]*\)")
+#: The markup that is not visible: emphasis, strong, strikethrough and code spans.
+_INVISIBLE_CHARS = "*_~`"
+#: A line that holds only decoration and punctuation: a mark-only line disappears with it.
+_DECOR_ONLY_RE = re.compile(r"^[\s>*_#~`\-–—•·.,;:!?…¡¿«»\"'\[\]\(\)0-9]*$")
+#: The Markdown characters a document or a section must never carry live (M-R4-4).
+_META_CHARS = "\\`*_[]()#>~|<{}!"
 MAX_META = 200
 
 
@@ -53,9 +63,59 @@ def numbered_lines(excerpt) -> list:
     return [{"line": number, "text": text} for number, text in enumerate(excerpt_lines(excerpt), start=1)]
 
 
+def _visible_tokens(text):
+    """``(char, start, end)`` of every visible character of the admitted Markdown presentations.
+
+    A link or an image contributes its label; every label character carries the span of the whole
+    construct, so a mark that ends inside a label takes the construct with it. The emphasis markup is
+    not visible and contributes no token.
+    """
+    value = str(text or "")
+    tokens = []
+    position = 0
+    for match in _LINK_RE.finditer(value):
+        for index in range(position, match.start()):
+            char = value[index]
+            if char not in _INVISIBLE_CHARS:
+                tokens.append((char, index, index + 1))
+        for char in match.group(1):
+            if char not in _INVISIBLE_CHARS:
+                tokens.append((char, match.start(), match.end()))
+        position = match.end()
+    for index in range(position, len(value)):
+        char = value[index]
+        if char not in _INVISIBLE_CHARS:
+            tokens.append((char, index, index + 1))
+    return tokens
+
+
+def mark_spans(text) -> list:
+    """The ``(start, end)`` spans of the original text whose visible text is the reserved mark."""
+    tokens = _visible_tokens(text)
+    if not tokens:
+        return []
+    visible = "".join(item[0] for item in tokens)
+    spans = []
+    for match in _SEAL_RE.finditer(visible):
+        spans.append((tokens[match.start()][1], tokens[match.end() - 1][2]))
+    return spans
+
+
 def contains_mark(text) -> bool:
-    """True when the reserved mark appears, in any casing and with any Markdown decoration."""
-    return bool(_MARK_RE.search(str(text or "")))
+    """True when the reserved mark is visible, in any casing and in any admitted presentation."""
+    return bool(mark_spans(text))
+
+
+def _remove_spans(text: str, spans) -> str:
+    if not spans:
+        return text
+    kept = []
+    position = 0
+    for start, end in spans:
+        kept.append(text[position:start])
+        position = max(position, end)
+    kept.append(text[position:])
+    return "".join(kept)
 
 
 def strip_mark(text) -> str:
@@ -70,9 +130,10 @@ def strip_mark(text) -> str:
         return value
     kept = []
     for line in value.split("\n"):
-        if _MARK_TOKEN.match(line):
+        spans = mark_spans(line)
+        cleaned = _remove_spans(line, spans)
+        if spans and _DECOR_ONLY_RE.match(cleaned):
             continue
-        cleaned = _MARK_RE.sub("", line)
         cleaned = re.sub(r"[\s>*_#~`\-–—•·]{2,}", " ", cleaned).rstrip()
         if cleaned.strip() or not kept:
             kept.append(cleaned.rstrip())
@@ -83,18 +144,34 @@ def strip_mark(text) -> str:
     return "\n".join(kept)
 
 
-def escape_meta(value) -> str:
-    """Document names and sections as escaped, single-line metadata (M-R3-3).
+def _neutralise_mark(text: str) -> str:
+    """Break the visible mark with a word joiner, so an escaped metadata value cannot read as the seal."""
+    spans = mark_spans(text)
+    if not spans:
+        return text
+    kept = []
+    position = 0
+    for start, end in spans:
+        kept.append(text[position:start])
+        kept.append(text[start:end].replace(" ", "\u2060"))
+        position = max(position, end)
+    kept.append(text[position:])
+    return "".join(kept)
 
-    A newline becomes a space, the backtick and the Markdown block markers are escaped, the reserved mark is
-    neutralised by inserting a word joiner so it can never read as the plugin's seal, and the result is
-    capped, so a document name can never inject a body, a heading or a mark.
+
+def escape_meta(value) -> str:
+    """Document names and sections as escaped, single-line metadata (M-R3-3, M-R4-4).
+
+    A line break becomes a space, every interpretable Markdown metacharacter is escaped, the reserved mark
+    is neutralised so it can never read as the plugin's seal, and the result is capped, so a document name
+    can never inject a body, a heading, a link, an emphasis or a mark.
     """
     text = str(value if value is not None else "")
-    for old, new in (("\\", "\\\\"), ("`", "\\`"), ("\r\n", " "), ("\r", " "), ("\n", " "), ("\t", " ")):
+    for old, new in (("\r\n", " "), ("\r", " "), ("\n", " "), ("\t", " ")):
         text = text.replace(old, new)
     text = " ".join(text.split())
-    text = _MARK_RE.sub(lambda match: match.group(0).replace(" ", "\u2060"), text)
+    text = "".join("\\" + char if char in _META_CHARS else char for char in text)
+    text = _neutralise_mark(text)
     if len(text) > MAX_META:
         text = text[:MAX_META].rstrip() + "…"
     return text
