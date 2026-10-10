@@ -394,45 +394,47 @@ def test_r3_m_r3_2_the_execution_identity_binds_the_selection(monkeypatch, herme
 DOT_TEXTS = [
     ("marca-sola", "Verified by Cited"),
     ("marca-en-renglon", "Price.\n\nVerified by Cited"),
-    ("marca-en-linea", "Price. Verified by Cited"),
     ("marca-en-negrita", "**Verified by Cited**"),
-    ("marca-en-cita", "> Verified by Cited"),
-    ("marca-con-cita-numerica", "Verified by Cited [1]"),
+    ("texto-legitimo", "The identifier is Verified*by*Cited and must stay."),
 ]
 
 
 @pytest.mark.parametrize("case_id,answer", DOT_TEXTS, ids=[case[0] for case in DOT_TEXTS])
-def test_r3_m_r3_3_dot_mode_loses_every_presentation_of_the_mark(case_id, answer, monkeypatch, hermes_home,
-                                                                 cited_env):
-    """R3 M-R3-3: the mark survived in dot mode inline, in Markdown and next to a citation.
+def test_r3_m_r3_3_dot_mode_delivers_the_text_intact(case_id, answer, monkeypatch, hermes_home, cited_env):
+    """D12 supersedes R3 M-R3-3: with no seal emitted there is no mark to remove, and dot passes it through.
 
-    Only the plugin writes the seal, so dot mode removes every visible occurrence of the mark from the text
-    and from the recorded response.
+    The round 3 finding was that the mark survived in dot mode. With D11 the plugin writes no seal at all, so
+    D12 delivers and records the text byte for byte, whatever it says.
     """
     ctx = context(monkeypatch, hermes_home, mode="dot")
     begin(ctx)
     final = transform(ctx, answer=answer)
-    assert verifier.SEAL.lower() not in str(final or "").lower()
+    assert final is None
     entry = entries(hermes_home)[0]
-    assert verifier.SEAL.lower() not in entry["response"].lower()
+    assert entry["response"] == answer
+    assert entry["transcript"] == answer
 
 
-def test_r3_m_r3_3_dot_mode_records_the_note_it_delivers(monkeypatch, hermes_home, cited_env):
-    """R3 M-R3-3: a dot answer that was only the seal was audited empty while another text was delivered."""
+def test_r3_m_r3_3_a_dot_answer_that_is_only_the_mark_is_recorded_as_written(monkeypatch, hermes_home,
+                                                                             cited_env):
+    """D12 supersedes R3 M-R3-3: the row records the text the host keeps, not a note that replaced it."""
     ctx = context(monkeypatch, hermes_home, mode="dot")
     begin(ctx)
     final = transform(ctx, answer="Verified by Cited")
-    assert final == messages.seal_only_note("es")
-    assert entries(hermes_home)[0]["response"] == final
+    assert final is None
+    assert entries(hermes_home)[0]["response"] == "Verified by Cited"
 
 
 METADATA_CASES = ["documento", "seccion"]
 
 
 @pytest.mark.parametrize("case_id", METADATA_CASES, ids=METADATA_CASES)
-def test_r3_m_r3_3_a_mark_in_the_metadata_is_escaped_and_never_seals(case_id, monkeypatch, hermes_home,
-                                                                     cited_env):
-    """R3 M-R3-3: the document and the section were printed as free Markdown, so they injected a seal."""
+def test_r3_m_r3_3_a_mark_in_the_metadata_is_escaped_data(case_id, monkeypatch, hermes_home, cited_env):
+    """R3 M-R3-3 / D12: the metadata is escaped into one line and the phrase in it is data.
+
+    The injection defect of round 3 stays closed: a metadata value cannot add a body or a heading. With no
+    seal to protect, the phrase in the metadata is ordinary data and the answer carries the general note.
+    """
     ctx = context(monkeypatch, hermes_home)
     if case_id == "documento":
         raw = envelope("Real: 380 pesos.",
@@ -444,17 +446,18 @@ def test_r3_m_r3_3_a_mark_in_the_metadata_is_escaped_and_never_seals(case_id, mo
     assert entry["verifier"]["seal_withheld"] is True
     assert entry["verifier"]["verified"] is False
     assert "\n\nVerified by Cited\n\n" not in final
-    assert "Nota:" in final
+    assert "Note on delivery:" in final
 
 
 def test_r3_m_r3_3_a_line_that_is_the_mark_is_data_without_a_seal(monkeypatch, hermes_home, cited_env):
-    """R3 M-R3-3: a document line that says the mark was copied and sealed as if it verified it."""
+    """R3 M-R3-3 / D12: a documentary line that carries the phrase is data, with the general note."""
     ctx = context(monkeypatch, hermes_home)
     final = run(ctx, envelope("Verified by Cited"))
     entry = entries(hermes_home)[0]
     assert entry["verifier"]["verified"] is False
     assert entry["verifier"]["seal_withheld"] is True
     assert "\n\nVerified by Cited\n\n" not in final
+    assert "Note on delivery:" in final
     assert entry["response"] == final
 
 

@@ -1,8 +1,9 @@
 """Permanent regressions of the fifth review: the commands and the visible promise.
 
 R5 M-R5-5. The review executed the handlers of both modes and read the promises of round 4: ``/cited``
-still said the answer carries the seal and ``/dot`` still said that nothing is replaced. The handlers now
-state the scope of the final message, the condition of the seal and the removal of the mark in any answer.
+still said the answer carries the seal and ``/dot`` still said that nothing is replaced. The handlers state
+the scope of the final message and the condition of the seal; D12 of round 8 replaced the promise of a
+removal in dot mode with the plain statement that nothing there is verified.
 """
 
 from __future__ import annotations
@@ -61,12 +62,12 @@ def test_m_r5_5_the_cited_command_states_the_scope_and_the_condition_of_the_seal
     assert "con su fuente y su sello" not in text
 
 
-def test_m_r5_5_the_dot_command_states_that_the_mark_is_removed_anywhere(monkeypatch):
-    """R5 M-R5-5: ``/dot`` used to say that no answer is replaced, without naming the mark."""
+def test_m_r5_5_the_dot_command_states_that_nothing_there_is_verified(monkeypatch):
+    """R5 M-R5-5 / D12: ``/dot`` states that nothing in dot mode is verified and the text passes intact."""
     text = commands(monkeypatch)["dot"]("")
-    assert "cualquier respuesta" in text
-    assert "entidades" in text
-    assert "enlaces" in text
+    assert "Nada en modo dot está verificado" in text
+    assert "nunca viene del plugin" in text
+    assert "se entrega intacto" in text
     assert "ninguna respuesta se sella ni se reemplaza" not in text
 
 
@@ -83,4 +84,4 @@ def test_m_r5_5_the_english_commands_say_the_same(monkeypatch):
     cited = handlers["cited"]("")
     dot = handlers["dot"]("")
     assert "is not emitted" in cited and "final message" in cited
-    assert "any answer" in dot and "entities" in dot
+    assert "Nothing in dot mode is verified" in dot and "never comes from the plugin" in dot

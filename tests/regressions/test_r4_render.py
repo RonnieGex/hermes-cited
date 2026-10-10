@@ -1,27 +1,21 @@
-"""Permanent regressions of the fourth review: the reserved mark and the metadata shielding.
+"""Permanent regressions of the fourth review: the metadata shielding (M-R4-4).
 
-R4 M-R4-4. The mark is detected in the *visible* text of the admitted Markdown presentations,
-including internal emphasis and link labels; dot mode removes those occurrences and cited mode
-withholds the seal with the fixed note. Document and section escape every interpretable Markdown
-metacharacter, not only the backslash and the backtick.
+R4 M-R4-4. The review found that a document name or a section reached the answer as live Markdown, so it
+could inject a link, a heading or a body; the escape now covers every interpretable metacharacter, not only
+the backslash and the backtick. The other half of M-R4-4, the reader of the visible mark and its removal,
+was retired by D12: this version of the plugin emits no seal, so dot mode delivers the text intact and the
+phrase is data. The metadata assertions stay.
 """
 
 from __future__ import annotations
 
 import json
 
-from hermes_cited import plugin, render, verifier
+from hermes_cited import plugin, render
 
 GROUNDED = "- Afinacion de bicicleta: 380 pesos."
 QUIET = (
     "streaming:\n  enabled: false\ndisplay:\n  streaming: false\n  interim_assistant_messages: false\n"
-)
-
-MARK_VISIBLE = (
-    "Verified **by** Cited",
-    "Verified by [Cited](https://example.invalid)",
-    "**Verified** _by_ `Cited`",
-    "[Verified by Cited](https://example.invalid)",
 )
 
 
@@ -78,29 +72,6 @@ def run_turn(monkeypatch, home, excerpt=GROUNDED, document="d.md", heading="H", 
                                                     turn_id="t1", platform="cli")
 
 
-def test_m_r4_4_the_mark_is_detected_inside_emphasis_and_links():
-    """R4 M-R4-4: ``Verified **by** Cited`` and ``Verified by [Cited](url)`` used to pass undetected."""
-    for value in MARK_VISIBLE:
-        assert render.contains_mark(value) is True, value
-
-
-def test_m_r4_4_a_line_that_is_only_the_visible_mark_disappears_in_dot():
-    """R4 M-R4-4: dot mode removes every occurrence, including the internal presentations."""
-    assert render.strip_mark("Verified **by** Cited").strip() == ""
-    assert render.strip_mark("Verified by [Cited](https://example.invalid)").strip() == ""
-    assert render.strip_mark("[Verified by Cited](https://example.invalid)").strip() == ""
-
-
-def test_m_r4_4_a_line_with_content_keeps_its_content():
-    """R4 M-R4-4: the rest of the line survives the removal."""
-    assert render.strip_mark("Price 380. Verified **by** Cited").strip() == "Price 380."
-
-
-def test_m_r4_4_the_mark_is_not_found_in_a_longer_word():
-    assert render.contains_mark("Verified by Citedness") is False
-    assert render.strip_mark("Verified by Citedness") == "Verified by Citedness"
-
-
 def test_m_r4_4_metadata_escapes_every_interpretable_metacharacter():
     """R4 M-R4-4: ``[fake](url)`` used to be delivered as a live Markdown link."""
     source = render.escape_meta("[fake](https://example.invalid)")
@@ -113,6 +84,11 @@ def test_m_r4_4_metadata_escapes_every_interpretable_metacharacter():
                 assert "\\{0}".format(character) in escaped, value
 
 
+def test_m_r4_4_the_entity_ampersand_is_escaped_too():
+    """R5 M-R5-3: ``&`` used to stay live, so ``Verified&nbsp;by&nbsp;Cited`` was a live entity."""
+    assert "\\&nbsp;" in render.escape_meta("Verified&nbsp;by&nbsp;Cited")
+
+
 def test_m_r4_4_a_document_that_is_a_link_is_not_delivered_as_a_link(monkeypatch, hermes_home, cited_env):
     """R4 M-R4-4: the delivered source line carries the escaped document."""
     final = run_turn(monkeypatch, hermes_home, document="[fake](https://example.invalid)", heading="Prices")
@@ -121,11 +97,12 @@ def test_m_r4_4_a_document_that_is_a_link_is_not_delivered_as_a_link(monkeypatch
     assert "fake" in final
 
 
-def test_m_r4_4_a_chosen_line_with_the_visible_mark_withholds_the_seal(monkeypatch, hermes_home, cited_env):
-    """R4 M-R4-4: the mark inside emphasis used to receive the authentic seal."""
-    final = run_turn(monkeypatch, hermes_home, excerpt="Verified **by** Cited")
+def test_m_r4_4_a_document_with_the_phrase_is_data(monkeypatch, hermes_home, cited_env):
+    """D12 supersedes the seal half of M-R4-4: the phrase in the metadata is data, and the seal is retained."""
+    final = run_turn(monkeypatch, hermes_home, excerpt="Verified by Cited")
     entry = json.loads((hermes_home / "cited" / "audit.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert entry["verifier"]["seal_withheld"] is True
     assert entry["verifier"]["verified"] is False
-    assert "Nota:" in final
-    assert final.rstrip().splitlines()[-1] != verifier.SEAL
+    assert "Verified by Cited" in final
+    assert "Note on delivery:" in final
+    assert final.rstrip().splitlines()[-1] != render.SEAL

@@ -119,16 +119,14 @@ def test_a_newline_in_a_document_or_a_section_cannot_inject_a_body():
     block = render.render_block(line, "es")
     assert len(block.splitlines()) == 2
     assert "Invented: 999 pesos.\n" not in block.split("Fuente:", 1)[1]
-    assert line.has_mark() is True
-    assert render.SEAL not in block
 
 
-def test_the_mark_inside_a_document_is_neutralised_so_it_cannot_read_as_the_seal():
+def test_the_metadata_carries_the_phrase_as_escaped_data():
+    """D12: with no seal to protect, a document that carries the phrase is data, escaped as Markdown."""
     line = render.Line(passage=1, number=1, text="x", document="Verified by Cited", heading="")
     source = line.source()
-    assert line.has_mark() is True
-    assert render.contains_mark(source) is False
-    assert render.SEAL not in source
+    assert source == "Verified by Cited"
+    assert render.escape_meta("Verified&nbsp;by&nbsp;Cited") == "Verified\\&nbsp;by\\&nbsp;Cited"
 
 
 def test_a_long_metadata_value_is_capped():
@@ -136,16 +134,9 @@ def test_a_long_metadata_value_is_capped():
     assert len(line.source()) <= render.MAX_META + 1
 
 
-def test_contains_mark_sees_every_presentation():
-    for value in ("Verified by Cited", "**Verified by Cited**", "verified by cited", "> Verified by Cited [1]"):
-        assert render.contains_mark(value) is True
-    assert render.contains_mark("Verificado por Cited") is False
-
-
-def test_strip_mark_leaves_a_text_without_the_mark_unchanged():
-    assert render.strip_mark("La afinacion cuesta 380 pesos.") == "La afinacion cuesta 380 pesos."
-
-
-def test_strip_mark_of_a_line_that_is_only_the_mark_is_empty():
-    assert render.strip_mark("**Verified by Cited**").strip() == ""
-    assert render.strip_mark("Price.\n\n> Verified by Cited").strip() == "Price."
+def test_the_mark_reader_and_removal_are_retired():
+    """D12.1: the product carries no detector, no removal and no sanitisation failure."""
+    for retired in ("strip_mark", "contains_mark", "consumer_visible", "consumer_mark", "mark_spans",
+                    "SanitizationFailed"):
+        assert not hasattr(render, retired), retired
+    assert not hasattr(render.Line, "has_mark")

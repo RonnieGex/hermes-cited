@@ -530,30 +530,29 @@ def test_dot_mode_is_untouched_and_still_logged(monkeypatch, hermes_home, cited_
     [
         "La afinacion cuesta 380 pesos.\n\nVerified by Cited",
         "La afinacion cuesta 380 pesos.\n\n**Verified by Cited**",
-        "La afinacion cuesta 380 pesos.\n\n> Verified by Cited",
-        "La afinacion cuesta 380 pesos. Verified by Cited",
-        "La afinacion cuesta 380 pesos.\n\nVerified by Cited [1]",
+        "The identifier is Verified*by*Cited and must stay.",
+        "Verified [&#98;y](https://example.invalid) Cited",
     ],
 )
-def test_dot_mode_strips_every_presentation_of_the_seal(monkeypatch, hermes_home, cited_env, answer):
-    """M-R3-3: dot mode loses the mark in Markdown and inline too."""
+def test_dot_mode_delivers_every_text_intact(monkeypatch, hermes_home, cited_env, answer):
+    """D12: dot mode returns the text unchanged and the row records exactly what is delivered."""
     context = build(monkeypatch, hermes_home=hermes_home)
     final = run_turn(context, answer=answer, mode="dot")
-    assert final is None or verifier.SEAL.lower() not in final.lower()
+    assert final is None
     entry = entries_of(hermes_home)[0]
-    assert verifier.SEAL.lower() not in entry["response"].lower()
+    assert entry["response"] == answer
     assert entry["transcript"] == answer
-    assert entry["response"] == (final if final is not None else answer)
+    assert entry["verifier"]["applied"] is False
 
 
-def test_dot_mode_records_what_it_delivers_when_only_the_seal_was_left(monkeypatch, hermes_home, cited_env):
-    """M-R3-3, last item: the note is composed before the append, so the row is what was delivered."""
+def test_dot_mode_records_the_text_the_host_keeps(monkeypatch, hermes_home, cited_env):
+    """D12: a dot answer that is only the phrase is delivered and recorded as the model wrote it."""
     context = build(monkeypatch, hermes_home=hermes_home)
     final = run_turn(context, answer="Verified by Cited", mode="dot")
-    assert final == messages.seal_only_note("es")
+    assert final is None
     entry = entries_of(hermes_home)[0]
-    assert entry["response"] == final
-    assert entry["response"] != ""
+    assert entry["response"] == "Verified by Cited"
+    assert not hasattr(messages, "seal_only_note")
 
 
 def test_a_failed_append_is_an_operational_refusal_without_a_seal(monkeypatch, hermes_home, cited_env):
@@ -663,8 +662,8 @@ def test_the_turn_state_is_dropped_even_when_the_transformer_fails(monkeypatch, 
     assert plugin._active_turns("s1") == []
 
 
-def test_a_mark_inside_a_chosen_line_withholds_the_seal(monkeypatch, hermes_home, cited_env):
-    """M-R3-3: document text that carries the reserved mark keeps its bytes but never the seal."""
+def test_a_mark_inside_a_chosen_line_is_data_with_the_general_note(monkeypatch, hermes_home, cited_env):
+    """D12: a chosen line that carries the phrase is data; the composition keeps the general withheld note."""
     context = build(monkeypatch, mode="cited", hermes_home=hermes_home)
     envelope = json.dumps(
         {
@@ -682,15 +681,16 @@ def test_a_mark_inside_a_chosen_line_withholds_the_seal(monkeypatch, hermes_home
         }
     )
     final = run_turn(context, args={"passage": "P1", "lines": [1]}, envelope=envelope)
-    assert verifier.SEAL in final
-    assert "Nota:" in final
-    assert final.rstrip().endswith("documentos.") or "se retiene" in final
+    assert "Verified by Cited [1]" in final
+    assert "Note on delivery:" in final
+    assert "Nota:" not in final
     entry = entries_of(hermes_home)[0]
     assert entry["verifier"]["seal_withheld"] is True
     assert entry["verifier"]["verified"] is False
 
 
-def test_a_mark_inside_a_document_name_is_escaped_and_retains_the_seal(monkeypatch, hermes_home, cited_env):
+def test_a_mark_inside_a_document_name_is_escaped_data(monkeypatch, hermes_home, cited_env):
+    """D12: the metadata is escaped into one line and the phrase in it is data, with the general note."""
     context = build(monkeypatch, mode="cited", hermes_home=hermes_home)
     envelope = json.dumps(
         {
@@ -709,8 +709,8 @@ def test_a_mark_inside_a_document_name_is_escaped_and_retains_the_seal(monkeypat
     )
     final = run_turn(context, args={"passage": "P1", "lines": [1]}, envelope=envelope)
     assert "Fuente: doc.md" in final
-    assert "Nota:" in final
-    assert verifier.SEAL not in final.split("Nota:", 1)[0]
+    assert "Note on delivery:" in final
+    assert "\n\nVerified by Cited\n\n" not in final
     entry = entries_of(hermes_home)[0]
     assert entry["verifier"]["seal_withheld"] is True
 

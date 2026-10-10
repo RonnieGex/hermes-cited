@@ -114,30 +114,6 @@ def test_the_operational_refusal_carries_a_code_and_never_the_seal():
     assert "PermissionError" not in text
 
 
-def test_a_dot_mode_text_that_writes_the_seal_is_stripped():
-    text = "La afinacion cuesta 380 pesos.\n\nVerified by Cited"
-    stripped = verifier.strip_seal(text)
-    assert verifier.SEAL not in stripped
-    assert "380 pesos" in stripped
-
-
-def test_stripping_a_text_without_the_seal_returns_it_unchanged():
-    text = "La afinacion cuesta 380 pesos."
-    assert verifier.strip_seal(text) == text
-
-
-def test_every_markdown_presentation_of_the_seal_is_removed():
-    """M-R3-3: dot mode loses the mark in every presentation, not only the bare line."""
-    for text in (
-        "Verified by Cited",
-        "Price.\n\nVerified by Cited",
-        "Price. Verified by Cited",
-        "**Verified by Cited**",
-        "> Verified by Cited",
-        "- Verified by Cited",
-        "Verified by Cited [1]",
-        "verified by cited",
-    ):
-        stripped = verifier.strip_seal(text)
-        assert verifier.SEAL.lower() not in stripped.lower(), text
-        assert "Price." in stripped or "Price." not in text
+def test_the_seal_removal_is_retired():
+    """D12: there is no seal to remove, so the verifier ships no removal."""
+    assert not hasattr(verifier, "strip_seal")

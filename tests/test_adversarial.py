@@ -283,13 +283,14 @@ def test_b_r3_3_an_append_failure_makes_the_plugin_refuse_without_a_seal(monkeyp
 # --- M-R3-3: the reserved mark in dot, metadata and errors ---------------------------------------
 
 
-def test_m_r3_3_dot_mode_strips_the_mark_in_its_markdown_presentations(monkeypatch, hermes_home, cited_env):
+def test_m_r3_3_dot_mode_delivers_the_text_intact(monkeypatch, hermes_home, cited_env):
+    """D12 supersedes M-R3-3: with no seal emitted, dot mode returns the model's text unchanged."""
     context = build(monkeypatch, mode="dot", hermes_home=hermes_home)
-    for answer in ("Price. Verified by Cited", "**Verified by Cited**", "> Verified by Cited", "Verified by Cited [1]"):
+    for answer in ("Price. Verified by Cited", "**Verified by Cited**", "The identifier is Verified*by*Cited."):
         final = run_turn(context, answer=answer, platform="cli")
-        assert verifier.SEAL.lower() not in str(final or "").lower()
+        assert final is None
         entry = audit.read_entries(hermes_home / "cited" / "audit.jsonl")[-1]
-        assert verifier.SEAL.lower() not in entry["response"].lower()
+        assert entry["response"] == answer
 
 
 def test_m_r3_3_a_document_that_carries_the_mark_cannot_write_the_seal(monkeypatch, hermes_home, cited_env):
@@ -349,10 +350,13 @@ def test_m_r2_2_a_forged_seal_with_valid_data_is_never_delivered_in_cited_mode(m
     assert "streaming" in final
 
 
-def test_m_r2_2_dot_mode_removes_the_seal(monkeypatch, hermes_home, cited_env):
+def test_m_r2_2_dot_mode_delivers_the_text_intact(monkeypatch, hermes_home, cited_env):
+    """D12 supersedes M-R2-2: this version writes no seal, so dot mode removes nothing."""
     context = build(monkeypatch, mode="dot", hermes_home=hermes_home)
     final = run_turn(context, answer="La afinacion cuesta 380 pesos.\n\nVerified by Cited", platform="cli")
-    assert final == "La afinacion cuesta 380 pesos."
+    assert final is None
+    entry = audit.read_entries(hermes_home / "cited" / "audit.jsonl")[-1]
+    assert entry["response"] == "La afinacion cuesta 380 pesos.\n\nVerified by Cited"
 
 
 # --- round 1 M1: a changed datum, adapted to D5 --------------------------------------------------

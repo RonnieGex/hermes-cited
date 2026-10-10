@@ -6,18 +6,28 @@ terminal message and the record (``community-hermes/docs/mcp.md``, both READMEs 
 ``docs/upstream-proposal.md``). This module reads the skill the plugin **really registers** and hunts the old
 promises in the public documents with a list of **forbidden** phrases; it is not enough to check that the new
 phrases appear.
+
+R7 M-R7-2. The check of ``community-hermes/docs/mcp.md`` is the only cross-repository one: it resolves its
+checkout from ``CITED_DOCS_REPO`` and is skipped with an explicit reason when that variable is not set, so the
+suite runs green in an isolated checkout. The local gate always sets it (``scripts/gate.py``) and records the
+exact SHA of ``community-hermes`` in its own report.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-COMMUNITY = REPO.parent / "community-hermes"
 SKILL = REPO / "hermes_cited" / "skills" / "cited" / "SKILL.md"
+
+#: R7 M-R7-2: the explicit reason of the cross-repository omission. It is announced, never silent.
+OMITTED_REASON = (
+    "CITED_DOCS_REPO is not set: the cross-repository check of community-hermes/docs/mcp.md is omitted"
+)
 
 ENGLISH = (
     "For a cited turn that reaches the hook, the plugin's composition is the documentary render, the fixed "
@@ -50,13 +60,24 @@ FORBIDDEN = (
     "los dos contratos pendientes",
 )
 
-DOCUMENTS = {
+LOCAL_DOCUMENTS = {
     "README.md": (REPO / "README.md", ENGLISH),
     "README.es.md": (REPO / "README.es.md", SPANISH),
     "docs/upstream-proposal.md": (REPO / "docs" / "upstream-proposal.md", ENGLISH),
     "hermes_cited/skills/cited/SKILL.md": (SKILL, ENGLISH),
-    "community-hermes/docs/mcp.md": (COMMUNITY / "docs" / "mcp.md", ENGLISH),
 }
+
+
+def docs_repo():
+    """The checkout named by ``CITED_DOCS_REPO``, or ``None`` when the cross-repository check is omitted."""
+    value = os.environ.get("CITED_DOCS_REPO", "").strip()
+    return Path(value) if value else None
+
+
+def community_documents():
+    """``community-hermes/docs/mcp.md`` of the named checkout, or ``None`` when there is no checkout."""
+    repo = docs_repo()
+    return repo / "docs" / "mcp.md" if repo is not None else None
 
 
 def normalized(text) -> str:
@@ -112,6 +133,11 @@ def fenced_blocks(text):
     return re.findall(r"```[^\n]*\n(.*?)```", text, re.DOTALL)
 
 
+def assert_no_forbidden(name, flat):
+    for forbidden in FORBIDDEN:
+        assert forbidden not in flat.lower(), "{0}: {1}".format(name, forbidden)
+
+
 def test_m_r6_2_the_registered_skill_declares_the_retained_seal():
     """R6 M-R6-2: the installed skill says that this version does not emit the seal, with a real render."""
     text = registered_skill()
@@ -121,8 +147,7 @@ def test_m_r6_2_the_registered_skill_declares_the_retained_seal():
     assert "plugin's composition" in flat
     assert "drafts" in flat
     assert "empty" in flat
-    for forbidden in FORBIDDEN:
-        assert forbidden not in flat.lower(), forbidden
+    assert_no_forbidden("hermes_cited/skills/cited/SKILL.md", flat)
     blocks = fenced_blocks(text)
     assert blocks, "the skill shows no real render"
     for block in blocks:
@@ -130,24 +155,31 @@ def test_m_r6_2_the_registered_skill_declares_the_retained_seal():
         assert "Note on delivery:" in block, block
 
 
-@pytest.mark.parametrize("name", sorted(DOCUMENTS))
+@pytest.mark.parametrize("name", sorted(LOCAL_DOCUMENTS))
 def test_m_r6_2_no_public_document_keeps_an_old_promise(name):
-    """R6 M-R6-2: the forbidden phrases of the previous contract are gone from every public document."""
-    path, wording = DOCUMENTS[name]
+    """R6 M-R6-2: the forbidden phrases of the previous contract are gone from every local document."""
+    path, wording = LOCAL_DOCUMENTS[name]
     assert path.exists(), path
     flat = normalized(path.read_text(encoding="utf-8"))
     assert wording.lower() in flat.lower(), name
-    for forbidden in FORBIDDEN:
-        assert forbidden not in flat.lower(), "{0}: {1}".format(name, forbidden)
+    assert_no_forbidden(name, flat)
 
 
-@pytest.mark.parametrize(
-    "name",
-    ["README.md", "README.es.md", "docs/upstream-proposal.md", "community-hermes/docs/mcp.md"],
-)
+def test_m_r6_2_no_public_document_keeps_an_old_promise_community():
+    """R6 M-R6-2 + R7 M-R7-2: the Cited document, only when its checkout is named."""
+    path = community_documents()
+    if path is None:
+        pytest.skip(OMITTED_REASON)
+    assert path.exists(), path
+    flat = normalized(path.read_text(encoding="utf-8"))
+    assert ENGLISH.lower() in flat.lower(), path
+    assert_no_forbidden("community-hermes/docs/mcp.md", flat)
+
+
+@pytest.mark.parametrize("name", ["README.md", "README.es.md", "docs/upstream-proposal.md"])
 def test_m_r6_2_the_three_pending_contracts_are_aligned(name):
-    """R6 M-R6-2: the count and the names of the pending contracts agree in every public document."""
-    path, _wording = DOCUMENTS[name]
+    """R6 M-R6-2: the count and the names of the pending contracts agree in every local public document."""
+    path, _wording = LOCAL_DOCUMENTS[name]
     flat = normalized(path.read_text(encoding="utf-8")).lower()
     assert (
         "three contracts" in flat
@@ -161,3 +193,19 @@ def test_m_r6_2_the_three_pending_contracts_are_aligned(name):
         markers = ("synchronous retention", "empty", "footer")
     for marker in markers:
         assert marker in flat, "{0}: {1}".format(name, marker)
+
+
+def test_m_r6_2_the_three_pending_contracts_are_aligned_community():
+    """R6 M-R6-2 + R7 M-R7-2: the same alignment in the Cited document, when its checkout is named."""
+    path = community_documents()
+    if path is None:
+        pytest.skip(OMITTED_REASON)
+    flat = normalized(path.read_text(encoding="utf-8")).lower()
+    assert (
+        "three contracts" in flat
+        or "tres contratos" in flat
+        or "three pending host-side contracts" in flat
+    ), path
+    assert "two contracts" not in flat and "dos contratos" not in flat, path
+    for marker in ("synchronous retention", "empty", "footer"):
+        assert marker in flat, "{0}: {1}".format(path, marker)

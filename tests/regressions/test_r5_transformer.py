@@ -1,18 +1,16 @@
-"""Permanent regressions of the fifth review: the incident code and the dot-mode sanitisation.
+"""Permanent regressions of the fifth review: the incident code.
 
-R5 B-R5-1 (the generation of the incident can break the boundary of C1) and R5 M-R5-3 (the sanitisation
-can produce the mark and leaves Markdown presentations undetected). The reproductions of B-R5-1 through
-the real loader and dispatcher live in ``test_r5_host.py``; this module exercises the same properties on
-the registered hooks, so a machine without the read-only host copy still runs them.
+R5 B-R5-1 (the generation of the incident can break the boundary of C1) and, until D12 retired it, R5 M-R5-3
+(the sanitisation could produce the mark and left Markdown presentations undetected). The reproductions of
+B-R5-1 through the real loader and dispatcher live in ``test_r5_host.py``; this module exercises the same
+properties on the registered hooks, so a machine without the read-only host copy still runs them.
 """
 
 from __future__ import annotations
 
 import json
 
-import pytest
-
-from hermes_cited import messages, plugin, render, verifier
+from hermes_cited import messages, plugin, verifier
 
 GROUNDED = "- Afinacion de bicicleta: 380 pesos."
 QUIET = (
@@ -168,69 +166,9 @@ def test_b_r5_1_the_handlers_and_the_quote_refusal_use_the_safe_generation(monke
     assert plugin.incident_code() == plugin.RESERVE_INCIDENT_CODE
 
 
-# --- M-R5-3: the sanitisation of dot mode -----------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "draft",
-    [
-        "Verified Verified by Cited by Cited",
-        "Verified\nby Cited",
-        "Verified by\nCited",
-        "Verified &#98;y Cited",
-        "Verified&nbsp;by&nbsp;Cited",
-        "Verified by [Cited][c]\n\n[c]: https://example.invalid",
-        "**Verified** _by_ `Cited`",
-    ],
-)
-def test_m_r5_3_dot_never_delivers_a_visible_mark(monkeypatch, hermes_home, cited_env, draft):
-    """R5 M-R5-3: every presentation of the mark, and the mark a removal can create, is removed."""
-    context = prepare(monkeypatch, hermes_home, mode="dot")
-    begin(context)
-    final = transform(context, answer=draft)
-    delivered = final if final is not None else draft
-    assert render.contains_mark(delivered) is False, delivered
-    entry = entries_of(hermes_home)[0]
-    assert render.contains_mark(entry["response"]) is False
-    assert entry["response"] == delivered
-
-
-def test_m_r5_3_a_sanitisation_failure_delivers_the_fixed_note_and_never_none(monkeypatch, hermes_home, cited_env):
-    """R5 M-R5-3: a failing ``strip_mark`` used to return ``None`` and leave the mark in place."""
-    context = prepare(monkeypatch, hermes_home, mode="dot")
-    begin(context)
-
-    def broken(*args, **kwargs):
-        raise OSError("synthetic sanitizer failure")
-
-    monkeypatch.setattr(render, "strip_mark", broken)
-    final = transform(context, answer="Verified by Cited")
-    assert final is not None
-    assert final == messages.sanitizer_note("es")
-    assert verifier.SEAL not in final
-    assert entries_of(hermes_home)[0]["response"] == final
-
-
-def test_m_r5_3_a_sanitisation_that_cannot_complete_returns_the_fixed_note(monkeypatch, hermes_home, cited_env):
-    """R5 M-R5-3: the bounded repetition gives up into the fixed note, never into the model's text."""
-    context = prepare(monkeypatch, hermes_home, mode="dot")
-    begin(context)
-    monkeypatch.setattr(render, "contains_mark", lambda text: True)
-    final = transform(context, answer="hola")
-    assert final == messages.sanitizer_note("es")
-    assert "hola" not in final
-    assert entries_of(hermes_home)[0]["response"] == final
-
-
-def test_m_r5_3_a_line_with_content_keeps_its_content():
-    """R5 M-R5-3: the removal takes the mark, not the datum that shares its line."""
-    assert render.strip_mark("380 Verified by Cited").strip() == "380"
-    assert render.strip_mark("Price 380. Verified **by** Cited").strip() == "Price 380."
-
-
-def test_m_r5_3_the_metadata_escapes_the_entity_ampersand():
-    """R5 M-R5-3: ``Verified&nbsp;by&nbsp;Cited`` used to keep live entities in the metadata."""
-    escaped = render.escape_meta("Verified&nbsp;by&nbsp;Cited")
-    assert "\\&nbsp;" in escaped
-    assert render.contains_mark(escaped) is False
-    assert render.contains_mark("Verified&nbsp;by&nbsp;Cited") is True
+# --- M-R5-3 was retired by D12 (round 8): dot mode does not rewrite the model's text ------------------
+#
+# The reproductions of M-R5-3 lived here. With D11 the plugin emits no seal on any route, so D12 retires the
+# removal of the reserved mark. The property is now asserted by `test_r8_dot_passthrough.py` (the intact
+# pass-through through the real host and the recorded bytes) and by `test_dot_mode_delivers_every_text_intact`
+# in `tests/test_plugin.py`. The metadata escaping that M-R5-3 also covered stays in `test_r4_render.py`.

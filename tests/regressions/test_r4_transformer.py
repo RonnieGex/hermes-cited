@@ -11,7 +11,7 @@ import logging
 
 import pytest
 
-from hermes_cited import messages, plugin, render, verifier
+from hermes_cited import plugin, verifier
 
 GROUNDED = "- Afinacion de bicicleta: 380 pesos."
 QUIET = (
@@ -145,20 +145,17 @@ def test_b_r4_1_a_mode_resolution_failure_never_returns_none(monkeypatch, hermes
     assert "CITED-" in actual
 
 
-def test_b_r4_1_dot_is_allowed_only_after_an_affirmative_resolution(monkeypatch, hermes_home, cited_env):
-    """R4 B-R4-1 and M-R5-3: a dot turn whose sanitisation fails gets the fixed safe note, never ``None``."""
+def test_b_r4_1_dot_passes_the_text_through_after_an_affirmative_resolution(monkeypatch, hermes_home, cited_env):
+    """R4 B-R4-1 and D12: a dot turn returns ``None`` and the row records the model's text unchanged."""
     context = build(monkeypatch, "dot", hermes_home)
     pre(context)
-
-    def broken(*args, **kwargs):
-        raise RuntimeError("synthetic sanitizer failure")
-
-    monkeypatch.setattr(render, "strip_mark", broken)
-    delivered = transform(context, answer="Verified by Cited")
-    assert delivered is not None
-    assert delivered == messages.sanitizer_note("es")
-    assert verifier.SEAL not in delivered
-    assert "Verified by Cited" != delivered
+    draft = "Verified by Cited"
+    delivered = transform(context, answer=draft)
+    assert delivered is None
+    entry = json.loads((hermes_home / "cited" / "audit.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert entry["response"] == draft
+    assert entry["transcript"] == draft
+    assert entry["verifier"]["applied"] is False
 
 
 def test_b_r4_1_the_boundary_survives_a_secondary_failure(monkeypatch, hermes_home, cited_env):

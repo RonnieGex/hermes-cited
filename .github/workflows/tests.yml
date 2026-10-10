@@ -15,11 +15,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      # M-R7-2: this workflow checks out one repository only, so it does not prepare the sibling
+      # `community-hermes` that holds `docs/mcp.md`. CITED_DOCS_REPO is therefore not set here and the
+      # cross-repository assertions of tests/regressions/test_r6_docs.py are **omitted**: they are skipped
+      # with the explicit reason "CITED_DOCS_REPO is not set". The local gate of the repository always sets
+      # the variable to the sibling checkout, records the exact SHA of `community-hermes` and leaves the
+      # evidence in openspec/changes/hermes-plugin-r4/reports/2026-10-10-step-5b-docs-repo.md.
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install pytest and the Markdown consumer the suite checks
-        run: python -m pip install --upgrade pip pytest markdown-it-py
+      - name: Install pytest
+        run: python -m pip install --upgrade pip pytest
       - name: Run the suite
         run: python -m pytest -q
         env:
