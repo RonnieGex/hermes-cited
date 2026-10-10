@@ -7,6 +7,27 @@ upstream.
 Reader: someone who knows Hermes Agent v0.21.6+387 (commit `dce1e9b`) and its plugin API. Every line
 number below was read in that checkout.
 
+## What would activate the seal (D11)
+
+Since round 6 the plugin **does not emit** the mark `Verified by Cited` on any route, because with
+`dce1e9b` it cannot accredit what the host delivers. `delivery.accredited_delivery()` is the one
+capability point; today it answers `False`. To turn it on, the host has to offer, per turn and to the
+plugin, both halves of one contract:
+
+1. **The effective policy of the turn.** Not a configuration file, not `load_config_readonly`: the
+   receivers that are really connected for this turn — the text delta, the reasoning stream, the
+   interim commentary, the voice and the SSE route — so the plugin can tell an accredited silent turn
+   from a quiet-looking file. The `delivery_policy` hook of the first contract below is that half.
+2. **The terminal message is the plugin's composition.** The text the user finally receives is the
+   string the composition returned and nothing is appended after it (the file-mutation footer of
+   `agent/turn_finalizer.py:645-647` can add text today), and the same string is the one persisted.
+   The third contract below is that half.
+
+A future version of the plugin would set the capability point from the presence of both halves and
+would emit the seal only for a turn the host accredits. This repository will ask for the seal back
+only with a test of the real host that demonstrates the contract; until then the answer carries the
+fixed note that names the retention.
+
 ## The three contracts Hermes does not offer today
 
 1. **Synchronous retention of the delivery.** A plugin can replace the final answer
@@ -181,14 +202,19 @@ of the full finalizer should cover that sequence, not only `apply_llm_output_tra
 Until these contracts exist, the plugin enforces what it can and says what it cannot: the three missing
 contracts are **synchronous retention of the delivery**, **a final composition step even when the model's
 response is empty**, and **a final composition boundary after the host's own footers**, so the final message
-cannot differ from the persisted render.
+cannot differ from the persisted render. Because none of them exists, the seal is **not emitted**: the one
+capability point of D11 answers "not accredited" and the answer says so with the fixed note.
 
+- **The seal waits for the host**: `delivery.accredited_delivery()` is the only place that would turn the
+  mark back on, and it needs both halves of the contract above. While it answers `False`, every cited answer
+  is the plugin's composition plus the fixed note that names the retention.
 - **Every surface whose text it cannot retain**: the plugin takes a snapshot of the effective delivery
   configuration at the **start** of the cited turn and withholds the seal when anything else could
-  have been seen. In round 4 that covers `api_server` (the SSE route of the desktop app), `desktop`,
+  have been seen. In round 6 that covers `api_server` (the SSE route of the desktop app), `desktop`,
   any messaging platform whose streaming is on, interim assistant commentary
-  (`display.interim_assistant_messages`), streaming TTS (`tts.auto_tts`), an unknown platform and a
-  configuration it cannot read. The withheld note names the surface and the switch.
+  (`display.interim_assistant_messages`), streaming TTS (`tts.auto_tts`), an unknown platform, a
+  configuration it cannot read and the regular case in which the host simply does not accredit the
+  delivery. The withheld note names the surface and the switch, or the missing accreditation.
 - **CLI**: the streaming consumer is documented (`--format stream-json` shows only the terminal
   `result` record), and `display.streaming: false` plus
   `display.interim_assistant_messages: false` remove the draft entirely.

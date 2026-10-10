@@ -157,6 +157,55 @@ runs the real `apply_llm_output_transform` with `""`, records `("", False, None)
 delivery report state the incompatibility and its consequence (a turn with an empty model answer gets no
 render; the log gets no row for it, because nothing was composed and nothing was delivered by the plugin).
 
+## D17 — round 6: the seal waits for the host (D11 of `tasks/mision-cited-hermes-r6.md`)
+
+The fifth review (`tasks/revision-codex-hermes-cited-r5.md`) showed that the round 5 code still could not
+accredit what the host delivers: the plugin cannot see the effective receivers (voice, commentary, streaming)
+and the finalizer can add text after the plugin composition. The scope decision D11 of the round 6 mission
+(approved by Fable) settles it: **while the host does not expose an accreditable delivery contract, the mark
+`Verified by Cited` is not emitted on any route.** C1 to C4 are amended by this decision, and the traceability
+is the round 6 mission itself plus this design entry.
+
+- **One capability point (D11.1).** `delivery.accredited_delivery()` is the only place that answers whether
+  the host accredits a turn: a per-turn policy of the effective receivers *and* the guarantee that the
+  terminal message is the plugin's composition. With Hermes v0.21.6+387 (`dce1e9b`) it answers `False` on
+  every route. A future host version would turn it on there, and only with a test of the real host that
+  demonstrates it. A unit fixture monkeypatches the capability to prove that the point is the only blocker.
+- **The seal is retained, not assumed (M-R5-1).** The snapshot keeps resolving the surfaces it can see
+  (`surface_clear`) and adds the accreditation it cannot obtain (`accredited`). `Snapshot.seal` is
+  `surface_clear and accredited`, so a quiet `load_config_readonly` is not enough: the plugin withholds the
+  seal on an unverifiable state and says so. `FailedConfigRead`/`read_error` from the host loader is rejected
+  explicitly instead of accepted as a mapping.
+- **The cited composition is unchanged (D11.2).** The answer is the render of the textual lines chosen with
+  `cited_quote`, the fixed refusal, or the fixed operational refusal on any failure. The model's prose never
+  enters it. What changes is that the render now always carries the fixed withheld note that names the
+  unaccredited delivery, because H9 asks the answer to say that the seal was withheld.
+- **The record names what it stores (D11.3).** Every cited and dot entry carries `composition_note`, which
+  says in words that the row records the plugin's composition, that the host may show drafts while the answer
+  is written and add its own notices at the end, and that the row is therefore not a record of the terminal
+  message.
+- **The reserved mark stays protected (D11.4, M-R5-3).** Dot mode removes the mark from the **whole
+  document**: the visible characters of entities, soft breaks, inline links and reference links are computed
+  with the span of every character, the spans are removed, the postcondition of absence is checked **after**
+  concatenating and normalising, and the removal repeats a bounded number of times. If it cannot complete,
+  it raises and the transformer returns a fixed safe note instead of the model's untransformed text (never
+  `None`). `escape_meta` escapes every Markdown metacharacter including `&`, so a named entity in a document
+  or a section can never read as the mark.
+- **B-R5-1 — the incident code never breaks the boundary.** `incident_code()` returns a constant, non-empty
+  reserve code when the entropy dependency fails; it never raises. The emergency exit of the transformer
+  therefore does not depend on entropy, disk, configuration or the logger, and a secondary failure of the
+  refusal's own construction can no longer hand the model's prose back to the host.
+- **M-R5-4 — the gate binds the run and the whole render.** `blocks_are_bound` resolves the call, `pid`,
+  `uid`, original number, position and the **line number with its text** against the evidence table;
+  `every_block_is_bound` rejects a cited entry that is not a refusal and has no blocks; `answer_matches_entry`
+  compares the **whole** answer against the plugin's fixed composition templates; `bound_amount` measures the
+  amount, its unit and its citation inside the already resolved block; a run is identified by the entries it
+  appended to the log, and absence, ambiguity and duplicates are rejected; and an operational refusal must
+  match a validated template with a code, not a `startswith`.
+- **M-R5-5 — the commands and the documentation say the implemented policy.** `/cited` states the scope of
+  the final message and the condition of the seal; `/dot` states that the mark is removed from any answer.
+  The READMEs, the proposal, `community-hermes/docs/mcp.md` and the public Cited table follow D11.
+
 ## D15 — the gate measures what it names
 
 M-R3-6 listed four predicates that accepted wrong data and one self-test that reported success while failing.
