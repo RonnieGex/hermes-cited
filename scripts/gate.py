@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""The gate of hermes-cited (the `hermes-plugin-r4` change; round 6 run).
+"""The gate of hermes-cited (the `hermes-plugin-r4` change; round 7 run).
 
 Run it with the Python of the installed Hermes venv:
 
@@ -1365,6 +1365,23 @@ def gate_selftest():
          "\\&nbsp;" in render_module.escape_meta("Verified&nbsp;by&nbsp;Cited")
          and render_module.contains_mark(render_module.escape_meta("Verified&nbsp;by&nbsp;Cited")) is False),
     ]
+
+    # M-R6-1: the nine counterexamples of the sixth review, read on the render of the supported consumer.
+    def mark_visible(value):
+        return "verified by cited" in render_module.consumer_visible(value).lower()
+
+    for draft in (
+        "Verified [&#98;y](https://example.invalid) Cited",
+        "Verified by [Ci&#116;ed](https://example.invalid)",
+        "[Verified &#98;y Cited](https://example.invalid)",
+        "Verified by [Cited]\n\n[Cited]: https://example.invalid",
+        "Verified by [Ci&#116;ed][c]\n\n[c]: https://example.invalid",
+        "Verified<br>by Cited",
+    ):
+        label = draft.replace("\n", "\\n")[:44]
+        cases.append(("the supported consumer renders the mark of {0}".format(label), mark_visible(draft)))
+        cases.append(("and it is not visible after the removal of {0}".format(label),
+                      not mark_visible(render_module.strip_mark(draft))))
     fixture = cited_fixture()
     cases.append(("the cited fixture records one line", fixture["recorded"] == [PRICE_LINE]))
     cases.append(("the cited render copies the line and adds the source",
@@ -2183,7 +2200,7 @@ def finish(started):
 
     def build_report():
         lines = [
-            "# The gate of hermes-cited, round 6 (change hermes-plugin-r4)",
+            "# The gate of hermes-cited, round 7 (change hermes-plugin-r4)",
             "",
             "Date: 2026-10-10. Command: `scripts/gate.py` with the Python of the Hermes venv.",
             "Run: workspace {0}, {1:.0f}s, Hermes Agent v0.21.6+387 (`dce1e9b`), Cited `origin/main`.".format(
@@ -2226,7 +2243,7 @@ def finish(started):
     green = green and passed == total
     verdict = "\n".join(
         [
-            "# The gate of hermes-cited, round 6 (change hermes-plugin-r4)",
+            "# The gate of hermes-cited, round 7 (change hermes-plugin-r4)",
             "",
             "Date: 2026-10-10. Command: `scripts/gate.py` with the Python of the Hermes venv.",
             "Run: workspace under the system temp directory, Hermes Agent v0.21.6+387 (`dce1e9b`), "
