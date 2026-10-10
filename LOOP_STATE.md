@@ -1,81 +1,74 @@
 # LOOP_STATE · hermes-cited, change `hermes-plugin-r4`
 
-STATUS: DONE (gate green), round 6
+STATUS: DONE (gate green), round 7
 CHANGE: hermes-plugin-r4 (OpenSpec), delta over the capability `hermes-plugin`
 BRANCH: feature/hermes-plugin (no remote and no push)
-BASE: `bb4686d` (`docs: the round 5 closing evidence of the loop state`), round 5
-VERIFIED RUN: `scripts/gate.py` with the Python of the Hermes venv, `GATE: GREEN`, **66 of 66 claims in 660 s**,
-on the frozen tree of `0e0c0cf` with both repositories clean
-REVIEW: **pending**. The fifth Codex review (`tasks/revision-codex-hermes-cited-r5.md`) is answered finding by
-finding in `tasks/entrega-cited-hermes-r6.md`; no sixth review has been asked for or run.
+BASE: `17cf4e5` (`docs: the round 6 green gate, its reports and the loop state`), round 6
+VERIFIED RUN: `scripts/gate.py` with the Python of the Hermes venv, `GATE: GREEN`, **66 of 66 claims in 709 s**,
+on the tree of the round 7 commits with both repositories clean
+REVIEW: **pending**. The sixth Codex review (`tasks/revision-codex-hermes-cited-r6.md`) is answered finding by
+finding in `tasks/entrega-cited-hermes-r7.md`; no seventh review has been asked for or run.
 AGENT: DeepSeek (implementer); the publication of `RonnieGex/hermes-cited`, the review and any upstream
 proposal are Fable's and Franc's
 DATE: 2026-10-10
 RUNTIME: Python 3.11.15 (the venv of Hermes), Hermes Agent v0.21.6+387 (commit `dce1e9b`) on Windows
-CONTRACT: `tasks/mision-cited-hermes-r6.md` (with the scope decision D11 approved by Fable) over
-`tasks/mision-cited-hermes-r4.md` (C1 to C4, **amended by D11**); reviews answered:
-`tasks/revision-codex-hermes-cited-r4.md` (round 5) and `tasks/revision-codex-hermes-cited-r5.md` (round 6)
-DELIVERY: `tasks/entrega-cited-hermes-r6.md`
+CONTRACT: `tasks/mision-cited-hermes-r7.md` over `tasks/revision-codex-hermes-cited-r6.md` (M-R6-1 and
+M-R6-2), over C1 to C4 of `tasks/mision-cited-hermes-r4.md` **amended by D11**
+(`tasks/mision-cited-hermes-r6.md`); reviews answered: rounds 5 and 6
+(`tasks/revision-codex-hermes-cited-r4.md`, `tasks/revision-codex-hermes-cited-r5.md`,
+`tasks/revision-codex-hermes-cited-r6.md`)
+DELIVERY: `tasks/entrega-cited-hermes-r7.md`
 
-## Objective (round 6)
+## Objective (round 7)
 
-Resolve the Blocker, the five Majors and the Minor of the fifth adversarial review with the exact fix it
-wrote, without widening the contract: the incident code never breaks its own boundary; the snapshot separates
-the surfaces it can read from the accreditation the host does not give and rejects a `FailedConfigRead`; the
-sanitisation of dot mode covers the whole document (entities, soft breaks, inline and reference links),
-checks the postcondition of absence and gives a fixed safe note when it cannot complete; the gate binds the
-original number and the line number with its text, compares the whole answer against the plugin's fixed
-templates, measures the amount inside the resolved block and identifies a run by the entries its execution
-appended; the commands and the documentation say the implemented policy. **D11 applies to all of it**: while
-the host exposes no accreditable delivery contract, the mark `Verified by Cited` is not emitted on any route,
-the code keeps one capability point that answers "not accredited", and the record says in words that it
-registers the plugin's composition and not the terminal message.
+Close the only two publication blockers of the sixth review with its exact fix, without widening the contract.
+**M-R6-1:** the reserved mark is detected on the **visible text of the same Markdown consumer the host uses**
+(`markdown_it`): entities inside link labels, inline links, shortcut and explicit references resolved against
+their definitions and the line break an HTML `<br>` renders are one mark; the visible characters are mapped
+back to the spans of the original document, dot mode removes the whole presentation and re-checks the render,
+cited mode keeps the documentary row as data with the documentary note and `verified=false`, and a removal
+that cannot complete returns the fixed safe note. **M-R6-2:** the packaged skill the loader installs declares
+that this version does not emit the seal and shows the real render with the retention note; the universal
+promises of the terminal message and the record are replaced by the plugin-composition wording in both
+READMEs, `docs/upstream-proposal.md` and `community-hermes/docs/mcp.md`; the record is described as the
+composition when the append succeeds, dot as the model's text with the mark removed, and the three pending
+host-side contracts are aligned by number and name. **D11 is unchanged.**
 
 ## Result
 
-`scripts/gate.py` ends with **GATE: GREEN, 66 of 66 claims in 644 s**, exit 0. The suite reports **713
+`scripts/gate.py` ends with **GATE: GREEN, 66 of 66 claims in 709 s**, exit 0. The suite reports **739
 passed**. Every claim asserts the property it names:
 
-- **B-R5-1 / H10** `incident_code()` never raises: a failure of `secrets.token_hex` returns the constant
-  reserve code, and the emergency exit depends on no entropy, no disk, no configuration and no logger. The
-  real loader and dispatcher return the fixed operational refusal with no seal and no model prose.
-- **M-R5-1 / H16 / D11** `delivery.accredited_delivery()` is the single capability point and answers `False`;
-  `Snapshot` records `surface_clear` and `accredited` separately and `seal` requires both; a `FailedConfigRead`
-  is unreadable; no route emits the mark and the answer carries the fixed note. The real
-  `TurnRunner._setup_stream_consumer` reproduction, with no double, shows the disagreement between the file
-  and the receivers.
-- **M-R5-2 / H16** the real footer and a complete `finalize_turn` record the plugin's composition with no seal
-  and a `composition_note` that says what the row is.
-- **M-R5-3 / H4** dot mode removes the mark over the whole document, in every presentation the consumer
-  renders, repeats the removal a bounded number of times and delivers a fixed safe note when it cannot
-  complete; `escape_meta` escapes the entity ampersand.
-- **M-R5-4 / H5** the gate resolves each selection by call, `pid`, original number, position and line number
-  with its text, compares the whole answer, measures the amount inside the resolved block, binds a run to what
-  its execution appended and matches an operational refusal against the validated template.
-- **M-R5-5** the handlers of `/cited` and `/dot` state the scope of the final message, the retention and the
-  removal of the mark in any answer; both READMEs, `docs/mcp.md`, the proposal and the two `community-hermes`
-  READMEs follow them.
-- **Regressions** `tests/regressions/` holds 404 tests: 46 of R1, 51 of R2, 139 of R3, 104 of R4 and 64 of R5,
-  one per attack, with the review and the finding id in the docstring. The gate runs the directory twice.
+- **M-R6-1 / H4** `render.consumer_visible` renders with `markdown_it`, replaces tags by a space, decodes the
+  entities and collapses the whitespace; `consumer_mark` is the detection on it and `contains_mark` delegates
+  to it, so the cited path and the gate predicates read the same authority. `_visible_tokens` maps entities
+  inside labels, inline links, full/collapsed/shortcut references resolved against the definitions, images and
+  HTML tags (the `<br>` line break included) back to the original spans. `strip_mark` checks the postcondition
+  **on the render**, repeats the bounded removal and returns the fixed safe note when it cannot complete.
+- **M-R6-2 / H17** the skill the plugin really registers (`plugin.register` through `ctx.register_skill`)
+  declares the retention and carries no fenced render with the mark; a list of forbidden phrases of the
+  previous contract is searched in the five public documents, which also carry the composition wording and the
+  three pending contracts by name.
+- **Regressions** `tests/regressions/` holds 430 tests: 46 of R1, 51 of R2, 139 of R3, 104 of R4, 64 of R5 and
+  26 of R6 (16 of M-R6-1 and 10 of M-R6-2). The gate runs the directory twice and its self-test carries the
+  nine counterexamples of the sixth review.
 
 ## Progress
 
-- `hermes_cited/`: `plugin.py` (the safe incident code, the dot-mode safety note, the `composition_note`),
-  `delivery.py` (the capability point, the two halves, the `read_error` rejection), `render.py` (the
-  document-wide sanitisation, the bounded repetition, the entity ampersand), `messages.py` (the new mode
-  texts and the two fixed sentences).
-- `scripts/gate.py`: the hardened predicates, the new self-test cases and the new claims (`H16`, the run
-  binding, the whole-answer comparison).
-- `tests/regressions/`: `test_r5_transformer.py`, `test_r5_delivery.py`, `test_r5_host.py`,
-  `test_r5_render.py`, `test_r5_gate.py` and `test_r5_messages.py`; the R1 to R4 corpus updated so every
-  assertion that expected the seal requires its absence.
-- `openspec/changes/hermes-plugin-r4/`: design (D17), spec delta (H16 and the amended H4, H9, H10, H15),
-  tasks with the command and result of every round 6 task, and the reports of the red run, the fixes, the
-  documentation, the traceability, the suite and the gate.
-- `README.md`, `README.es.md`, `docs/upstream-proposal.md` and the Cited documentation of `community-hermes`
-  (`docs/hermes-agent`) state the round 6 contract and its limits.
-- Small commits in `feature/hermes-plugin` (docs, tests, code, spec scenarios, gate wording and the
-  green-gate reports with this loop state) and one in `community-hermes`, each with its local gitleaks scan.
+- `hermes_cited/render.py`: the consumer reading (`consumer_visible`, `consumer_mark`), the reference
+  definitions, the link-construct scanner, the HTML tag reader and the span map; the round 6 behaviour is kept
+  for the cases it already covered.
+- `hermes_cited/skills/cited/SKILL.md`: the seal is declared not emitted, the example is the real render with
+  the retention note, and the promise is the plugin's composition.
+- `README.md`, `README.es.md`, `docs/upstream-proposal.md` and `community-hermes/docs/mcp.md`: the composition
+  wording, the record of the composition, dot with the mark removed, and the three pending contracts.
+- `scripts/gate.py`: the nine counterexamples in `gate_selftest()` and the round 7 report titles.
+- `.github/workflows/tests.yml`: `markdown-it-py` beside `pytest`, so the M-R6-1 regression measures the real
+  consumer on a clean leg.
+- `openspec/changes/hermes-plugin-r4/`: design D18, the spec amendments (H4, H5, H10) and the new H17, the
+  round 7 tasks and the reports of the red run, the fixes, the documentation, the suite and the gate.
+- Small commits in `feature/hermes-plugin` (spec, tests, code, documentation, reports) and one in
+  `community-hermes`, each with its local gitleaks scan.
 
 ## Hard rules respected
 
@@ -89,9 +82,10 @@ passed**. Every claim asserts the property it names:
 
 ## Earlier rounds (for the record)
 
-- Round 5 closed `hermes-plugin-r4` with `GATE: GREEN` (59 of 59, 616 s) on `bb4686d`; the fifth review found
-  one Blocker, five Majors and one Minor, so round 6 hardened the boundary of the incident code, the
-  accreditation of the delivery, the sanitisation, the gate and the documentation.
+- Round 6 closed `hermes-plugin-r4` with `GATE: GREEN` (66 of 66, 660 s) on `0e0c0cf`; the sixth review found
+  two Majors that blocked publication, so round 7 rewrote the reading of the visible mark and the public
+  wording.
+- Round 5 closed `hermes-plugin-r4` with `GATE: GREEN` (59 of 59, 616 s) on `bb4686d`.
 - Round 4 closed `hermes-plugin-r4` with `GATE: GREEN` (58 of 58, 660 s) on `6a45132`.
 - Round 3 closed `hermes-plugin-r3` with `GATE: GREEN` (52 of 52, 306 s) on `63959cd`.
 - Round 2 closed `hermes-plugin-r2` with `GATE: GREEN` (38 of 38, 304 s) on `f948a91`; round 1 closed
