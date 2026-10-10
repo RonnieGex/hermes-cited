@@ -1,14 +1,15 @@
-"""The native Hermes Agent plugin: registration, the cited-mode turn and the audit log (H2-H6, H9, H10).
+"""The native Hermes Agent plugin: registration, the cited-mode turn and the audit log (H2-H12).
 
-The cited-mode verifier is extractive (D2): it only accepts a datum that is copied verbatim from an
-excerpt Cited returned in the same turn. The delivery policy (D1) is checked per turn: on a surface
-whose streaming is on, the seal is withheld and the answer says so. A turn whose answer cannot be
-recorded is refused without a seal instead of being delivered as verified (H10).
+Cited mode is *written by the plugin* (D5). The model only chooses lines with the ``cited_quote`` tool;
+``transform_llm_output`` discards the model's text whole and renders the chosen lines, copied byte for
+byte out of the excerpts of the turn, with the source and the mark generated here and the seal added
+only after the exact delivered text was persisted and only when the delivery policy allows it (D7). A
+turn whose answer cannot be recorded is refused without a seal instead of being delivered as verified
+(H10). Dot mode is the model's text, minus the reserved seal.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import sys
@@ -16,7 +17,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import audit, delivery, modes, tools, verifier
+from . import audit, delivery, modes, render, tools, verifier
 from .config import settings_from_env
 
 logger = logging.getLogger(__name__)
@@ -32,28 +33,31 @@ SKILL_DESCRIPTION = (
 )
 
 CITED_RULES = (
-    "Cited mode is on for this turn.\n"
+    "Cited mode is on for this turn. The plugin writes the answer; your own words are discarded.\n"
     "1. Call the `cited_search` or `cited_ask` tool first, before any other tool or any knowledge of "
-    "your own, and answer only from the excerpts it returns.\n"
-    "2. Copy every fact verbatim. Each sentence or line that carries a number, a price, a unit, a "
-    "date or a code must be written between « » exactly as an excerpt of this turn writes it, with "
-    "its subject, on its own line, and exactly once. For example: «Afinación de bicicleta: 380 "
-    "pesos.» Never reword, round, convert, translate or move a value to another subject.\n"
-    "3. Never write a number, price, unit, date or code outside « » anywhere in the answer, not even "
-    "to announce, repeat or summarise the quotation. The only exception is a citation mark such as "
-    "[1]. A valid answer looks like this:\n"
-    "«Afinación de bicicleta: 380 pesos.»\n"
-    "Fuente: cafe-la-horquilla.md, Precios [1].\n"
-    "4. Keep the citation marks such as [1] and name the source document and its section.\n"
-    "5. When Cited refuses, or its excerpts do not hold the answer, say plainly that it is not in the "
-    "documents. Never fill that gap from the web or from general knowledge.\n"
-    "6. A deterministic verifier checks this answer before delivery. A datum that is not copied "
-    "verbatim from an excerpt of this turn, or that appears outside « », makes the whole answer be "
-    "replaced by a refusal naming it, so do not state anything you did not read in an excerpt.\n"
+    "your own. Every passage it returns carries numbered lines, like `{\"line\": 4, \"text\": "
+    "\"- Afinacion de bicicleta: 380 pesos.\"}`.\n"
+    "2. Then call `cited_quote` with `{passage: <the passage number>, lines: [<the line numbers>]}` for "
+    "the lines the user should read, in the order you want them. For example: {\"passage\": 1, "
+    "\"lines\": [4]}. It returns the exact text of those lines.\n"
+    "3. Do not write the answer. Every word you write outside `cited_quote` is thrown away. The plugin "
+    "delivers only the lines you chose, each with its document, its section and its `[n]` mark.\n"
+    "4. Never invent, reword, round, convert or move a value: choose whole lines of the passages "
+    "exactly as they are written.\n"
+    "5. When Cited refuses, or its passages do not hold the answer, call no `cited_quote`: the plugin "
+    "answers that it is not in the documents. Never fill that gap from the web or from general "
+    "knowledge.\n"
+    "6. Search with the exact key terms of the question, in its own language, and keep document names "
+    "and proper nouns as they are written. The documents may be in another language: if the first "
+    "search does not answer, call `cited_search` again with the translated key terms before "
+    "concluding.\n"
+    "7. The tool writes the mark, the source and the seal `Verified by Cited`. Do not write them "
+    "yourself.\n"
 )
 
 _MAX_TURNS = 64
 _TURNS = {}
+_ACTIVE = {}
 _TURNS_LOCK = threading.Lock()
 
 
@@ -85,6 +89,27 @@ def _secret() -> str:
         return os.environ.get("CITED_MCP_TOKEN", "").strip()
 
 
+def _language() -> str:
+    try:
+        return settings_from_env().language
+    except Exception:
+        return render.language_of(os.environ.get("CITED_LANGUAGE"))
+
+
+def _as_index(value):
+    """A passage or line number the model passed, as a positive integer, or ``None``."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 1 else None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isdigit():
+            number = int(text)
+            return number if number >= 1 else None
+    return None
+
+
 class Turn:
     """What one turn of one session knows: its question, its mode and what Cited returned."""
 
@@ -96,10 +121,12 @@ class Turn:
         self.user = ""
         self.mode = ""
         self.calls = []
+        self.passages = []
         self.excerpts = []
         self.citations = []
         self.refusals = []
         self.sources = []
+        self.selections = []
 
     def note_call(self, envelope, tool_name, args, status):
         digests = tools.excerpt_digests(envelope) if envelope else []
@@ -114,6 +141,7 @@ class Turn:
             }
         )
         if envelope:
+            self.passages.extend(tools.evidence_places(envelope))
             self.excerpts.extend(tools.grounding_excerpts(envelope))
             for number in tools.citation_numbers(envelope):
                 if number not in self.citations:
@@ -122,6 +150,55 @@ class Turn:
             for label in tools.source_labels(envelope):
                 if label not in self.sources:
                     self.sources.append(label)
+
+    def line_texts(self) -> set:
+        """Every full line of every excerpt of the turn: the only text the render may display."""
+        return {item["text"] for place in self.passages for item in place.get("lines") or []}
+
+    def place_of(self, number: int):
+        for place in self.passages:
+            if place.get("n") == number:
+                return place
+        return None
+
+    def add_quote(self, args) -> tuple:
+        """Record one ``cited_quote`` selection. Returns ``(texts, error)``; records nothing on error."""
+        arguments = args if isinstance(args, dict) else {}
+        passage = _as_index(arguments.get("passage"))
+        if passage is None:
+            return [], "the `passage` argument must be the number of a passage of this turn"
+        place = self.place_of(passage)
+        if place is None:
+            return [], "this turn has no passage {0}".format(passage)
+        raw_lines = arguments.get("lines")
+        if isinstance(raw_lines, (int, str)) and not isinstance(raw_lines, bool):
+            raw_lines = [raw_lines]
+        if not isinstance(raw_lines, (list, tuple)) or not raw_lines:
+            return [], "the `lines` argument must be a non-empty list of line numbers"
+        available = {item["line"]: item["text"] for item in place.get("lines") or []}
+        chosen = []
+        for raw in raw_lines:
+            number = _as_index(raw)
+            if number is None or number not in available:
+                return [], "passage {0} has no line {1}".format(passage, raw)
+            chosen.append((number, available[number]))
+        seen = {(item.passage, item.number) for item in self.selections}
+        recorded = []
+        for number, text in chosen:
+            key = (passage, number)
+            if key in seen:
+                continue
+            seen.add(key)
+            line = render.Line(
+                passage=passage,
+                number=number,
+                text=text,
+                document=str(place.get("document") or ""),
+                heading=str(place.get("heading") or ""),
+            )
+            self.selections.append(line)
+            recorded.append(text)
+        return recorded, ""
 
 
 def _key(session_id, turn_id):
@@ -138,16 +215,26 @@ def _turn_of(session_id, turn_id, create=False):
                     _TURNS.pop(stale, None)
             turn = Turn(session_id, turn_id)
             _TURNS[key] = turn
+            if turn.session_id:
+                _ACTIVE[turn.session_id] = turn
         return turn
 
 
-def _drop_turn(session_id, turn_id):
+def _active_turn(session_id):
     with _TURNS_LOCK:
-        _TURNS.pop(_key(session_id, turn_id), None)
+        return _ACTIVE.get(str(session_id or ""))
+
+
+def _drop_turn(session_id, turn_id):
+    key = _key(session_id, turn_id)
+    with _TURNS_LOCK:
+        turn = _TURNS.pop(key, None)
+        if turn is not None and _ACTIVE.get(turn.session_id) is turn:
+            _ACTIVE.pop(turn.session_id, None)
 
 
 def register(ctx) -> None:
-    """Register the tools, the hooks, the two mode commands and the packaged skill."""
+    """Register the three tools, the hooks, the two mode commands and the packaged skill."""
     state = ctx.state
     ctx.register_tool(
         "cited_search",
@@ -165,13 +252,21 @@ def register(ctx) -> None:
         description=tools.ASK_DESCRIPTION,
         emoji="📎",
     )
+    ctx.register_tool(
+        "cited_quote",
+        tools.TOOLSET,
+        tools.QUOTE_SCHEMA,
+        _quote_handler(state),
+        description=tools.QUOTE_DESCRIPTION,
+        emoji="❝",
+    )
     ctx.register_hook("pre_llm_call", _pre_llm_call(state))
     ctx.register_hook("post_tool_call", _post_tool_call())
     ctx.register_hook("transform_llm_output", _transform_llm_output(state))
     ctx.register_command(
         "cited",
         modes.mode_command(state, "cited"),
-        description="Cited mode: verify every value against the passages Cited returned.",
+        description="Cited mode: the plugin answers with the lines you choose from Cited.",
     )
     ctx.register_command(
         "dot",
@@ -188,13 +283,13 @@ def register(ctx) -> None:
 
 
 def _warn_about_streaming(state) -> None:
-    """A load-time diagnostic when cited mode is the default and a surface streams (D1)."""
+    """A load-time diagnostic when cited mode is the default and a messaging surface withholds (D7)."""
     try:
         if modes.resolve_mode(state, "") != "cited":
             return
         config = delivery.read_config(hermes_home())
-        for platform in delivery.MESSAGING_PLATFORMS + ("cli",):
-            if delivery.streaming_surface(platform) and delivery.effective_streaming(platform, config):
+        for platform in delivery.MESSAGING_PLATFORMS:
+            if not delivery.seal_allowed(platform, config):
                 logger.warning(
                     "hermes-cited: cited mode is on and streaming is enabled for '%s'. On that "
                     "surface the seal is withheld and the answer says so. Set streaming off to get "
@@ -241,55 +336,47 @@ def _post_tool_call():
     return post_tool_call
 
 
+def _quote_handler(state):
+    """The ``cited_quote`` handler: the model chooses numbered lines, the plugin records them."""
+
+    def cited_quote(args=None, session_id="", task_id="", **kwargs):
+        turn = _active_turn(session_id)
+        if turn is None:
+            return (
+                "Cited has no turn to quote from. Call `cited_search` or `cited_ask` first in this same "
+                "turn, then `cited_quote`."
+            )
+        texts, error = turn.add_quote(args)
+        if error:
+            return "Cited could not quote: {0}.".format(error)
+        return "\n".join(texts)
+
+    return cited_quote
+
+
 def _transform_llm_output(state):
     def transform_llm_output(response_text="", session_id="", turn_id="", platform="", **kwargs):
         text = response_text if isinstance(response_text, str) else str(response_text or "")
-        if not text:
-            return None
         turn = _turn_of(session_id, turn_id, create=True)
         if platform and not turn.platform:
             turn.platform = str(platform)
         mode = turn.mode or modes.resolve_mode(state, session_id)
+        if not text and mode != "cited":
+            _drop_turn(session_id, turn_id)
+            return None
         secret = _secret()
         seal_withheld = False
         if mode == "cited":
-            if turn.refusals:
-                verification = verifier.Verification(
-                    text="",
-                    ok=False,
-                    claims=(),
-                    ungrounded=(),
-                    has_grounding=bool(turn.excerpts),
-                )
-                final = verifier.refusal(verification, refused_reason="; ".join(turn.refusals))
-            else:
-                verification = verifier.verify(text, turn.excerpts, turn.citations)
-                if verification.ok:
-                    if delivery.seal_allowed(turn.platform or platform, home=hermes_home()):
-                        final = verifier.seal(verification, turn.sources)
-                    else:
-                        final = "{0}\n\n{1}".format(
-                            verification.text.rstrip(), delivery.withheld_note(turn.platform or platform)
-                        )
-                        seal_withheld = True
-                else:
-                    final = verifier.refusal(verification)
-                    verification = verifier.Verification(
-                        text=final,
-                        ok=False,
-                        claims=verification.claims,
-                        ungrounded=verification.ungrounded,
-                        has_grounding=verification.has_grounding,
-                    )
+            final, verification, seal_withheld = _render_turn(turn, turn.platform or platform)
             applied = True
         else:
-            final = text
+            final = verifier.strip_seal(text)
             verification = verifier.Verification(
-                text=text,
+                text=final,
                 ok=False,
-                claims=(),
+                blocks=(),
                 ungrounded=(),
-                has_grounding=bool(turn.excerpts),
+                has_grounding=bool(turn.passages),
             )
             applied = False
         _entry, error = _write_entry(turn, mode, final, verification, applied, secret, seal_withheld)
@@ -298,16 +385,33 @@ def _transform_llm_output(state):
             verification = verifier.Verification(
                 text=final,
                 ok=False,
-                claims=(),
+                blocks=(),
                 ungrounded=(),
-                has_grounding=bool(turn.excerpts),
+                has_grounding=bool(turn.passages),
             )
             applied = False
             print("hermes-cited: the audit entry could not be written: {0}".format(error), file=sys.stderr)
         _drop_turn(session_id, turn_id)
-        return final if mode == "cited" else None
+        if mode == "cited":
+            return final
+        if final == text:
+            return None
+        return final if final.strip() else "The reserved seal was removed from this answer."
 
     return transform_llm_output
+
+
+def _render_turn(turn, platform):
+    """The plugin-written answer of one cited turn: blocks, seal and delivery policy (D5, D7)."""
+    language = _language()
+    blocks = list(turn.selections)
+    verification = verifier.verify_display(blocks, turn.line_texts())
+    if not verification.ok:
+        return verifier.refusal_text(language), verification, False
+    body = render.render_answer(language, blocks)
+    if delivery.seal_allowed(platform, home=hermes_home()):
+        return verifier.sealed(body), verification, False
+    return "{0}\n\n{1}".format(body, delivery.withheld_note(platform)), verification, True
 
 
 def _write_entry(turn, mode, final, verification, applied, secret, seal_withheld=False):
@@ -321,11 +425,21 @@ def _write_entry(turn, mode, final, verification, applied, secret, seal_withheld
         "question": turn.question,
         "tool_calls": turn.calls,
         "sources": turn.sources,
+        "quoted_lines": [
+            {
+                "passage": line.passage,
+                "number": line.number,
+                "text": line.text,
+                "document": line.document,
+                "heading": line.heading,
+            }
+            for line in turn.selections
+        ],
         "response": final,
         "verifier": {
             "applied": applied,
             "ok": bool(verification.ok),
-            "claims": list(verification.claims),
+            "blocks": len(verification.blocks),
             "ungrounded": list(verification.ungrounded),
             "grounding": len(turn.excerpts),
             "seal_withheld": bool(seal_withheld),
@@ -341,7 +455,3 @@ def _write_entry(turn, mode, final, verification, applied, secret, seal_withheld
 def read_settings():
     """The settings of this process, for the CLI and for tests."""
     return settings_from_env()
-
-
-def _session_of_turn(session_id):
-    return json.dumps({"session": str(session_id or "")}, ensure_ascii=False)

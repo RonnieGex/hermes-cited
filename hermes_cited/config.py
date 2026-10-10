@@ -16,6 +16,8 @@ DEFAULT_TIMEOUT_MS = 30000
 MCP_PATH = "/api/mcp"
 MODES = ("dot", "cited")
 DEFAULT_MODE = "dot"
+LANGUAGES = ("es", "en")
+DEFAULT_LANGUAGE = "es"
 
 
 class CitedError(Exception):
@@ -32,6 +34,7 @@ class Settings:
     token: str
     timeout_ms: int
     default_mode: str
+    language: str = DEFAULT_LANGUAGE
 
 
 def get_secret(name: str, default: str = "") -> str:
@@ -97,6 +100,13 @@ def mode_default(env: Optional[Mapping[str, str]] = None) -> str:
     return value if value in MODES else DEFAULT_MODE
 
 
+def language_of(value) -> str:
+    """The configured language of the cited-mode render, ``es`` when it is missing or unknown."""
+    text = str(value or "").strip().lower().replace("_", "-")
+    base = text.split("-")[0]
+    return base if base in LANGUAGES else DEFAULT_LANGUAGE
+
+
 def settings_from_env(env: Optional[Mapping[str, str]] = None) -> Settings:
     source = _env(env)
     return Settings(
@@ -104,4 +114,5 @@ def settings_from_env(env: Optional[Mapping[str, str]] = None) -> Settings:
         token=str(source.get("CITED_MCP_TOKEN", "") or "").strip(),
         timeout_ms=timeout_of(source.get("CITED_TIMEOUT_MS")),
         default_mode=mode_default(env),
+        language=language_of(source.get("CITED_LANGUAGE")),
     )

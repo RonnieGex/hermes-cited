@@ -12,6 +12,7 @@ __all__ = [
     "delivery",
     "modes",
     "plugin",
+    "render",
     "tools",
     "verifier",
     "verify_log",

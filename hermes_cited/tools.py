@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import json
 
+from . import render
 from .client import CitedError, call_tool_full, redact
 from .config import settings_from_env
 
 TOOLSET = "cited"
-TOOL_NAMES = ("cited_search", "cited_ask")
+TOOL_NAMES = ("cited_search", "cited_ask", "cited_quote")
 
 DEFAULT_SEARCH_LIMIT = 5
 MAX_SEARCH_LIMIT = 8
@@ -53,6 +54,22 @@ ASK_SCHEMA = {
     "required": ["question"],
 }
 
+QUOTE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "passage": {
+            "type": "integer",
+            "description": "The number of a passage or citation that Cited returned in this turn, as its `n`.",
+        },
+        "lines": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "The line numbers of that passage to show, in order, as the passage's `lines` lists them.",
+        },
+    },
+    "required": ["passage", "lines"],
+}
+
 SEARCH_DESCRIPTION = (
     "Read the passages of the Cited documents that match a query, with the document, the section, "
     "the position and the text of each one. Cite each passage by its number, like [1]. It never "
@@ -63,6 +80,12 @@ ASK_DESCRIPTION = (
     "Answer a question from the documents of Cited, with numbered citations and the passage each one "
     "came from. When the documents do not hold the answer it returns refused instead of inventing it; "
     "pass that refusal to the user."
+)
+
+QUOTE_DESCRIPTION = (
+    "In cited mode, choose the exact lines the user will see. Pass the `passage` number from `cited_search` "
+    "or `cited_ask` and the `lines` numbers of that passage; the tool returns the text of those lines and "
+    "the plugin writes the answer from them. The model's own prose is discarded."
 )
 
 
@@ -156,13 +179,15 @@ def _ask_envelope(result, arguments) -> str:
 
 def _passage_of(raw, with_lead: bool = False) -> dict:
     if not isinstance(raw, dict):
-        return {"n": 0, "document": "", "heading": None, "position": 0, "excerpt": str(raw)}
+        return {"n": 0, "document": "", "heading": None, "position": 0, "excerpt": str(raw), "lines": []}
+    excerpt = raw.get("excerpt") if isinstance(raw.get("excerpt"), str) else ""
     passage = {
         "n": raw.get("n") if isinstance(raw.get("n"), int) else 0,
         "document": raw.get("document") if isinstance(raw.get("document"), str) else "",
         "heading": raw.get("heading") if isinstance(raw.get("heading"), str) else None,
         "position": raw.get("position") if isinstance(raw.get("position"), int) else 0,
-        "excerpt": raw.get("excerpt") if isinstance(raw.get("excerpt"), str) else "",
+        "excerpt": excerpt,
+        "lines": render.numbered_lines(excerpt),
     }
     if with_lead:
         passage["lead"] = raw.get("lead") if isinstance(raw.get("lead"), int) else 0
@@ -213,6 +238,28 @@ def excerpt_pairs(envelope: dict) -> list:
         if isinstance(excerpt, str):
             pairs.append((excerpt_digest(excerpt), excerpt))
     return pairs
+
+
+def evidence_places(envelope: dict) -> list:
+    """The quotable places of one envelope, in order, with their document, section, lines and number."""
+    places = []
+    for place in _places_of(envelope):
+        excerpt = place.get("excerpt")
+        if not isinstance(excerpt, str) or not excerpt.strip():
+            continue
+        number = place.get("n") if isinstance(place.get("n"), int) else 0
+        heading = place.get("heading") if isinstance(place.get("heading"), str) else ""
+        document = place.get("document") if isinstance(place.get("document"), str) else ""
+        places.append(
+            {
+                "n": number,
+                "document": document,
+                "heading": heading,
+                "excerpt": excerpt,
+                "lines": render.numbered_lines(excerpt),
+            }
+        )
+    return places
 
 
 def citation_numbers(envelope: dict) -> list:

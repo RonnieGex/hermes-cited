@@ -1,6 +1,6 @@
 name: hermes-cited
 version: 0.1.0
-description: Cited in Hermes Agent. cited_search and cited_ask as native tools over POST <CITED_URL>/api/mcp, the /cited and /dot conversation modes, a deterministic verifier of the final answer and an auditable hash-chained log.
+description: Cited in Hermes Agent. cited_search, cited_ask and cited_quote as native tools over POST <CITED_URL>/api/mcp, the /cited and /dot conversation modes, an answer in cited mode written by the plugin from chosen lines and an auditable hash-chained log with custody.
 author: Katalis
 license: Apache-2.0
 homepage: https://github.com/RonnieGex/hermes-cited
@@ -22,11 +22,14 @@ optional_env:
     description: How long one call to Cited may take, in milliseconds. 30000 by default.
   - name: CITED_DEFAULT_MODE
     description: The mode a conversation starts in, dot or cited. dot by default.
+  - name: CITED_LANGUAGE
+    description: The language of the cited-mode render, es or en. es by default. The quoted lines are always verbatim.
   - name: CITED_AUDIT_KEY_PATH
-    description: Where the HMAC key of the audit checkpoint lives. %APPDATA%\Katalis\hermes-cited\audit.key by default. It is never the bearer of Cited and never lives inside HERMES_HOME.
+    description: Where the HMAC key of the audit checkpoint and its high-water mark live. %APPDATA%\Katalis\hermes-cited\audit.key by default. It is never the bearer of Cited and never lives inside HERMES_HOME.
 provides_tools:
   - cited_search
   - cited_ask
+  - cited_quote
 provides_hooks:
   - pre_llm_call
   - post_tool_call
