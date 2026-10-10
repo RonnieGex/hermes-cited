@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""The gate of hermes-cited (round 4): affirm the named property of every claim.
+"""The gate of hermes-cited (the `hermes-plugin-r4` change; round 5 run).
 
 Run it with the Python of the installed Hermes venv:
 
@@ -1008,7 +1008,7 @@ def host_matrix(workspace):
 
 
 def gate_selftest():
-    """The gate's own predicates must reject the reproductions of the three reviews (M-R3-6, D8).
+    """The gate's own predicates must reject the reproductions of the four reviews (M-R3-6, M-R4-7, D8).
 
     Returns ``(ok, detail)``. ``detail`` names the failing fixtures exactly, so a red self-test can never
     report success (the round 3 defect).
@@ -1372,7 +1372,7 @@ def main():
         proposal = (REPO / "docs" / "upstream-proposal.md").read_text(encoding="utf-8")
         claim(
             "H15",
-            "the upstream proposal asks for the two missing contracts and opens no PR",
+            "the upstream proposal asks for the missing contracts and opens no PR",
             all(needle in proposal for needle in (
                 "synchronous retention of the delivery",
                 "A final composition step even when the model's response is empty",
@@ -1829,7 +1829,7 @@ def finish(started):
 
     def build_report():
         lines = [
-            "# The gate of hermes-cited, round 4",
+            "# The gate of hermes-cited, round 5 (change hermes-plugin-r4)",
             "",
             "Date: 2026-10-10. Command: `scripts/gate.py` with the Python of the Hermes venv.",
             "Run: workspace {0}, {1:.0f}s, Hermes Agent v0.21.6+387 (`dce1e9b`), Cited `origin/main`.".format(
@@ -1872,7 +1872,7 @@ def finish(started):
     green = green and passed == total
     verdict = "\n".join(
         [
-            "# The gate of hermes-cited, round 4",
+            "# The gate of hermes-cited, round 5 (change hermes-plugin-r4)",
             "",
             "Date: 2026-10-10. Command: `scripts/gate.py` with the Python of the Hermes venv.",
             "Run: workspace under the system temp directory, Hermes Agent v0.21.6+387 (`dce1e9b`), "
