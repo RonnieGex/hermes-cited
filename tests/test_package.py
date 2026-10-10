@@ -51,7 +51,6 @@ def test_the_manifest_is_valid_and_names_the_plugin():
 def test_the_manifest_documents_the_new_optional_variables():
     text = (REPO / "plugin.yaml").read_text(encoding="utf-8")
     assert "CITED_LANGUAGE" in text
-    assert "CITED_AUDIT_KEY_PATH" in text
 
 
 def test_the_entry_point_exposes_register():
@@ -96,18 +95,29 @@ def test_the_two_readmes_document_the_plugin_written_render():
         assert "CITED_DEFAULT_MODE" in text
         assert "CITED_LANGUAGE" in text
         assert "cited_quote" in text
-        assert "audit.key" in text
         assert "stream-json" in text
         assert "2026-10-10" in text
     assert "Según tus documentos" in spanish
     assert "From your documents" in english
 
 
-def test_the_readmes_document_the_custody_and_the_delivery_policy():
-    english = (REPO / "README.md").read_text(encoding="utf-8")
-    assert "high-water" in english.lower() or "high water" in english.lower()
-    assert "desktop" in english.lower()
-    assert "wecom" in english.lower()
+def test_the_readmes_document_the_consistency_record_and_the_delivery_policy():
+    english = (REPO / "README.md").read_text(encoding="utf-8").lower()
+    assert "internal consistency" in english or "internally consistent" in english
+    assert "not tamper-proof" in english
+    assert "cited ledger" in english
+    assert "api_server" in english
+    assert "interim" in english
+    assert "auto_tts" in english
+
+
+def test_the_readmes_no_longer_promise_local_custody():
+    """D9: the claims of the retired custody are gone from the documentation."""
+    for name in ("README.md", "README.es.md"):
+        text = (REPO / name).read_text(encoding="utf-8").lower()
+        assert "high-water" not in text
+        assert "audit.key" not in text
+        assert "checkpoint" not in text
 
 
 def test_the_upstream_proposal_names_the_hook_it_asks_for():
@@ -121,5 +131,14 @@ def test_the_upstream_proposal_names_the_hook_it_asks_for():
 
 def test_the_reports_live_inside_the_change():
     assert (REPO / "openspec" / "changes" / "hermes-plugin-r3" / "reports").is_dir()
-    assert (REPO / "openspec" / "changes" / "hermes-plugin-r2" / "reports").is_dir()
-    assert (REPO / "openspec" / "changes" / "hermes-plugin" / "reports").is_dir()
+    assert (REPO / "openspec" / "changes" / "hermes-plugin-r4" / "reports").is_dir()
+    archive = REPO / "openspec" / "changes" / "archive"
+    assert (archive / "2026-10-10-hermes-plugin" / "reports").is_dir()
+    assert (archive / "2026-10-10-hermes-plugin-r2" / "reports").is_dir()
+
+
+def test_only_two_changes_are_open_at_once():
+    """The standard allows at most two open changes per repository (M-R3-7)."""
+    changes = REPO / "openspec" / "changes"
+    open_changes = sorted(item.name for item in changes.iterdir() if item.is_dir() and item.name != "archive")
+    assert open_changes == ["hermes-plugin-r3", "hermes-plugin-r4"]

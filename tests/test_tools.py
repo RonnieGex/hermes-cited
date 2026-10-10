@@ -21,9 +21,10 @@ def test_the_schemas_use_the_cited_parameter_names():
     assert ask["properties"]["sessionId"]["type"] == "string"
     assert ask["required"] == ["question"]
     assert quote["required"] == ["passage", "lines"]
-    assert quote["properties"]["passage"]["type"] == "integer"
+    assert quote["properties"]["passage"]["type"] == "string"
     assert quote["properties"]["lines"]["type"] == "array"
     assert quote["properties"]["lines"]["items"]["type"] == "integer"
+    assert quote["properties"]["lines"]["items"]["minimum"] == 1
 
 
 def test_the_toolset_and_the_tool_names():

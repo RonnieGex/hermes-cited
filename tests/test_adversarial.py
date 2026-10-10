@@ -1,9 +1,12 @@
-"""One adversarial fixture per finding of the two Codex reviews (B-R2-1 to B-R2-3, M-R2-1 to M-R2-3).
+"""One adversarial fixture per finding of the three Codex reviews.
 
 These are the exact counterexamples the reviews printed, turned into tests that must fail if the defect
-comes back. The round 1 findings (B1-B3, M1-M7) keep their fixtures in this file too, adapted to D5: the
-model's prose is discarded, so a changed datum, a moved subject or a forged seal can no longer be
-delivered at all.
+comes back. The round 1 findings (B1-B3, M1-M7) keep their fixtures adapted to D5: the model's prose is
+discarded, so a changed datum, a moved subject or a forged seal can no longer be delivered at all.
+
+Round 4 retired the local custody (D9), so the B-R2-3 and M-R2-3 custody fixtures became the fixtures of
+what the consistency record really promises: it refuses an append over a broken chain, and the tests that
+used to assert a signature of delivery now assert that a refused append never becomes a delivered row.
 """
 
 from __future__ import annotations
@@ -15,6 +18,9 @@ import pytest
 from hermes_cited import audit, plugin, render, tools, verifier
 
 GROUNDED = "- Afinacion de bicicleta: 380 pesos."
+QUIET = (
+    "streaming:\n  enabled: false\ndisplay:\n  streaming: false\n  interim_assistant_messages: false\n"
+)
 
 
 class DictState:
@@ -55,8 +61,10 @@ def hook(context, name, **payload):
     return results[0] if len(results) == 1 else results
 
 
-def build(monkeypatch, mode="cited"):
+def build(monkeypatch, mode="cited", hermes_home=None):
     monkeypatch.setenv("CITED_DEFAULT_MODE", mode)
+    if hermes_home is not None:
+        (hermes_home / "config.yaml").write_text(QUIET, encoding="utf-8")
     context = FakeContext()
     plugin.register(context)
     return context
@@ -76,7 +84,7 @@ def run_turn(context, answer="", session="s1", turn="t1", platform="cli", args=N
         status="ok",
     )
     if args is not None:
-        context.tools["cited_quote"]["handler"](args, session_id=session)
+        context.tools["cited_quote"]["handler"](args, session_id=session, turn_id=turn)
     return hook(
         context,
         "transform_llm_output",
@@ -124,7 +132,7 @@ FREE_PROSE = [
 
 @pytest.mark.parametrize("answer, excerpt", FREE_PROSE)
 def test_b_r2_1_free_prose_never_reaches_the_answer(monkeypatch, hermes_home, cited_env, answer, excerpt):
-    context = build(monkeypatch)
+    context = build(monkeypatch, hermes_home=hermes_home)
     final = run_turn(context, answer=answer)
     assert final == render.refusal_text("es")
     assert answer not in final
@@ -145,7 +153,7 @@ B_R2_2 = [
 @pytest.mark.parametrize("answer, excerpt", B_R2_2)
 def test_b_r2_2_no_manipulated_prose_or_block_can_be_displayed(monkeypatch, hermes_home, cited_env, answer, excerpt):
     """The model's answer is discarded, and a hand-built block must be a full line of the excerpt."""
-    context = build(monkeypatch)
+    context = build(monkeypatch, hermes_home=hermes_home)
     envelope = json.dumps(
         {
             "cited_tool": "cited_search",
@@ -158,120 +166,155 @@ def test_b_r2_2_no_manipulated_prose_or_block_can_be_displayed(monkeypatch, herm
     assert final == render.refusal_text("es")
     display_lines = {line for place in tools.grounding_excerpts(tools.parse_tool_result(envelope))
                      for line in render.excerpt_lines(place)}
-    forged = render.Line(1, 1, answer, "d.md", "H")
+    forged = render.Line(1, 1, answer, "d.md", "H", pid="P1", original=1)
     assert verifier.verify_display([forged], display_lines).ok is False
 
 
-# --- B-R2-3: an append authenticated a manipulated history without the key ----------------------
+# --- B-R3-1: an exception outside the append must still shield the answer ------------------------
 
 
-def _alter(path, variant):
-    if variant == "removed_tail":
-        lines = path.read_text(encoding="utf-8").splitlines()
-        path.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
-    elif variant == "rewritten_chain":
-        entries = audit.read_entries(path)
-        previous = audit.GENESIS
-        for entry in entries:
-            entry["response"] = "tampered"
-            entry["prev_hash"] = previous
-            entry["hash"] = audit.entry_hash(entry)
-            previous = entry["hash"]
-        path.write_text(
-            "\n".join(json.dumps(entry, ensure_ascii=False, sort_keys=True) for entry in entries) + "\n",
-            encoding="utf-8",
-        )
-    elif variant == "missing_checkpoint":
-        audit.checkpoint_path(path).unlink()
-    elif variant == "rollback_checkpoint":
-        entries = audit.read_entries(path)
-        audit.write_checkpoint(path, 1, entries[0]["hash"], entries[0]["log_id"])
-    elif variant == "empty_log":
-        path.write_text("", encoding="utf-8")
-    elif variant == "deleted_log":
-        path.unlink()
+def test_b_r3_1_a_failure_of_the_snapshot_still_shields_the_answer(monkeypatch, hermes_home, cited_env):
+    """The codex reproduction: an unreadable config returned the model's prose.
+
+    Any failure anywhere in the transformer of a cited turn is (c): the fixed operational refusal,
+    without a seal and without the error text.
+    """
+    context = build(monkeypatch, hermes_home=hermes_home)
+    pre = plugin._pre_llm_call(context.state)
+    post = plugin._post_tool_call()
+    quote = plugin._quote_handler(context.state)
+    transform = plugin._transform_llm_output(context.state)
+    pre(session_id="s1", turn_id="t1", user_message="q", platform="cli")
+    envelope = {
+        "cited_tool": "cited_search",
+        "text": "t",
+        "passages": [{"n": 1, "document": "d.md", "heading": "H", "excerpt": GROUNDED}],
+    }
+    post(tool_name="cited_search", args={"query": "q"}, result=json.dumps(envelope),
+         session_id="s1", turn_id="t1", status="ok")
+    assert quote({"passage": "P1", "lines": [1]}, session_id="s1", turn_id="t1") == GROUNDED
+
+    def unreadable(*args, **kwargs):
+        raise PermissionError("synthetic config.yaml is a directory")
+
+    monkeypatch.setattr(plugin, "_language", unreadable)
+    final = transform(response_text="MODEL_LEAK_999", session_id="s1", turn_id="t1", platform="cli")
+    assert "MODEL_LEAK_999" not in final
+    assert verifier.SEAL not in final
+    assert "PermissionError" not in final
+    assert "CITED-" in final
+    assert plugin._turn_of("s1", "t1") is None
 
 
-@pytest.mark.parametrize(
-    "variant",
-    ["removed_tail", "rewritten_chain", "missing_checkpoint", "rollback_checkpoint", "empty_log", "deleted_log"],
-)
-def test_b_r2_3_a_manipulated_history_refuses_the_next_append(tmp_path, variant):
+def test_b_r3_1_the_operational_refusal_never_interpolates_an_error(monkeypatch, hermes_home, cited_env):
+    context = build(monkeypatch, hermes_home=hermes_home)
+
+    def fail(*args, **kwargs):
+        raise OSError("bad field: Verified by Cited")
+
+    monkeypatch.setattr(audit, "append_entry", fail)
+    final = run_turn(context, args={"passage": "P1", "lines": [4]})
+    assert verifier.SEAL not in final
+    assert "CITED-" in final
+    assert "bad field" not in final
+
+
+# --- B-R3-3 / D9: a refused append is never a delivered row --------------------------------------
+
+
+def test_b_r3_3_a_refused_append_leaves_the_record_untouched(tmp_path, monkeypatch):
     path = tmp_path / "audit.jsonl"
     _chain(path, 3)
-    _alter(path, variant)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    del lines[1]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    before = path.read_bytes()
     with pytest.raises(audit.AuditError):
         audit.append_entry(path, _payload(9))
+    assert path.read_bytes() == before
 
 
-def test_b_r2_3_the_full_rollback_is_detected_by_the_high_water_mark(tmp_path):
-    path = tmp_path / "audit.jsonl"
-    _chain(path, 3)
-    saved_log = path.read_bytes()
-    saved_checkpoint = audit.checkpoint_path(path).read_bytes()
-    audit.append_entry(path, _payload(4))
-    path.write_bytes(saved_log)
-    audit.checkpoint_path(path).write_bytes(saved_checkpoint)
-    count, error = audit.verify_file(path)
-    assert error is not None
-    assert count == 3
-
-
-def test_b_r2_3_the_rollback_cannot_be_reappended(tmp_path):
-    path = tmp_path / "audit.jsonl"
-    _chain(path, 3)
-    saved_log = path.read_bytes()
-    saved_checkpoint = audit.checkpoint_path(path).read_bytes()
-    audit.append_entry(path, _payload(4))
-    path.write_bytes(saved_log)
-    audit.checkpoint_path(path).write_bytes(saved_checkpoint)
-    with pytest.raises(audit.AuditError):
-        audit.append_entry(path, _payload(5))
-
-
-# --- M-R2-3: a lost key was regenerated on read and a failed write left a different response ----
-
-
-def test_m_r2_3_a_lost_key_fails_closed_and_is_not_recreated(tmp_path):
-    path = tmp_path / "audit.jsonl"
-    _chain(path, 3)
-    key = audit.key_path()
-    key.unlink()
-    count, error = audit.verify_file(path)
-    assert error is not None
-    assert not key.exists()
-    with pytest.raises(audit.AuditError):
-        audit.append_entry(path, _payload(4))
-
-
-def test_m_r2_3_a_first_write_failure_leaves_no_row(tmp_path, monkeypatch):
-    path = tmp_path / "audit.jsonl"
-
-    def fail(*args, **kwargs):
-        raise audit.AuditError("synthetic key custody unavailable")
-
-    monkeypatch.setattr(audit, "ensure_key", fail)
-    with pytest.raises(audit.AuditError):
-        audit.append_entry(path, _payload(1))
-    assert not path.exists()
-
-
-def test_m_r2_3_a_checkpoint_failure_rolls_the_row_back(tmp_path, monkeypatch):
+def test_b_r3_3_a_half_written_row_of_a_failed_append_is_detected(tmp_path, monkeypatch):
+    """A write that fails after flushing leaves a broken chain, which refuses the next append."""
     path = tmp_path / "audit.jsonl"
     _chain(path, 1)
+    original = audit._append_line
 
-    original = audit.write_checkpoint
+    def half_write(log, entry):
+        with open(log, "a", encoding="utf-8", newline="\n") as handle:
+            handle.write("{0}".format(json.dumps(entry)[:20]))
+            handle.flush()
+            import os
 
-    def fail(*args, **kwargs):
-        raise OSError("synthetic checkpoint disk full")
+            os.fsync(handle.fileno())
+        raise OSError("synthetic failure after the partial write")
 
-    monkeypatch.setattr(audit, "write_checkpoint", fail)
+    monkeypatch.setattr(audit, "_append_line", half_write)
     with pytest.raises(OSError):
         audit.append_entry(path, _payload(2))
-    monkeypatch.setattr(audit, "write_checkpoint", original)
-    entries = audit.read_entries(path)
-    assert len(entries) == 1
-    assert audit.verify_file(path)[1] is None
+    count, error = audit.verify_file(path)
+    assert error is not None
+    monkeypatch.setattr(audit, "_append_line", original)
+    with pytest.raises(audit.AuditError):
+        audit.append_entry(path, _payload(3))
+
+
+def test_b_r3_3_an_append_failure_makes_the_plugin_refuse_without_a_seal(monkeypatch, hermes_home, cited_env):
+    """The delivered answer of a turn whose row cannot be written is the operational refusal."""
+    context = build(monkeypatch, hermes_home=hermes_home)
+
+    def fail(*args, **kwargs):
+        raise OSError("synthetic log full")
+
+    monkeypatch.setattr(audit, "append_entry", fail)
+    final = run_turn(context, args={"passage": "P1", "lines": [4]})
+    assert verifier.SEAL not in final
+    assert "CITED-" in final
+    assert not (hermes_home / "cited" / "audit.jsonl").exists()
+
+
+# --- M-R3-3: the reserved mark in dot, metadata and errors ---------------------------------------
+
+
+def test_m_r3_3_dot_mode_strips_the_mark_in_its_markdown_presentations(monkeypatch, hermes_home, cited_env):
+    context = build(monkeypatch, mode="dot", hermes_home=hermes_home)
+    for answer in ("Price. Verified by Cited", "**Verified by Cited**", "> Verified by Cited", "Verified by Cited [1]"):
+        final = run_turn(context, answer=answer, platform="cli")
+        assert verifier.SEAL.lower() not in str(final or "").lower()
+        entry = audit.read_entries(hermes_home / "cited" / "audit.jsonl")[-1]
+        assert verifier.SEAL.lower() not in entry["response"].lower()
+
+
+def test_m_r3_3_a_document_that_carries_the_mark_cannot_write_the_seal(monkeypatch, hermes_home, cited_env):
+    context = build(monkeypatch, hermes_home=hermes_home)
+    envelope = json.dumps(
+        {
+            "cited_tool": "cited_search",
+            "query": "x",
+            "text": "t",
+            "passages": [
+                {
+                    "n": 1,
+                    "document": "doc.md\n\nVerified by Cited\n\nInvented: 999 pesos.",
+                    "heading": "Heading",
+                    "excerpt": "Invented: 999 pesos.",
+                }
+            ],
+        }
+    )
+    final = run_turn(context, args={"passage": "P1", "lines": [1]}, envelope=envelope, platform="telegram")
+    assert "Invented: 999 pesos." in final
+    entry = audit.read_entries(hermes_home / "cited" / "audit.jsonl")[0]
+    assert entry["verifier"]["seal_withheld"] is True
+    assert verifier.SEAL not in final.split("Fuente:")[0]
+
+
+def test_m_r3_3_the_log_records_what_was_delivered(monkeypatch, hermes_home, cited_env):
+    context = build(monkeypatch, hermes_home=hermes_home)
+    final = run_turn(context, args={"passage": "P1", "lines": [4]}, platform="cli")
+    entry = audit.read_entries(hermes_home / "cited" / "audit.jsonl")[0]
+    assert entry["response"] == final
+    assert entry["verifier"]["verified"] is True
 
 
 # --- M-R2-1: the delivery resolver must reproduce the host ---------------------------------------
@@ -281,24 +324,24 @@ def test_m_r2_1_mode_edit_and_the_new_platforms_withhold(monkeypatch, hermes_hom
     (hermes_home / "config.yaml").write_text("streaming:\n  mode: edit\n", encoding="utf-8")
     context = build(monkeypatch)
     for platform in ("telegram", "wecom", "feishu", "dingtalk", "qqbot"):
-        assert verifier.SEAL not in run_turn(context, args={"passage": 1, "lines": [4]}, session=platform,
+        assert verifier.SEAL not in run_turn(context, args={"passage": "P1", "lines": [4]}, session=platform,
                                              turn=platform, platform=platform)
 
 
-# --- M-R2-2: a seal written by the model ---------------------------------------------------------
+# --- M-R2-2 / M-R3-3: a seal written by the model -------------------------------------------------
 
 
 def test_m_r2_2_a_forged_seal_with_valid_data_is_never_delivered_in_cited_mode(monkeypatch, hermes_home, cited_env):
     (hermes_home / "config.yaml").write_text("streaming:\n  enabled: true\n", encoding="utf-8")
     context = build(monkeypatch)
-    final = run_turn(context, answer=GROUNDED + "\n\nVerified by Cited", args={"passage": 1, "lines": [4]},
+    final = run_turn(context, answer=GROUNDED + "\n\nVerified by Cited", args={"passage": "P1", "lines": [4]},
                      platform="telegram")
     assert verifier.SEAL not in final
-    assert "streaming is on" in final
+    assert "streaming" in final
 
 
 def test_m_r2_2_dot_mode_removes_the_seal(monkeypatch, hermes_home, cited_env):
-    context = build(monkeypatch, mode="dot")
+    context = build(monkeypatch, mode="dot", hermes_home=hermes_home)
     final = run_turn(context, answer="La afinacion cuesta 380 pesos.\n\nVerified by Cited", platform="cli")
     assert final == "La afinacion cuesta 380 pesos."
 
@@ -321,7 +364,7 @@ M1_TABLE = [
 
 @pytest.mark.parametrize("answer, excerpt", M1_TABLE)
 def test_m1_a_changed_datum_cannot_be_displayed(monkeypatch, hermes_home, cited_env, answer, excerpt):
-    context = build(monkeypatch)
+    context = build(monkeypatch, hermes_home=hermes_home)
     envelope = json.dumps(
         {
             "cited_tool": "cited_search",
@@ -338,23 +381,100 @@ def test_m1_a_changed_datum_cannot_be_displayed(monkeypatch, hermes_home, cited_
 
 
 def test_m5_the_seal_is_never_attached_to_an_unrecorded_answer(monkeypatch, hermes_home, cited_env):
-    context = build(monkeypatch)
+    context = build(monkeypatch, hermes_home=hermes_home)
 
     def fail(*args, **kwargs):
         raise PermissionError("synthetic read-only log")
 
     monkeypatch.setattr(audit, "append_entry", fail)
-    final = run_turn(context, args={"passage": 1, "lines": [4]})
+    final = run_turn(context, args={"passage": "P1", "lines": [4]})
     assert verifier.SEAL not in final
-    assert "could not be written" in final
+    assert "CITED-" in final
 
 
 def test_m5_the_session_is_written(monkeypatch, hermes_home, cited_env):
-    context = build(monkeypatch)
-    run_turn(context, args={"passage": 1, "lines": [4]}, session="session-real", turn="t1")
+    context = build(monkeypatch, hermes_home=hermes_home)
+    run_turn(context, args={"passage": "P1", "lines": [4]}, session="session-real", turn="t1")
     entries = audit.read_entries(hermes_home / "cited" / "audit.jsonl")
     assert entries[0]["session"] == "session-real"
     assert entries[0]["turn_id"] == "t1"
+
+
+# --- M-R3-2: two searches of a turn, and two open turns of a session ------------------------------
+
+
+def test_m_r3_2_two_searches_of_a_turn_do_not_collide(monkeypatch, hermes_home, cited_env):
+    context = build(monkeypatch, hermes_home=hermes_home)
+    pre = plugin._pre_llm_call(context.state)
+    post = plugin._post_tool_call()
+    quote = plugin._quote_handler(context.state)
+    transform = plugin._transform_llm_output(context.state)
+    pre(session_id="s1", turn_id="t1", user_message="q", platform="cli")
+    for document, excerpt in (("old.md", "Old: 380 pesos."), ("new.md", "New: 999 pesos.")):
+        envelope = {
+            "cited_tool": "cited_search",
+            "text": "t",
+            "passages": [{"n": 1, "document": document, "heading": "H", "excerpt": excerpt}],
+        }
+        post(tool_name="cited_search", args={"query": document}, result=json.dumps(envelope),
+             session_id="s1", turn_id="t1", status="ok")
+    assert quote({"passage": "P1", "lines": [1]}, session_id="s1", turn_id="t1") == "Old: 380 pesos."
+    assert quote({"passage": "P2", "lines": [1]}, session_id="s1", turn_id="t1") == "New: 999 pesos."
+    final = transform(response_text="MODEL_999", session_id="s1", turn_id="t1", platform="cli")
+    assert "Old: 380 pesos. [1]" in final
+    assert "New: 999 pesos. [2]" in final
+
+
+def test_m_r3_2_two_open_turns_are_never_guessed(monkeypatch, hermes_home, cited_env):
+    context = build(monkeypatch, hermes_home=hermes_home)
+    pre = plugin._pre_llm_call(context.state)
+    post = plugin._post_tool_call()
+    quote = plugin._quote_handler(context.state)
+    for turn in ("turn-a", "turn-b"):
+        pre(session_id="s1", turn_id=turn, user_message="q", platform="cli")
+        envelope = {
+            "cited_tool": "cited_search",
+            "text": "t",
+            "passages": [{"n": 1, "document": "{0}.md".format(turn), "heading": "H", "excerpt": GROUNDED}],
+        }
+        post(tool_name="cited_search", args={"query": "q"}, result=json.dumps(envelope),
+             session_id="s1", turn_id=turn, status="ok")
+    raw = quote({"passage": "P1", "lines": [1]}, session_id="s1")
+    assert "cannot tell" in raw
+    assert not (hermes_home / "cited" / "audit.jsonl").exists()
+
+
+# --- M-R3-1: a refusal blocks every selection of the turn -----------------------------------------
+
+
+def test_m_r3_1_a_refusal_after_a_selection_blocks_the_render(monkeypatch, hermes_home, cited_env):
+    context = build(monkeypatch, hermes_home=hermes_home)
+    pre = plugin._pre_llm_call(context.state)
+    post = plugin._post_tool_call()
+    quote = plugin._quote_handler(context.state)
+    transform = plugin._transform_llm_output(context.state)
+    pre(session_id="s1", turn_id="t1", user_message="q", platform="cli")
+    envelope = {
+        "cited_tool": "cited_search",
+        "text": "t",
+        "passages": [{"n": 1, "document": "d.md", "heading": "H", "excerpt": GROUNDED}],
+    }
+    post(tool_name="cited_search", args={"query": "q"}, result=json.dumps(envelope),
+         session_id="s1", turn_id="t1", status="ok")
+    quote({"passage": "P1", "lines": [1]}, session_id="s1", turn_id="t1")
+    refusal = {
+        "cited_tool": "cited_ask",
+        "question": "q",
+        "status": "refused",
+        "answer": "No.",
+        "text": "No.",
+        "citations": [],
+    }
+    post(tool_name="cited_ask", args={"question": "q"}, result=json.dumps(refusal),
+         session_id="s1", turn_id="t1", status="ok")
+    final = transform(response_text="Cuesta 999 pesos.", session_id="s1", turn_id="t1", platform="cli")
+    assert final == render.refusal_text("es")
+    assert verifier.SEAL not in final
 
 
 # --- M7: the documented command must work from the installed plugin -----------------------------

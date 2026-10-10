@@ -1,4 +1,10 @@
-"""The hash-chained audit log, its checkpoint, its custody and its verifier (H5, M3, M4, D3, D6)."""
+"""The local consistency record: the chained log, its append and its verifier (H5, M3, D9).
+
+Round 4 (D9) retired the local custody, so these tests assert what the module really does: it chains every
+delivered answer, it locks between processes, it validates the whole chain before writing one byte, and it
+detects every change that breaks the chain. A chain rewritten and recomputed is consistent, and the tests
+say so instead of pretending otherwise: the README states that limit in plain language.
+"""
 
 from __future__ import annotations
 
@@ -7,13 +13,12 @@ import os
 import subprocess
 import sys
 import textwrap
-from pathlib import Path
 
 import pytest
 
 from hermes_cited import audit
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = __import__("pathlib").Path(__file__).resolve().parents[1]
 
 
 def _payload(index):
@@ -63,14 +68,21 @@ def test_each_entry_links_to_the_previous_one_and_counts(tmp_path):
     assert second["log_id"] == first["log_id"]
 
 
-def test_a_fresh_chain_and_its_checkpoint_verify(tmp_path):
+def test_a_fresh_chain_is_consistent(tmp_path):
     path = tmp_path / "audit.jsonl"
     _chain(path, 3)
     count, error = audit.verify_file(path)
     assert error is None
     assert count == 3
-    checkpoint = audit.read_checkpoint(path)
-    assert checkpoint["count"] == 3
+
+
+def test_the_key_override_of_round_three_is_ignored(tmp_path):
+    """D9: ``CITED_AUDIT_KEY_PATH`` has no effect any more and no file is created."""
+    path = tmp_path / "audit.jsonl"
+    key = tmp_path / "audit.key"
+    audit.append_entry(path, _payload(1), key_path_override=str(key))
+    assert audit.verify_file(path, key_path_override=str(key)) == (1, None)
+    assert not key.exists()
 
 
 def test_every_required_field_is_written(tmp_path):
@@ -106,7 +118,7 @@ def test_an_altered_entry_is_detected(tmp_path):
     assert "2" in error
 
 
-def test_a_removed_entry_is_detected(tmp_path):
+def test_a_removed_middle_entry_is_detected(tmp_path):
     path = tmp_path / "audit.jsonl"
     _chain(path, 3)
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -114,6 +126,7 @@ def test_a_removed_entry_is_detected(tmp_path):
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     count, error = audit.verify_file(path)
     assert error is not None
+    assert "seq" in error
 
 
 def test_a_reordered_entry_is_detected(tmp_path):
@@ -143,27 +156,28 @@ def test_an_empty_or_missing_file_is_not_a_chain(tmp_path):
     assert error is not None
 
 
-def test_a_removed_last_entry_is_detected(tmp_path):
-    """M4: the chain alone cannot see this; the checkpoint can."""
+def test_a_removed_tail_is_consistent_and_the_limit_is_named(tmp_path):
+    """D9: without a custody mark, a cut suffix leaves a shorter, internally consistent chain.
+
+    The record says exactly that; it does not claim to detect it. This is the documented limit.
+    """
     path = tmp_path / "audit.jsonl"
     _chain(path, 3)
     lines = path.read_text(encoding="utf-8").splitlines()
     path.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
-    count, error = audit.verify_file(path)
-    assert error is not None
-    assert "checkpoint" in error
+    assert audit.verify_file(path) == (2, None)
 
 
-def test_a_cut_suffix_is_detected(tmp_path):
+def test_a_cut_suffix_leaves_a_consistent_shorter_chain(tmp_path):
     path = tmp_path / "audit.jsonl"
     _chain(path, 5)
     lines = path.read_text(encoding="utf-8").splitlines()
     path.write_text("\n".join(lines[:2]) + "\n", encoding="utf-8")
-    count, error = audit.verify_file(path)
-    assert error is not None
+    assert audit.verify_file(path) == (2, None)
 
 
-def test_a_rewritten_and_recomputed_chain_is_detected(tmp_path):
+def test_a_rewritten_and_recomputed_chain_is_consistent_and_the_limit_is_named(tmp_path):
+    """Whoever can rewrite the file can recompute its hashes: that is what D9 declares."""
     path = tmp_path / "audit.jsonl"
     _chain(path, 3)
     entries = audit.read_entries(path)
@@ -178,30 +192,19 @@ def test_a_rewritten_and_recomputed_chain_is_detected(tmp_path):
         encoding="utf-8",
     )
     assert audit.verify_entries(entries) == (True, 0, None)
-    count, error = audit.verify_file(path)
-    assert error is not None
-    assert "checkpoint" in error
+    assert audit.verify_file(path) == (3, None)
 
 
-def test_a_rolled_back_checkpoint_is_detected(tmp_path):
+def test_a_broken_chain_refuses_the_next_append(tmp_path):
     path = tmp_path / "audit.jsonl"
-    _chain(path, 2)
-    old = audit.checkpoint_path(path).read_text(encoding="utf-8")
-    _chain(path, 1)
-    assert audit.verify_file(path)[1] is None
-    audit.checkpoint_path(path).write_text(old, encoding="utf-8")
-    count, error = audit.verify_file(path)
-    assert error is not None
-    assert "checkpoint" in error
-
-
-def test_a_missing_checkpoint_is_an_error(tmp_path):
-    path = tmp_path / "audit.jsonl"
-    _chain(path, 2)
-    audit.checkpoint_path(path).unlink()
-    count, error = audit.verify_file(path)
-    assert error is not None
-    assert "checkpoint" in error
+    _chain(path, 3)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    del lines[1]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    before = path.read_bytes()
+    with pytest.raises(audit.AuditError):
+        audit.append_entry(path, _payload(9))
+    assert path.read_bytes() == before
 
 
 def test_an_invalid_tail_refuses_the_append(tmp_path):
@@ -212,6 +215,16 @@ def test_an_invalid_tail_refuses_the_append(tmp_path):
     with pytest.raises(audit.AuditError):
         audit.append_entry(path, _payload(3))
     assert audit.verify_file(path)[1] is not None
+
+
+def test_an_append_never_restarts_from_genesis(tmp_path):
+    """B-R2-3: a chain that lost its tail is not adopted as a new one."""
+    path = tmp_path / "audit.jsonl"
+    _chain(path, 3)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    path.write_text("\n".join(lines[:1]) + "\n", encoding="utf-8")
+    entry = audit.append_entry(path, _payload(9))
+    assert entry["seq"] == 2
 
 
 def test_a_foreign_log_identity_is_detected(tmp_path):
@@ -243,12 +256,16 @@ def test_redact_removes_the_secret_from_every_field():
     assert redacted["other"] == 3
 
 
-def test_the_audit_key_is_not_the_bearer(tmp_path, monkeypatch):
-    key_path = tmp_path / "same.key"
-    monkeypatch.setenv("CITED_MCP_TOKEN", "shared-secret")
-    key_path.write_text("shared-secret", encoding="utf-8")
-    with pytest.raises(audit.AuditError):
-        audit.audit_key(str(key_path))
+def test_no_custody_file_is_created_anywhere(tmp_path, monkeypatch):
+    """D9: the append writes the log and its lock, and no key, checkpoint or custody record."""
+    home = tmp_path / "hermes-home"
+    (home / "cited").mkdir(parents=True)
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
+    path = home / "cited" / "audit.jsonl"
+    audit.append_entry(path, _payload(1))
+    names = sorted(item.name for item in path.parent.iterdir())
+    assert names == ["audit.jsonl", "audit.jsonl.lock"]
 
 
 CHILD = textwrap.dedent(
@@ -306,14 +323,6 @@ def test_concurrent_processes_keep_one_chain(tmp_path):
     assert count == 20
 
 
-def test_the_key_is_created_before_the_first_row(tmp_path):
-    path = tmp_path / "audit.jsonl"
-    assert not audit.key_path().exists()
-    audit.append_entry(path, _payload(1))
-    assert audit.key_path().exists()
-    assert audit.load_existing_key()
-
-
 def test_a_second_append_reuses_the_same_identity(tmp_path):
     path = tmp_path / "audit.jsonl"
     first = audit.append_entry(path, _payload(1))
@@ -321,105 +330,17 @@ def test_a_second_append_reuses_the_same_identity(tmp_path):
     assert first["log_id"] == second["log_id"]
 
 
-def test_an_empty_log_whose_identity_is_registered_cannot_start_a_new_chain(tmp_path):
+def test_last_hash_of_a_sound_chain_is_its_tail(tmp_path):
     path = tmp_path / "audit.jsonl"
     _chain(path, 3)
-    path.write_text("", encoding="utf-8")
-    with pytest.raises(audit.AuditError):
-        audit.append_entry(path, _payload(9))
+    assert audit.last_hash(path) == audit.read_entries(path)[-1]["hash"]
 
 
-def test_a_deleted_log_whose_identity_is_registered_cannot_start_a_new_chain(tmp_path):
+def test_last_hash_refuses_a_broken_chain(tmp_path):
     path = tmp_path / "audit.jsonl"
     _chain(path, 3)
-    path.unlink()
+    lines = path.read_text(encoding="utf-8").splitlines()
+    del lines[1]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     with pytest.raises(audit.AuditError):
-        audit.append_entry(path, _payload(9))
-
-
-def test_an_unregistered_chain_is_refused(tmp_path):
-    """A non-empty log whose path no custody record knows is not adopted."""
-    path = tmp_path / "audit.jsonl"
-    _chain(path, 2)
-    audit.registry_path().write_text("{}", encoding="utf-8")
-    with pytest.raises(audit.AuditError):
-        audit.append_entry(path, _payload(3))
-
-
-def test_a_full_rollback_is_detected(tmp_path):
-    path = tmp_path / "audit.jsonl"
-    _chain(path, 3)
-    saved_log = path.read_bytes()
-    saved_checkpoint = audit.checkpoint_path(path).read_bytes()
-    audit.append_entry(path, _payload(4))
-    path.write_bytes(saved_log)
-    audit.checkpoint_path(path).write_bytes(saved_checkpoint)
-    count, error = audit.verify_file(path)
-    assert error is not None
-    assert "high-water" in error or "high water" in error
-
-
-def test_a_lost_key_is_not_recreated_on_read(tmp_path):
-    path = tmp_path / "audit.jsonl"
-    _chain(path, 2)
-    key = audit.key_path()
-    key.unlink()
-    count, error = audit.verify_file(path)
-    assert error is not None
-    assert not key.exists()
-
-
-def test_a_lost_key_refuses_the_append(tmp_path):
-    path = tmp_path / "audit.jsonl"
-    _chain(path, 2)
-    audit.key_path().unlink()
-    with pytest.raises(audit.AuditError):
-        audit.append_entry(path, _payload(3))
-
-
-def test_a_key_inside_the_home_is_rejected(tmp_path, monkeypatch):
-    home = tmp_path / "hermes-home"
-    home.mkdir()
-    monkeypatch.setenv("HERMES_HOME", str(home))
-    monkeypatch.setenv("CITED_AUDIT_KEY_PATH", str(home / "audit.key"))
-    with pytest.raises(audit.AuditError):
-        audit.load_existing_key()
-    with pytest.raises(audit.AuditError):
-        audit.append_entry(home / "cited" / "audit.jsonl", _payload(1))
-
-
-def test_the_default_key_path_is_outside_the_home(tmp_path, monkeypatch):
-    home = tmp_path / "hermes-home"
-    home.mkdir()
-    monkeypatch.setenv("HERMES_HOME", str(home))
-    monkeypatch.delenv("CITED_AUDIT_KEY_PATH", raising=False)
-    path = audit.key_path()
-    assert home not in path.parents
-
-
-def test_a_pending_transaction_is_completed_by_the_next_append(tmp_path):
-    path = tmp_path / "audit.jsonl"
-    _chain(path, 1)
-    entry = audit.read_entries(path)[-1]
-    audit.checkpoint_path(path).unlink()
-    audit.write_pending(path, entry)
-    assert audit.verify_file(path)[1] is not None
-    audit.append_entry(path, _payload(2))
-    entries = audit.read_entries(path)
-    assert [item["seq"] for item in entries] == [1, 2]
-    assert audit.verify_file(path)[1] is None
-
-
-def test_a_forged_pending_record_is_refused(tmp_path):
-    path = tmp_path / "audit.jsonl"
-    _chain(path, 1)
-    entry = dict(audit.read_entries(path)[-1])
-    entry["response"] = "tampered"
-    payload = {"log": str(path), "entry": entry}
-    target = audit.pending_path(path)
-    target.write_text(
-        json.dumps({"payload": payload, "mac": "0" * 64}, ensure_ascii=False, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    with pytest.raises(audit.AuditError):
-        audit.append_entry(path, _payload(2))
+        audit.last_hash(path)

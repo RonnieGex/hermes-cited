@@ -45,7 +45,16 @@ def test_the_module_reports_a_sound_chain_and_exits_zero(tmp_path):
     result = _run(str(path))
     assert result.returncode == 0
     assert "3" in result.stdout
-    assert "checkpoint" in result.stdout
+    assert "internally consistent" in result.stdout
+
+
+def test_the_module_says_that_consistency_is_what_it_checked(tmp_path):
+    """D9: the command never claims custody."""
+    path = tmp_path / "audit.jsonl"
+    _write_chain(path, 1)
+    result = _run(str(path))
+    assert result.returncode == 0
+    assert "not a custody check" in result.stdout
 
 
 def test_the_module_names_the_first_broken_entry_and_exits_non_zero(tmp_path):
@@ -66,20 +75,18 @@ def test_a_missing_file_is_an_error(tmp_path):
     assert result.returncode != 0
 
 
-def test_a_removed_last_entry_makes_the_command_fail(tmp_path):
+def test_a_removed_middle_entry_makes_the_command_fail(tmp_path):
     path = tmp_path / "audit.jsonl"
     _write_chain(path, 4)
     lines = path.read_text(encoding="utf-8").splitlines()
-    path.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
+    del lines[1]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     result = _run(str(path))
     assert result.returncode != 0
-    assert "checkpoint" in (result.stdout + result.stderr)
+    assert "2" in (result.stdout + result.stderr)
 
 
-def test_a_missing_checkpoint_makes_the_command_fail(tmp_path):
-    path = tmp_path / "audit.jsonl"
-    _write_chain(path, 2)
-    audit.checkpoint_path(path).unlink()
-    result = _run(str(path))
-    assert result.returncode != 0
-    assert "checkpoint" in (result.stdout + result.stderr)
+def test_a_usage_error_exits_two(tmp_path):
+    result = _run()
+    assert result.returncode == 2
+    assert "usage" in result.stdout
