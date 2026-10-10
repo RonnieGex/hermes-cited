@@ -1,3 +1,9 @@
+> **Regularized in round 4 (2026-10-10).** This change was archived as
+> `openspec/changes/archive/2026-10-10-hermes-plugin` when `hermes-plugin-r4` opened, to obey the limit of two
+> open changes per repository. Its boxes are exactly as round 1 left them, with their evidence; the code it
+> specified was later replaced by D5 (round 3) and its custody by D9 (round 4). The historical reports travel
+> with it.
+
 # Execution of the hermes-plugin change
 
 Contract: `tasks/mision-cited-hermes.md`. Prove every task with a command and its outcome before checking it.

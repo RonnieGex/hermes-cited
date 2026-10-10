@@ -1,3 +1,10 @@
+> **Not archived in round 4 (2026-10-10).** The third adversarial review of Codex
+> (`tasks/revision-codex-hermes-cited-r3.md`, verdict CAMBIOS) found 3 Blockers, 7 Majors and 2 Minors in the
+> code this change specified, so it is **not** archived as approved and its boxes are left as round 3 wrote
+> them. Its path changed: rounds 1 and 2 moved to `openspec/changes/archive/`, so every reference in this
+> directory to `openspec/changes/hermes-plugin/` or `openspec/changes/hermes-plugin-r2/` now points under
+> `openspec/changes/archive/`. What replaces it is `hermes-plugin-r4`.
+
 # Execution of the hermes-plugin-r3 change
 
 Contract: `tasks/mision-cited-hermes-r3.md`, with the decisions D5 to D8 on top of

@@ -1,0 +1,7 @@
+#!/bin/sh
+# The local secret scan of the SDD standard, before every commit.
+# gitleaks must be on PATH; the hook protects the staged snapshot only.
+gitleaks git --staged --redact --no-banner || {
+  echo "gitleaks found a secret in the staged changes; the commit was stopped" >&2
+  exit 1
+}
