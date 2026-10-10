@@ -334,16 +334,24 @@ def redact(text, token):
     return str(text).replace(token, "<token>")
 
 
-def remove_tree(path, attempts=6, delay=2.0):
+def remove_tree(path, attempts=12, delay=5.0):
     """Remove a temporary tree, retrying while a just-killed process still holds a file."""
     target = Path(path)
     for attempt in range(attempts):
         if not target.exists():
             return True
+        subprocess.run(
+            ["cmd", "/c", "attrib", "-R", str(target), "/S", "/D"],
+            capture_output=True,
+        )
         shutil.rmtree(target, ignore_errors=True)
         if not target.exists():
             return True
-        time.sleep(delay)
+        subprocess.run(["cmd", "/c", "rmdir", "/s", "/q", str(target)], capture_output=True)
+        if not target.exists():
+            return True
+        if attempt < attempts - 1:
+            time.sleep(delay)
     return not target.exists()
 
 
@@ -586,9 +594,10 @@ def main():
                 )
             except Exception:
                 pass
-            time.sleep(1.0)
+            time.sleep(2.0)
         for home in homes:
-            remove_tree(home)
+            if not remove_tree(home):
+                print("WARNING: a temporary HERMES_HOME was not removed: {0}".format(home))
         if not remove_tree(workspace):
             print("WARNING: the temporary directory was not removed: {0}".format(workspace))
 
