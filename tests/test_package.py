@@ -77,6 +77,8 @@ def test_the_packaged_skill_names_both_tools_and_both_modes():
     assert "cited_ask" in text
     assert "/cited" in text
     assert "/dot" in text
+    assert "MCP-only route" in text
+    assert "native plugin" in text
 
 
 def test_the_two_readmes_exist_and_name_what_was_tested():
@@ -84,4 +86,21 @@ def test_the_two_readmes_exist_and_name_what_was_tested():
     spanish = (REPO / "README.es.md").read_text(encoding="utf-8")
     assert "CITED_URL" in english and "CITED_URL" in spanish
     assert "CITED_MCP_TOKEN" in english and "CITED_MCP_TOKEN" in spanish
-    assert "2026-10-09" in english and "2026-10-09" in spanish
+    assert "2026-10-10" in english and "2026-10-10" in spanish
+    assert "audit.key" in english and "audit.key" in spanish
+    assert "stream-json" in english and "stream-json" in spanish
+    assert "desktop" in english.lower() and "escritorio" in spanish.lower()
+
+
+def test_the_upstream_proposal_names_the_hook_it_asks_for():
+    proposal = (REPO / "docs" / "upstream-proposal.md").read_text(encoding="utf-8")
+    assert "delivery policy" in proposal.lower()
+    assert "agent/stream_delivery.py" in proposal
+    assert "agent/turn_finalizer.py" in proposal
+    assert "api_server_openai_routes.py" in proposal
+    assert "No pull request" in proposal or "no pull request" in proposal
+
+
+def test_the_reports_live_inside_the_change():
+    assert (REPO / "openspec" / "changes" / "hermes-plugin-r2" / "reports").is_dir()
+    assert (REPO / "openspec" / "changes" / "hermes-plugin" / "reports").is_dir()

@@ -79,6 +79,9 @@ class FakeCited:
         self.passages = [dict(passage) for passage in PASSAGES]
         self.citations = [dict(citation) for citation in CITATIONS]
         self.answer = ANSWER
+        self.redirect_status = 302
+        self.redirect_location = ""
+        self.echo_token = False
         self.requests = []
         self.url = ""
 
@@ -139,6 +142,12 @@ def _make_handler(fake):
                 time.sleep(fake.delay_seconds)
 
             behavior = fake.behavior
+            if behavior == "redirect":
+                self.send_response(int(fake.redirect_status))
+                self.send_header("Location", fake.redirect_location or fake.url)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             if behavior in {"401", "403", "404", "405"}:
                 self._send(int(behavior), b"")
                 return
@@ -153,6 +162,16 @@ def _make_handler(fake):
 
             if behavior == "jsonrpc_error":
                 self._json(200, {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Method not found"}})
+                return
+            if behavior == "jsonrpc_error_token":
+                self._json(
+                    200,
+                    {
+                        "jsonrpc": "2.0",
+                        "id": rid,
+                        "error": {"code": -32000, "message": "bad bearer {0}".format(fake.token)},
+                    },
+                )
                 return
             if method == "initialize":
                 self._json(
@@ -206,6 +225,14 @@ def _make_handler(fake):
                     "answer": fake.answer,
                     "citations": [dict(citation) for citation in fake.citations],
                 }
+            if fake.echo_token:
+                text = "{0}\n{1}".format(text, fake.token)
+                if name == "cited_search":
+                    structured["passages"][0]["excerpt"] = "{0} {1}".format(
+                        structured["passages"][0]["excerpt"], fake.token
+                    )
+                else:
+                    structured["answer"] = "{0} {1}".format(structured["answer"], fake.token)
             self._json(
                 200,
                 {
@@ -235,6 +262,30 @@ def fake_cited():
 
 
 @pytest.fixture()
+def cited_factory():
+    """Build as many loopback Cited servers as one test needs, and stop them all."""
+    servers = []
+
+    def factory():
+        fake = FakeCited()
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(fake))
+        server.daemon_threads = True
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        fake.url = "http://127.0.0.1:{0}".format(server.server_address[1])
+        servers.append((server, thread))
+        return fake
+
+    try:
+        yield factory
+    finally:
+        for server, thread in servers:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+
+@pytest.fixture()
 def cited_env(fake_cited, monkeypatch):
     monkeypatch.setenv("CITED_URL", fake_cited.url)
     monkeypatch.setenv("CITED_MCP_TOKEN", fake_cited.token)
@@ -250,3 +301,11 @@ def hermes_home(tmp_path, monkeypatch):
     home.mkdir()
     monkeypatch.setenv("HERMES_HOME", str(home))
     return home
+
+
+@pytest.fixture(autouse=True)
+def audit_key_path(tmp_path, monkeypatch):
+    """The checkpoint key lives outside HERMES_HOME; a test gives it a temporary home too."""
+    path = tmp_path / "audit.key"
+    monkeypatch.setenv("CITED_AUDIT_KEY_PATH", str(path))
+    return path

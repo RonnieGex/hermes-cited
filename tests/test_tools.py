@@ -103,13 +103,80 @@ def test_parse_tool_result_ignores_a_plain_error_sentence():
     assert tools.parse_tool_result("not json at all") is None
 
 
-def test_grounding_texts_include_the_text_documents_and_excerpts(cited_env):
+def test_grounding_excerpts_are_only_the_excerpts(cited_env):
+    """B2: the transport text, the query echo and the headings are never evidence."""
     envelope = tools.parse_tool_result(tools.search({"query": "precio"}))
-    grounding = tools.grounding_texts(envelope)
-    joined = "\n".join(grounding)
-    assert "Cited found 2 passage(s)" in joined
-    assert "bike-workshop-policies.md" in joined
-    assert "guarantee of 90 days" in joined
+    excerpts = tools.grounding_excerpts(envelope)
+    assert excerpts
+    assert all("passage(s) for" not in item for item in excerpts)
+    assert all(item.strip() for item in excerpts)
+    assert any("guarantee of 90 days" in item for item in excerpts)
+
+
+def test_a_query_echo_with_no_passages_is_not_evidence(cited_env):
+    envelope = {
+        "cited_tool": "cited_search",
+        "query": "999 pesos",
+        "text": 'Cited found 0 passage(s) for "999 pesos".',
+        "passages": [],
+    }
+    assert tools.grounding_excerpts(envelope) == []
+
+
+def test_a_generated_answer_is_not_evidence(cited_env):
+    envelope = {
+        "cited_tool": "cited_ask",
+        "status": "answered",
+        "answer": "Cuesta 999 pesos [1].",
+        "text": "Cuesta 999 pesos [1].",
+        "citations": [{"n": 1, "excerpt": "Cuesta 380 pesos."}],
+    }
+    assert tools.grounding_excerpts(envelope) == ["Cuesta 380 pesos."]
+
+
+def test_citation_numbers_come_from_the_places(cited_env):
+    envelope = tools.parse_tool_result(tools.search({"query": "precio"}))
+    assert tools.citation_numbers(envelope) == [1, 2]
+
+
+def test_a_refusal_is_reported(cited_env):
+    envelope = {
+        "cited_tool": "cited_ask",
+        "status": "refused",
+        "answer": "No encuentro eso en los documentos.",
+        "citations": [],
+    }
+    assert tools.refusals_of(envelope) == ["No encuentro eso en los documentos."]
+    answered = {
+        "cited_tool": "cited_ask",
+        "status": "answered",
+        "answer": "380 pesos [1]",
+        "citations": [],
+    }
+    assert tools.refusals_of(answered) == []
+
+
+def test_excerpt_pairs_carry_the_digest_and_the_text(cited_env):
+    envelope = tools.parse_tool_result(tools.search({"query": "precio"}))
+    pairs = tools.excerpt_pairs(envelope)
+    from hermes_cited.audit import excerpt_digest
+
+    assert pairs
+    assert all(digest == excerpt_digest(text) for digest, text in pairs)
+
+
+def test_a_result_that_reflects_the_token_is_discarded(cited_env):
+    """M2: the reflection check covers the visible success path too."""
+    cited_env.echo_token = True
+    raw = tools.search({"query": "precio"})
+    assert cited_env.token not in raw
+    assert "token" in raw.lower()
+
+
+def test_ask_that_reflects_the_token_is_discarded(cited_env):
+    cited_env.echo_token = True
+    raw = tools.ask({"question": "precio"})
+    assert cited_env.token not in raw
 
 
 def test_source_labels_name_the_document_and_the_section(cited_env):

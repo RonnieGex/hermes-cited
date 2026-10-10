@@ -127,12 +127,13 @@ def test_a_401_never_carries_the_token_value(fake_cited):
 
 def test_a_network_failure_is_a_sentence(fake_cited, monkeypatch):
     import urllib.error
-    import urllib.request
+
+    from hermes_cited import client
 
     def refuse(*args, **kwargs):
         raise urllib.error.URLError(ConnectionRefusedError(10061, "connection refused"))
 
-    monkeypatch.setattr(urllib.request, "urlopen", refuse)
+    monkeypatch.setattr(client, "_open", refuse)
     settings = _settings(url="http://127.0.0.1:9", token="an-unused-token", timeout_ms=1000)
     with pytest.raises(CitedError) as caught:
         call_tool("cited_search", {"query": "precio"}, settings)
@@ -152,3 +153,61 @@ def test_the_configured_url_is_the_only_host_that_is_called(fake_cited):
     call_tool("cited_search", {"query": "precio"}, settings)
     assert len(fake_cited.requests) == 1
     assert fake_cited.requests[0]["method"] == "POST"
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+def test_a_redirect_never_reaches_another_origin(cited_factory, status):
+    """B3: the bearer must never travel to the Location of a 3xx."""
+    origin = cited_factory()
+    sink = cited_factory()
+    origin.behavior = "redirect"
+    origin.redirect_status = status
+    origin.redirect_location = "{0}/sink".format(sink.url)
+    settings = _settings(url=origin.url, token=origin.token)
+    with pytest.raises(CitedError) as caught:
+        call_tool("cited_search", {"query": "precio"}, settings)
+    assert "redirect" in str(caught.value).lower()
+    assert origin.token not in str(caught.value)
+    assert sink.requests == []
+    assert len(origin.requests) == 1
+
+
+def test_a_redirect_to_the_same_origin_is_also_refused(fake_cited):
+    fake_cited.behavior = "redirect"
+    fake_cited.redirect_location = "{0}/other".format(fake_cited.url)
+    settings = _settings(url=fake_cited.url, token=fake_cited.token)
+    with pytest.raises(CitedError):
+        call_tool("cited_search", {"query": "precio"}, settings)
+    assert len(fake_cited.requests) == 1
+
+
+def test_the_no_redirect_policy_also_covers_a_https_to_http_downgrade():
+    """The handler refuses before any request is issued, whatever the scheme of the Location."""
+    import urllib.request
+
+    from hermes_cited.client import _RefuseRedirects
+
+    handler = _RefuseRedirects()
+    request = urllib.request.Request("https://cited.example.com/api/mcp", method="POST")
+    assert handler.redirect_request(request, None, 302, "Found", {}, "http://cited.example.com/api/mcp") is None
+    assert handler.redirect_request(request, None, 302, "Found", {}, "http://evil.example/api/mcp") is None
+
+
+def test_the_global_opener_is_never_replaced():
+    """A private opener keeps other Hermes HTTP clients untouched."""
+    import urllib.request
+
+    before = urllib.request._opener
+    from hermes_cited import client
+
+    client._opener()
+    assert urllib.request._opener is before
+
+
+def test_a_success_that_reflects_the_token_is_rejected(fake_cited):
+    fake_cited.echo_token = True
+    settings = _settings(url=fake_cited.url, token=fake_cited.token)
+    with pytest.raises(CitedError) as caught:
+        call_tool("cited_search", {"query": "precio"}, settings)
+    assert "token" in str(caught.value).lower()
+    assert fake_cited.token not in str(caught.value)
