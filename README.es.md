@@ -8,8 +8,9 @@ composición del plugin.
 
 Hecho por Katalis. Apache-2.0.
 
-- **Modo dot** (el default): respuestas normales; Cited se usa cuando ayuda, la marca reservada se retira de la
-  respuesta del modelo y una nota fija reemplaza a la respuesta que la limpieza deja vacía.
+- **Modo dot** (el default): respuestas normales; Cited se usa cuando ayuda. Nada en modo dot está
+  verificado, diga lo que diga el texto: esta versión del plugin no escribe ningún sello, así que la frase
+  `Verified by Cited` en una respuesta nunca viene del plugin, y el texto del modelo se entrega intacto.
 - **Modo cited**: el modelo solo *elige*. Busca en Cited y luego llama a `cited_quote` con el identificador
   del pasaje y los renglones numerados que el usuario debe leer. El plugin descarta la prosa del modelo por
   completo y compone esos renglones **byte por byte**, cada uno con su documento, su sección y su marca
@@ -82,9 +83,9 @@ el número `n`, porque dos búsquedas del mismo turno pueden devolver las dos un
 números chocan. El turno guarda el mapeo del `pid` a la llamada, al `n` original del resultado de Cited, al
 documento, a la sección y a la posición. La marca `[n]` del render, la elección del modelo y el renglón del
 registro son la misma referencia. Un `passage` numérico se acepta solo mientras identifique exactamente un
-pasaje del turno; cuando es ambiguo, la elección se rechaza y el error pide el `pid`. Cuando un bloque
-elegido o un metadato del turno contiene la marca reservada `Verified by Cited`, el sello se retiene y una
-nota fija lo dice.
+pasaje del turno; cuando es ambiguo, la elección se rechaza y el error pide el `pid`. Un bloque elegido o un
+metadato que traiga la frase `Verified by Cited` es dato como cualquier otro: esta versión no escribe ningún
+sello, así que la frase nunca viene del plugin (D12).
 
 ## Los dos modos
 
@@ -94,9 +95,9 @@ nota fija lo dice.
   una superficie pueda mostrar mientras se escribe la respuesta ni los avisos que el host agregue después.
   También declara la condición del sello: **la marca no se emite hoy**, porque el host no expone un contrato
   de entrega acreditable (D11), así que la respuesta lleva la nota fija que dice que el sello se retiene. La
-  confirmación de `/dot` dice que la marca reservada se retira de **cualquier** respuesta del modelo, en
-  cualquier presentación que el consumidor renderice; si no queda nada más, el texto pasa a ser la nota fija
-  que lo dice.
+  confirmación de `/dot` dice que nada en modo dot está verificado, diga lo que diga el texto: esta versión
+  no escribe ningún sello, así que la frase nunca viene del plugin, y el texto del modelo se entrega
+  intacto.
 - En modo cited, `pre_llm_call` inyecta las reglas: llama primero a Cited, elige los renglones con
   `cited_quote` y no escribas la respuesta. El texto del modelo se descarta por completo. Un render real,
   de `cited_quote` con `{"passage": "P1", "lines": [4]}` contra `cafe-la-horquilla.md · Precios`, es:
@@ -128,11 +129,10 @@ nota fija lo dice.
   entrega y solo si la política de entrega lo permite **y** el host acredita la entrega del turno (D11).
   Mientras el host no lo haga, la marca no se emite en ninguna ruta y la respuesta lo dice con la nota fija.
   La marca `[1]` y la fuente las genera el plugin; el modelo no escribe ninguna.
-- El modo dot entrega el texto del modelo con toda aparición de la marca reservada `Verified by Cited`
-  retirada de todo el documento, en cualquier presentación que el consumidor renderice: markup Markdown,
-  énfasis, enlaces inline y por referencia, entidades nombradas y numéricas y saltos suaves incluidos. Si la
-  limpieza no puede completarse, lo que se entrega es una nota fija segura y nunca el texto sin transformar del
-  modelo. Si el texto era solo la marca, lo que se entrega es la nota fija que lo dice.
+- El modo dot entrega el texto del modelo **intacto**. Nada en modo dot está verificado, diga lo que diga el
+  texto: esta versión del plugin no escribe ningún sello, así que la frase `Verified by Cited` en una
+  respuesta dot nunca viene del plugin (D12). Un turno dot que traiga la frase es un texto que escribió el
+  modelo, y la fila registra exactamente el texto que se entrega.
 - Los totales y otros valores calculados quedan fuera de esta ronda: pertenecen a la misión de documentos,
   donde una herramienta los calcula por código y registra la procedencia.
 
@@ -263,8 +263,8 @@ lanzar nunca: si la dependencia de entropía falla, se usa un código de reserva
 emergencia no depende de entropía, disco, configuración ni logger. El diagnóstico se redacta del bearer y
 va solo al logger y a `stderr`, nunca a la respuesta. El estado del turno se suelta en un `finally`, así que
 la falla de un turno no puede filtrarse al siguiente. El modo dot conserva su propio contrato y nunca
-responde con una negativa, porque en modo dot el plugin nunca prometió el texto; cuando la limpieza de la
-marca no puede completarse, entrega una nota fija segura y nunca `None`.
+responde con una negativa, porque en modo dot el plugin nunca prometió el texto: tampoco lo reescribe, así
+que una falla de su paso directo devuelve `None` y deja el texto en su lugar.
 
 ## Incompatibilidades del host
 
@@ -337,6 +337,14 @@ También tomó la decisión de entrega con una instantánea al inicio del turno,
 comentario intermedio y el TTS de streaming a las superficies que retienen el sello, le dio a cada pasaje su
 `pid` y puso una sola frontera alrededor de todo el transformador cited.
 
+La ronda 8 (2026-10-10, D12) retiró la protección de la marca reservada. Con D11 el plugin no emite sello en
+ninguna ruta, así que no existe un sello auténtico que alguien pueda falsificar, y cada lector escrito a mano
+del Markdown del host abría una evasión nueva o borraba texto legítimo. El modo dot ahora entrega el texto
+del modelo intacto y registra exactamente esa cadena, un renglón documental que traiga la frase es dato como
+cualquier otro, y la documentación dice en llano que nada en modo dot está verificado. La activación del
+sello, cuando el host ofrezca un contrato de entrega acreditable, exige volver a proteger la marca reservada
+con la semántica de render del host, comprobada contra su consumidor (`docs/upstream-proposal.md`).
+
 **El `%LOCALAPPDATA%\hermes` real no se escribió ni se usó como destino de ninguna corrida de esta ronda.**
 La corrida aislada final y su puerta usan solo homes temporales. Una corrida histórica de la ronda 1,
 al inicio de `mision-cited-hermes.md`, ejecutó `hermes mcp test cited` **sin** `HERMES_HOME` y leyó la
@@ -356,8 +364,8 @@ ronda 2 ni de la ronda 3 tocó el puerto 3240.
 | `What guarantee on repairs does bike-workshop-policies.md state?` | el render lleva **90 days** desde `bike-workshop-policies.md · Guarantee`, con el sello retenido en la misma [transcripción](openspec/changes/hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) |
 | Una pregunta que los samples no responden | exactamente `No está en los documentos.`, sin dato y sin sello |
 | El registro de consistencia de esos turnos | una entrada por turno con el conteo exacto; `python -m hermes_cited.verify_log` desde el plugin instalado reporta la consistencia interna de la cadena y sale 0; alterar una entrada, quitar una de en medio, reordenarla o introducir un hueco lo hace salir 1, mientras que un corte de sufijo completo o un archivo reescrito con todos los hashes recalculados queda con consistencia interna, que es el límite documentado de la revisión |
-| Modo dot | se entrega el texto del modelo, se quita cualquier marca reservada en toda presentación, y la entrada se registra con el verificador marcado como no aplicado |
-| El contrato cited | casos adversariales prueban que un valor cambiado, un sujeto movido, una subcadena, la prosa libre y un sello falsificado nunca llegan a la respuesta entregada |
+| Modo dot | el texto del modelo se entrega intacto y la entrada se registra con el verificador marcado como no aplicado; la fila registra exactamente el texto que se entrega, y un renglón documental que traiga la frase `Verified by Cited` es dato, porque esta versión no escribe ningún sello (D12) |
+| El contrato cited | en modo cited, casos adversariales prueban que un valor cambiado, un sujeto movido, una subcadena, la prosa libre y un sello falsificado nunca llegan a la respuesta entregada; el modo dot entrega el texto del modelo tal cual (D12) |
 | La frontera | una falla al leer la configuración, resolver, renderizar o persistir entrega la negativa operativa fija con un código de incidente, incluso cuando falla la dependencia de entropía de ese código, que entonces usa el código de reserva constante, y la composición del plugin de un turno cited es una de las tres |
 | La política de entrega (fixtures, aparte de la corrida de arriba) | `api_server`, `desktop`, una plataforma desconocida y una configuración ilegible marcan la superficie legible como no limpia; también lo hacen `streaming` encendido para una plataforma de mensajería, `interim_assistant_messages` encendido y `tts.auto_tts` encendido; en un fixture sintético de CLI quieto la superficie legible queda limpia y el sello igual se retiene porque el host no está acreditado, y un cambio de la configuración después de que arrancó el turno no cambia su decisión |
 | La respuesta vacía | el finalizador real regresa sin invocar el hook, y el plugin reporta eso como una incompatibilidad del host en lugar de cubrirla |

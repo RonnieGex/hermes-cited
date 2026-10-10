@@ -58,7 +58,9 @@ The two modes, the render and the audit log belong to the **native plugin** (`he
 MCP-only route the same two search tools exist, but `/cited`, `/dot`, `cited_quote`, the render and the
 audit log do not: there is no plugin to run them.
 
-- **Mode dot** (`/dot`, the default): Cited is used when it helps, and the answer is not verified.
+- **Mode dot** (`/dot`, the default): Cited is used when it helps. Nothing in dot mode is verified, whatever
+  the text says: this version writes no seal, so the phrase `Verified by Cited` in an answer never comes from
+  the plugin, and the model's text is delivered intact.
 - **Mode cited** (`/cited`): before the turn, the rules are injected: search Cited first, then choose the
   lines with `cited_quote`. The plugin discards the model's text and renders the chosen lines, copied
   byte for byte, each with its source and its `[n]` mark. A real render of `cited_quote` with

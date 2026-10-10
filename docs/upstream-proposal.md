@@ -22,9 +22,15 @@ plugin, both halves of one contract:
    string the composition returned and nothing is appended after it (the file-mutation footer of
    `agent/turn_finalizer.py:645-647` can add text today), and the same string is the one persisted.
    The third contract below is that half.
+3. **The reserved mark protected again.** Turning the seal on obliges whoever does it to protect the
+   reserved mark again with the **render semantics of the host itself**, checked against the consumer that
+   really reads the answer. Rounds 3 to 7 of this plugin showed that a hand-written reader of Markdown
+   either opens a new evasion or deletes legitimate text, so protecting the mark again is a requirement of
+   the activation and not an optional polish (D12 of the round 8 mission).
 
 A future version of the plugin would set the capability point from the presence of both halves and
-would emit the seal only for a turn the host accredits. This repository will ask for the seal back
+would emit the seal only for a turn the host accredits, and only with the reserved mark protected again as
+above. This repository will ask for the seal back
 only with a test of the real host that demonstrates the contract; until then the answer carries the
 fixed note that names the retention.
 
@@ -224,6 +230,10 @@ capability point of D11 answers "not accredited" and the answer says so with the
 - **Footers after the transform**: the plugin declares that the delivered message can differ from the
   persisted render when the host appends its own text (`agent/turn_finalizer.py:645-647`), and it does not
   publish the render guarantee for those paths until the host hands the terminal text to the composition.
+- **Dot mode passes the text through (D12)**: nothing in dot mode is verified, whatever the text says. This
+  version of the plugin writes no seal, so the phrase `Verified by Cited` in an answer never comes from the
+  plugin, and the row records exactly the text that is delivered. The protection of the reserved mark
+  returns with the activation of the seal, as the third requirement above states.
 - The composition of cited mode is what the plugin writes: for a cited turn that reaches the hook, it is the
   documentary render, the fixed refusal or the operational refusal; the host may add text afterwards.
 
