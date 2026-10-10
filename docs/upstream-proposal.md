@@ -7,7 +7,7 @@ upstream.
 Reader: someone who knows Hermes Agent v0.21.6+387 (commit `dce1e9b`) and its plugin API. Every line
 number below was read in that checkout.
 
-## The two contracts Hermes does not offer today
+## The three contracts Hermes does not offer today
 
 1. **Synchronous retention of the delivery.** A plugin can replace the final answer
    (`transform_llm_output`), but it cannot stop the answer from being *delivered* while it is still
@@ -16,8 +16,12 @@ number below was read in that checkout.
 2. **A final composition step even when the model's response is empty.** The finalizer returns before
    the hook when the text is false, so a turn whose answer is empty is delivered empty and no plugin
    can compose it.
+3. **A final composition boundary after the host's own footers.** `transform_llm_output` is not the
+   last writer of the message: the real finalizer persists the row and can still append text after
+   it (the file-mutation failure footer of `agent/turn_finalizer.py:645-647`), so the delivered final
+   message can differ from the text the plugin composed and the record stored.
 
-In a "cited" mode that promises that no unverified value reaches the user, both gaps are the
+In a "cited" mode that promises that no unverified value reaches the user, these gaps are the
 difference between a guarantee and a wish. The plugin's round 4 contract (D10 to D14) states exactly
 what it can promise: the **final message** is one of three fixed forms, and the seal is withheld on
 every surface where something else could have been seen.
@@ -118,12 +122,15 @@ delivered empty: the plugin's `transform_llm_output` never runs, it cannot compo
 chosen lines and it cannot write the row of that answer. That is not "covered by a fallback": the
 plugin cannot see the turn at all.
 
-### The two contracts, in one line each
+### The three contracts, in one line each
 
 - **Synchronous retention of the delivery**: hold every outbound channel of the turn (text, reasoning,
   commentary and voice) until the finalizer produces its verdict, and release it then.
 - **A final composition step even when the model's response is empty**: call the output hooks once with an
   empty text so the plugin can compose the answer, instead of returning before the hooks.
+- **A final composition boundary after the host's footers**: compose cited after every footer or explanation
+  the host adds (`agent/turn_finalizer.py:645-647`) and before the terminal delivery, so the persisted render
+  and the final message cannot diverge.
 
 ### Proposal
 
@@ -147,11 +154,34 @@ Until that exists, `hermes-cited` declares the incompatibility: the README and t
 that a cited turn with an empty model answer is delivered empty, with no render, no seal and no row,
 because the plugin is never asked.
 
+## The third contract: compose cited after every host footer
+
+`transform_llm_output` is not the last writer of the message. In the pinned host the finalizer applies the
+transform at `agent/turn_finalizer.py:628`, persists the row, and only then appends its own text: the footer
+of the file mutations that failed (`agent/turn_finalizer.py:645-647`, through the formatter of
+`agent/turn_explainers.py:211`) and the output hooks. A cited render that the plugin composed and persisted
+(`stored`) can therefore differ from the message the user finally receives (`final`): `stored != final`. The
+addition is text of the final message, not voice and not interim commentary, and a second call of the
+transformer is idempotent: it does not compose the render again.
+
+The plugin cannot close that gap from its own hook, because the extra text is written by the host after the
+hook returns. A cited turn on a host path that can append a footer is not a path where the render contract
+holds, and `hermes-cited` does not publish it as one.
+
+### Proposal
+
+Run the composition of a cited turn after every footer or explanation the host adds and before the terminal
+delivery, so the text that is persisted, the text that is delivered and the text the record carries are the
+same string. Concretely: apply the output transform after `_append_file_mutation_footer` and the other late
+writers, and let the string the transform returns be the text that is finally delivered. The integration test
+of the full finalizer should cover that sequence, not only `apply_llm_output_transform`.
+
 ## What `hermes-cited` does meanwhile
 
-Until these contracts exist, the plugin enforces what it can and says what it cannot: the two missing
-contracts are **synchronous retention of the delivery** and **a final composition step even when the model's
-response is empty**.
+Until these contracts exist, the plugin enforces what it can and says what it cannot: the three missing
+contracts are **synchronous retention of the delivery**, **a final composition step even when the model's
+response is empty**, and **a final composition boundary after the host's own footers**, so the final message
+cannot differ from the persisted render.
 
 - **Every surface whose text it cannot retain**: the plugin takes a snapshot of the effective delivery
   configuration at the **start** of the cited turn and withholds the seal when anything else could
@@ -164,6 +194,9 @@ response is empty**.
   `display.interim_assistant_messages: false` remove the draft entirely.
 - **Empty responses**: declared as the host incompatibility above, with the integration test that
   proves it (`tests/test_host.py`).
+- **Footers after the transform**: the plugin declares that the delivered message can differ from the
+  persisted render when the host appends its own text (`agent/turn_finalizer.py:645-647`), and it does not
+  publish the render guarantee for those paths until the host hands the terminal text to the composition.
 - The promise of cited mode is about the **final message**: the render of the chosen lines, the fixed
   refusal, or the fixed operational refusal with an incident code.
 

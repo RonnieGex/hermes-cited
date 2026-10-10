@@ -67,16 +67,22 @@ without modifying the log, and the append SHALL NOT restart from genesis when th
 SHALL NOT create or read any custody file: no key, no checkpoint and no file outside `HERMES_HOME`. When the
 append fails, the delivered answer SHALL be the fixed operational refusal of H10 without a seal. A verifier
 runnable as `python -m hermes_cited.verify_log <file>` SHALL check the internal consistency of the chain and
-SHALL detect an altered, removed, reordered or truncated entry, and SHALL state that consistency is what it
-checked.
+SHALL state that consistency is what it checked. It SHALL reject byte or link corruption: an entry altered,
+an entry removed from the middle, an entry reordered, or an entry that does not carry the schema. A complete
+suffix cut or a whole file rewritten with every hash recomputed SHALL stay internally consistent, and the
+verifier SHALL NOT promise to detect either.
 
 #### Scenario: the chain verifies
 - **WHEN** `python -m hermes_cited.verify_log` runs on a log the plugin wrote
 - **THEN** it SHALL report the number of entries and its internal consistency, and exit zero
 
 #### Scenario: tampering is detected
-- **WHEN** an entry is altered, removed or reordered
+- **WHEN** an entry is altered, removed from the middle or reordered
 - **THEN** the verifier SHALL exit non-zero and SHALL name the first broken entry
+
+#### Scenario: a complete suffix cut stays consistent
+- **WHEN** the last complete entries are cut from the end of the log, or the whole file is rewritten with every hash recomputed
+- **THEN** the remaining chain SHALL still be internally consistent and the verifier SHALL exit zero, because internal consistency is the only thing it checks
 
 #### Scenario: an alteration never authenticates a later append
 - **WHEN** a log is altered and a legitimate append follows

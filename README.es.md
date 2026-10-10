@@ -65,9 +65,12 @@ variable faltante. Nunca lanzan una excepción hacia Hermes y Hermes sigue funci
 | `cited_ask` | `question` (obligatoria), `sessionId` (opcional) | `status` (`answered` o `refused`), `answer` y las `citations` numeradas, cada una con `pid` y sus `lines` numerados. |
 | `cited_quote` | `passage` (el `pid` de un pasaje o cita de este turno, como `P1`, o su número `n` mientras ese número no sea ambiguo), `lines` (sus números de renglón, en orden) | El texto exacto de esos renglones, y el plugin registra la elección para la respuesta. |
 
-Llaman a `POST <CITED_URL>/api/mcp` con el método JSON-RPC `tools/call` y
-`Authorization: Bearer <CITED_MCP_TOKEN>`. Son nativas y no una configuración MCP porque así la instalación
-es un paso y porque el plugin necesita ver cada resultado para componer la respuesta y escribir el registro.
+`cited_search` y `cited_ask` son las dos herramientas que llaman a `POST <CITED_URL>/api/mcp` con el método
+JSON-RPC `tools/call` y `Authorization: Bearer <CITED_MCP_TOKEN>`; la red, el token y el proceso de Cited
+viven solo ahí. `cited_quote` es una selección local del plugin: no hace ninguna petición HTTP y nunca sale
+de los extractos de su propio turno. Las tres son nativas y no una configuración MCP porque así la
+instalación es un paso y porque el plugin necesita ver cada resultado para componer la respuesta y escribir
+el registro.
 
 ## Un identificador por pasaje
 
@@ -84,7 +87,14 @@ nota fija lo dice.
 ## Los dos modos
 
 - `/cited` enciende el modo cited para esta conversación; `/dot` lo apaga. La clave es la sesión cuando la
-  superficie expone una y el perfil cuando no. `CITED_DEFAULT_MODE` fija el modo inicial.
+  superficie expone una y el perfil cuando no. `CITED_DEFAULT_MODE` fija el modo inicial. La confirmación de
+  `/cited` promete la fuente y el sello para el **mensaje final** de un turno cited, no para todo lo que una
+  superficie pudo haber mostrado mientras se escribía la respuesta, y el sello sigue la política de entrega
+  de abajo: se retiene en `api_server` y su ruta SSE, con streaming, con TTS de streaming, con comentarios
+  intermedios y cuando la superficie o la configuración no se pueden determinar. La confirmación de `/dot`
+  dice que ninguna respuesta se sella ni se reemplaza; el único caso en que el texto entregado se reemplaza
+  es una respuesta dot cuyo texto es *solo* la marca reservada `Verified by Cited`: se quita toda aparición
+  de la marca y, si no queda nada más, el texto pasa a ser la nota fija que lo dice.
 - En modo cited, `pre_llm_call` inyecta las reglas: llama primero a Cited, elige los renglones con
   `cited_quote` y no escribas la respuesta. El texto del modelo se descarta por completo. Un render real,
   de `cited_quote` con `{"passage": "P1", "lines": [4]}` contra `cafe-la-horquilla.md · Precios`, es:
@@ -112,7 +122,9 @@ nota fija lo dice.
 - El sello `Verified by Cited` solo lo agrega el plugin, solo después de persistir el texto exacto que se
   entrega y solo si la política de entrega lo permite. La marca `[1]`, la fuente y el sello los genera el
   plugin; el modelo no escribe ninguno.
-- El modo dot entrega el texto del modelo tal cual. Si el modelo escribe ahí el sello reservado, se quita.
+- El modo dot entrega el texto del modelo tal cual. Se quita toda aparición de la marca reservada
+  `Verified by Cited`, incluida su presentación en Markdown; si el texto era solo la marca, lo que se
+  entrega es la nota fija que lo dice.
 - Los totales y otros valores calculados quedan fuera de esta ronda: pertenecen a la misión de documentos,
   donde una herramienta los calcula por código y registra la procedencia.
 
@@ -185,10 +197,11 @@ cited es la negativa operativa fija sin sello, porque una respuesta rechazada no
 entregada.
 
 El registro sirve para revisar y reproducir cada respuesta. **No** es a prueba de manipulación frente a
-quien controla la PC: alguien que reescribe el archivo y recalcula la cadena produce un archivo que queda
-con consistencia interna. Ese es el alcance exacto de su `consistencia interna`, y es lo que revisa el
-verificador. Para el registro no se escribe ni se lee ninguna llave ni ningún archivo fuera de
-`HERMES_HOME`. La auditoría con custodia es una propiedad del lado del servidor, y llega con Cited Ledger.
+quien controla la PC: alguien que reescribe el archivo y recalcula la cadena, o que corta un sufijo completo,
+produce un archivo que queda con consistencia interna. Ese es el alcance exacto de su `consistencia
+interna`, y es lo que revisa el verificador. Para el registro no se escribe ni se lee ninguna llave ni
+ningún archivo fuera de `HERMES_HOME`. La auditoría con custodia es una propiedad del lado del servidor, y
+llega con Cited Ledger.
 
 Verifícalo desde el plugin instalado, que es donde el módulo es importable:
 
@@ -209,7 +222,8 @@ directorio como `hermes_plugins.<slug>` y nunca lo instala como paquete de nivel
 
 ## La frontera de un turno cited
 
-Para cada turno cited que llega a `transform_llm_output`, el texto entregado es exactamente uno de tres:
+Para cada turno cited que llega a `transform_llm_output`, y en una ruta del host que no agrega texto después
+de ese hook, el texto entregado es exactamente uno de tres:
 
 1. el render de los renglones textuales que eligió el modelo, con la marca, la fuente y el sello cuando la
    instantánea de entrega del turno lo permite;
@@ -218,6 +232,11 @@ Para cada turno cited que llega a `transform_llm_output`, el texto entregado es 
    construcción;
 3. la negativa operativa fija localizada con un código de incidente, sin sello y sin interpolar ningún
    detalle del error.
+
+El host todavía puede agregar su propio texto después del hook, como el footer de las mutaciones de archivo
+que fallaron (`agent/turn_finalizer.py:645-647`); donde lo hace, el mensaje entregado puede diferir de las
+tres formas y el plugin no reclama esta frontera para esas rutas. El tercer contrato de
+`docs/upstream-proposal.md` pide la frontera de composición que cerraría ese hueco.
 
 Una sola frontera alrededor de todo el transformador convierte cualquier excepción de leer la configuración,
 resolver, renderizar, componer o persistir en la tercera respuesta. El diagnóstico se redacta del bearer y
@@ -236,11 +255,19 @@ responde con una negativa, porque en modo dot el plugin nunca prometió el texto
   llegan al usuario antes de que corra `transform_llm_output`, y ningún hook de plugin puede retenerlos. El
   sello es la única señal afirmativa que este plugin puede dar, y la retiene donde no puede probar lo
   contrario.
+- **El host puede agregar texto después del veredicto.** El finalizador real aplica `transform_llm_output`,
+  persiste el renglón y solo después agrega su propio texto, como el footer de las mutaciones de archivo que
+  fallaron (`agent/turn_finalizer.py:645-647`). El mensaje final puede entonces diferir del render que
+  compuso el plugin y del renglón que guardó el registro. El plugin no reclama el render de C1 para una ruta
+  del host que pueda agregar texto.
 
 El contrato que este plugin le pide a Hermes es una política de entrega resuelta una vez por turno que
-retenga texto, razonamiento, comentario intermedio, voz y la ruta SSE hasta el veredicto, más un paso final
-de composición ejecutado una vez por turno cited antes de persistir y entregar, incluso cuando el texto del
-modelo es vacío. `docs/upstream-proposal.md` trae el archivo y la línea de cada punto que cambiaría.
+retenga texto, razonamiento, comentario intermedio, voz y la ruta SSE hasta el veredicto, un paso final de
+composición ejecutado una vez por turno cited antes de persistir y entregar, incluso cuando el texto del
+modelo es vacío, y una frontera de composición que corra la composición del plugin después de todos los
+footers o explicaciones que agregue el host y antes de la entrega terminal, para que el mensaje entregado
+sea el texto que guarda el registro. `docs/upstream-proposal.md` trae el archivo y la línea de cada punto
+que cambiaría.
 
 ## La skill `cited`
 
@@ -304,14 +331,14 @@ ronda 2 ni de la ronda 3 tocó el puerto 3240.
 | `hermes plugins install "file:///…" --enable --yes-deps` | instalado en `$HERMES_HOME/plugins/hermes-cited` y habilitado |
 | El loader real | el plugin instalado carga con el gestor de plugins de Hermes y registra sus tres hooks |
 | La pregunta de precio en la ruta MCP | el stream llama a `mcp__cited__cited_search` y responde **380 pesos** con la cita de `cafe-la-horquilla.md · Precios` |
-| La pregunta de precio en modo cited | el stream llama a la `cited_search` nativa y luego a `cited_quote`; la respuesta entregada es el render del plugin, con `Fuente: cafe-la-horquilla.md - Precios`, la marca `[1]` y el sello |
-| "Is there a guarantee on repairs at the bike workshop?" | el render lleva **90 days** desde `bike-workshop-policies.md · Guarantee`, sellado |
+| La pregunta de precio en modo cited | el stream llama a la `cited_search` nativa y luego a `cited_quote`; la respuesta entregada es el render del plugin, con `Fuente: cafe-la-horquilla.md - Precios` y la marca `[1]`, y el sello retenido por comentarios intermedios, como muestra la [transcripción](openspec/changes/hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) |
+| `What guarantee on repairs does bike-workshop-policies.md state?` | el render lleva **90 days** desde `bike-workshop-policies.md · Guarantee`, con el sello retenido por comentarios intermedios en la misma [transcripción](openspec/changes/hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) |
 | Una pregunta que los samples no responden | exactamente `No está en los documentos.`, sin dato y sin sello |
-| El registro de consistencia de esos turnos | una entrada por turno con el conteo exacto; `python -m hermes_cited.verify_log` desde el plugin instalado reporta la consistencia interna de la cadena y sale 0; alterar una entrada, cortar un sufijo, reordenar o introducir un hueco lo hace salir 1, mientras que un archivo reescrito con todos los hashes recalculados queda con consistencia interna, que es el límite documentado de la revisión |
+| El registro de consistencia de esos turnos | una entrada por turno con el conteo exacto; `python -m hermes_cited.verify_log` desde el plugin instalado reporta la consistencia interna de la cadena y sale 0; alterar una entrada, quitar una de en medio, reordenarla o introducir un hueco lo hace salir 1, mientras que un corte de sufijo completo o un archivo reescrito con todos los hashes recalculados queda con consistencia interna, que es el límite documentado de la revisión |
 | Modo dot | se entrega el texto del modelo, se quita cualquier sello reservado y la entrada se registra con el verificador marcado como no aplicado |
 | El contrato cited | casos adversariales prueban que un valor cambiado, un sujeto movido, una subcadena, la prosa libre y un sello falsificado nunca llegan a la respuesta entregada |
 | La frontera | una falla al leer la configuración, resolver, renderizar o persistir entrega la negativa operativa fija con un código de incidente, y el texto de un turno cited siempre es uno de los tres |
-| La política de entrega | `api_server`, `desktop`, una plataforma desconocida y una configuración ilegible retienen el sello; también lo retienen `streaming` encendido para una plataforma de mensajería, `interim_assistant_messages` encendido y `tts.auto_tts` encendido; el CLI con `display.streaming: false` y el comentario apagado sella, y un cambio de la configuración después de que arrancó el turno no cambia su decisión |
+| La política de entrega (fixtures, aparte de la corrida de arriba) | `api_server`, `desktop`, una plataforma desconocida y una configuración ilegible retienen el sello; también lo retienen `streaming` encendido para una plataforma de mensajería, `interim_assistant_messages` encendido y `tts.auto_tts` encendido; en un fixture sintético de CLI quieto, el CLI con `display.streaming: false` y el comentario apagado sella, y un cambio de la configuración después de que arrancó el turno no cambia su decisión |
 | La respuesta vacía | el finalizador real regresa sin invocar el hook, y el plugin reporta eso como una incompatibilidad del host en lugar de cubrirla |
 | La skill `cited` | registrada por el plugin y presente en el árbol instalado, con la regla de `cited_quote` y la nota de que los comandos son del plugin |
 

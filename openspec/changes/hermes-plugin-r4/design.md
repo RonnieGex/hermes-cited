@@ -44,14 +44,17 @@ exception of a hook and keeps the original text (`agent/turn_finalizer.py:104`, 
 2. build the answer (render or fixed refusal);
 3. compose the delivered text, seal included;
 4. append the audit entry of **that** text;
-5. on any failure of 2 to 4, replace the answer with the fixed operational refusal with an incident code;
+5. on any failure of 1 to 4, replace the answer with the fixed operational refusal with an incident code;
 6. `finally`: drop the turn state.
 
 Every step lives inside one `try`. Reading the configuration, resolving the language, rendering, escaping,
-composing and appending are all covered. The incident code is a random hexadecimal string generated at the
-failure site; the error text is redacted with the bearer and written to `stderr` and to the logger, never into
-the answer. Dot mode keeps its own contract (the model's text, minus the seal) and does not answer with a
-refusal, because in dot mode the plugin never promised the text.
+composing and appending are all covered. The mode starts **unknown**: the dot pass-through is allowed only
+after dot was resolved affirmatively, for this turn or before the boundary opened (M-R4-1, round 5), so a
+failure of the resolution of step 1 can never return `None` and leave the model's prose in place. The
+incident code is a random hexadecimal string generated at the failure site; the error text is redacted with
+the bearer and written to `stderr` and to the logger, never into the answer. Dot mode keeps its own contract
+(the model's text, minus the seal) and does not answer with a refusal, because in dot mode the plugin never
+promised the text.
 
 ## D11 — the text that is recorded is the text that is delivered
 
@@ -76,6 +79,48 @@ the turn by "last active of the session". Both are fixed the same way.
 - `cited_quote` binds to the real execution identity: the turn of the `turn_id` the host passed, else the only
   active turn of the session. With more than one active turn and no identity, the selection is **rejected**;
   the plugin never guesses. `turn_id`, `session_id` and `task_id` are all read from the hook arguments.
+- Round 5 (M-R4-3): the identifier is assigned **while the search result is built**, bound to the turn that
+  identity resolves, and the annotated record is exactly what the model receives, what the render marks and
+  what the log stores. `post_tool_call` reads the identifiers out of the result instead of assigning new ones,
+  so the model no longer has to infer the counter of a passage it never saw.
+
+## D16 — round 5: provenance, record, policy and diagnostics
+
+The fourth review (`tasks/revision-codex-hermes-cited-r4.md`) rebuilt four properties that the round 4 code
+only appeared to hold:
+
+- **B-R4-2 — provenance by construction.** Only the real handlers `cited_search` and `cited_ask` feed
+  `note_call`, the envelope's own `cited_tool` must match the handler that produced it, and `cited_quote` is
+  recorded as a selection and never reparsed: its text is document content even when it is valid JSON. A
+  document that contains an envelope can no longer fabricate a second passage and a second source.
+- **M-R4-1 — atomic publication.** The append validates the chain under the inter-process lock, prepares the
+  published bytes plus the new row in a temporary file of the same directory (write, flush, `fsync`, close) and
+  replaces the published file as the last publishing operation. A failure of any earlier stage leaves the
+  published chain byte-identical and produces the operational refusal; the refusal never asserts an absence
+  when the state is indeterminate. The interruption of the process **between** publishing and delivering is
+  declared, not promised away.
+- **M-R4-2 — the effective policy of the host.** The snapshot reads the object the host itself loaded
+  (`hermes_cli.config.load_config_readonly`) when this process carries an explicit `HERMES_HOME` and the
+  host's own config path is the one of the home being asked about; otherwise a standalone run reads the file.
+  An unreadable or malformed configuration withholds the seal (a syntax or type error is not a missing
+  parser), and the snapshot names its `source`.
+- **M-R4-4 — the visible mark.** The reserved mark is detected in the visible text of the admitted Markdown
+  presentations (internal emphasis and link labels included), dot mode removes those occurrences whole, and
+  cited mode withholds the seal with the fixed note. `escape_meta` escapes every interpretable Markdown
+  metacharacter of a document or a section.
+- **M-R4-5 — the diagnostic.** The diagnostic is built separately, the configured bearer is redacted
+  recursively from the whole formatted traceback (exception, arguments and chained cause) and only that
+  sanitized string is emitted; no raw `exc_info` reaches a logger.
+- **M-R4-6 — the host can add text afterwards.** The real finalizer appends its file-mutation footer after the
+  transformer and after the append, so the persisted row can differ from the final message. This is a third
+  declared host incompatibility (`docs/upstream-proposal.md`) and the C1 promise is about the plugin's
+  composition, not about the routes of the host that add text; the integration test reproduces the sequence.
+- **M-R4-7 — the gate's binding.** The citation is parsed with the amount as one statement, the block is
+  resolved against the evidence table the entry stores (call, `pid`, `uid`, number, document, section,
+  position and lines) and the whole block is compared against the answer; `main` checks **every** block of
+  every cited entry, passes each run's `turn_id` to the lookup of its row, and excludes the refusals by name.
+- **Regressions.** The reproductions of the four reviews are permanent tests under `tests/regressions/`, one
+  per attack, with the review and the finding id in the docstring.
 
 ## D13 — the delivery snapshot and the surfaces the host does not retain
 
@@ -118,12 +163,15 @@ M-R3-6 listed four predicates that accepted wrong data and one self-test that re
 The predicates are rewritten as named properties:
 
 - `amount_statement(text, amount, unit, mark)` parses **one** statement: an optional sign (which must match the
-  literal), the exact amount as a standalone token, a unit of the required kind, and a citation mark that
-  resolves to the passage the run selected. `-380 pesos [99]` is not `380`, `380 kg` is not `380 pesos` and a
-  mark that names another passage is not a bound citation.
-- `entry_for(entries, question, mode, turn_id)` selects the entry of the run, never by question alone.
-- Every block of every cited answer in the log is checked against a full line of an excerpt stored in its own
-  entry, and the seal is crossed with the entry's own delivery decision.
+  literal), the exact amount as a standalone token, a unit of the required kind, and the first citation after
+  the amount inside the same line. `-380 pesos [99]` is not `380`, `380 kg` is not `380 pesos`, a mark that
+  names another statement is not this amount's citation (M-R4-7) and a sign separated by a space is not the
+  plain amount.
+- `entry_for(entries, question, mode, turn_id)` selects the entry of the run, never by question alone; `main`
+  resolves each run again by the `turn_id` its own entry recorded.
+- Every block of every cited answer in the log is resolved against the **evidence table** its entry stores
+  (call, `pid`, `uid`, number, document, section, position and the numbered lines), the whole block is
+  compared against the delivered answer, and the seal is crossed with the entry's own delivery decision.
 - `gate_selftest()` returns the exact list of failing fixtures (empty = pass), and the new counterexamples of
   this review are in it.
 - `finish()` writes every artifact, then scans them on disk, then emits the verdict; the report is written

@@ -1,8 +1,10 @@
 """``python -m hermes_cited.verify_log <audit.jsonl>``: verify the chain of the cited-mode log (H5, D9).
 
 Exit 0 with the number of entries when the chain is internally consistent. Exit 1 with the first broken
-entry when an entry was altered, removed, reordered or cut from the end or when an entry does not carry
-the schema. Exit 2 on a usage error.
+entry when an entry was altered, removed from the middle, reordered or when an entry does not carry the
+schema. A complete suffix cut or a whole file rewritten with every hash recomputed stays internally
+consistent and this command does not detect it, so it promises nothing about either. Exit 2 on a usage
+error.
 
 What this checks is **internal consistency**: every entry, every link and every hash of the chain. It is
 not a custody check: whoever can rewrite the file can also recompute the chain, and the plugin does not
