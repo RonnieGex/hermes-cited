@@ -2,9 +2,11 @@
 
 Cited mode is *written by the plugin* (D5). The model only chooses lines with the ``cited_quote`` tool;
 ``transform_llm_output`` discards the model's text whole and renders the chosen lines, copied byte for
-byte out of the excerpts of the turn, with the source and the mark generated here and the seal added only
-after the exact delivered text was persisted and only when the delivery snapshot of the turn allows it
-(D13).
+byte out of the excerpts of the turn, with the source and the mark generated here. Round 6 (D11, H16)
+retains the seal ``Verified by Cited`` on every route while the host does not expose an accreditable
+delivery contract: the one capability point is ``delivery.accredited_delivery()``, the answer carries the
+fixed note that names the retention, and the record states that it registers the plugin's composition and
+not the terminal message.
 
 Round 4 (D10) puts **one boundary around the whole transformer**: for every cited turn that reaches the
 hook, the delivered text is exactly one of the render, the fixed localized refusal, or the fixed
@@ -59,8 +61,9 @@ CITED_RULES = (
     "and proper nouns as they are written. The documents may be in another language: if the first "
     "search does not answer, call `cited_search` again with the translated key terms before "
     "concluding.\n"
-    "7. The tool writes the mark, the source and the seal `Verified by Cited`. Do not write them "
-    "yourself.\n"
+    "7. The plugin writes the source and the fixed note; the seal `Verified by Cited` is not written at "
+    "all while the host does not accredit the delivery of the turn (H16). Do not write the mark or the "
+    "note yourself.\n"
 )
 
 MAX_INDEX = 10 ** 6
@@ -114,9 +117,21 @@ def _safe_language() -> str:
         return messages.DEFAULT_LANGUAGE
 
 
+#: B-R5-1: the constant, non-empty reserve code. When the entropy dependency fails, the incident code is
+#: this value, so the refusal is built without touching entropy, disk, configuration or the logger.
+RESERVE_INCIDENT_CODE = "CITED-00000000"
+
+
 def incident_code() -> str:
-    """The code of one operational refusal, generated at the failure site (H10)."""
-    return "CITED-{0}".format(secrets.token_hex(4).upper())
+    """The code of one operational refusal, generated at the failure site (H10, B-R5-1).
+
+    It never raises: a failure of ``secrets.token_hex`` returns the constant reserve code instead, so the
+    emergency exit of the transformer cannot depend on the entropy source that just failed.
+    """
+    try:
+        return "CITED-{0}".format(secrets.token_hex(4).upper())
+    except BaseException:
+        return RESERVE_INCIDENT_CODE
 
 
 def _as_index(value):
@@ -590,7 +605,11 @@ def _recorded_mode(session_id, turn_id) -> str:
 
 
 def _operational_refusal(code) -> str:
-    """The fixed operational refusal, built so that no secondary failure can escape (B-R4-1)."""
+    """The fixed operational refusal, built so that no secondary failure can escape (B-R4-1, B-R5-1).
+
+    Every step is guarded and the last one is a literal, so the emergency exit depends on no entropy, no
+    disk, no configuration and no logger.
+    """
     try:
         return verifier.operational_refusal(code, _safe_language())
     except BaseException:
@@ -599,6 +618,18 @@ def _operational_refusal(code) -> str:
         return messages.operational_text(messages.DEFAULT_LANGUAGE, code)
     except BaseException:
         return "CITED incident {0}: the answer could not be delivered as verified.".format(code)
+
+
+def _dot_safety_note() -> str:
+    """M-R5-3: the fixed safe note of a dot turn whose sanitisation could not run or complete."""
+    try:
+        return messages.sanitizer_note(_safe_language())
+    except BaseException:
+        pass
+    try:
+        return messages.SANITIZER_NOTE[messages.DEFAULT_LANGUAGE]
+    except BaseException:
+        return "The reserved mark could not be removed from this answer, so the model's text is not shown."
 
 
 def _sanitized_diagnostic(message, code, error) -> str:
@@ -648,7 +679,9 @@ def _transform_llm_output(state):
             code = incident_code()
             _report_failure("the cited-mode transformer failed", code, error)
             if mode == "dot" or (mode is None and intent == "dot"):
-                return None
+                # M-R5-3: dot mode never hands the model's text back untransformed and never returns
+                # ``None`` on a failure of the removal; it delivers the fixed safe note instead.
+                return _dot_safety_note()
             return _operational_refusal(code)
         finally:
             try:
@@ -718,8 +751,16 @@ def _verification(turn, applied=True, ok=False, blocks=()):
 
 
 def _deliver_dot(turn, text):
-    """Dot mode: the model's text, minus the reserved mark; the log records what is delivered (D11)."""
-    final = render.strip_mark(text)
+    """Dot mode: the model's text, minus the reserved mark; the log records what is delivered (D11).
+
+    M-R5-3: when the removal cannot complete, the delivered text is the fixed safe note and never the
+    model's untransformed text; the failure is reported and the turn's entry records the note.
+    """
+    try:
+        final = render.strip_mark(text)
+    except BaseException as error:
+        _report_failure("the dot-mode sanitisation failed", incident_code(), error)
+        final = _dot_safety_note()
     if text and not final.strip():
         final = messages.seal_only_note(_language())
     verification = _verification(turn, applied=False, ok=False)
@@ -787,6 +828,7 @@ def _write_entry(
             for line in turn.selections
         ],
         "transcript": transcript,
+        "composition_note": messages.composition_note(_language()),
         "response": final,
         "delivery": (turn.delivery.as_dict() if isinstance(turn.delivery, delivery.Snapshot) else {}),
         "verifier": {

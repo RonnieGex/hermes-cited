@@ -17,10 +17,19 @@ mark, because that is what a reader sees. The detection builds the visible chara
 each one in the original text, so the removal takes the whole presentation with it, and ``escape_meta``
 escapes every interpretable Markdown metacharacter of a document or a section, not only the backslash and
 the backtick.
+
+Round 6 (M-R5-3) reads that visible text over the **whole** document: a soft line break, a named or
+numeric entity (``Verified &#98;y Cited``, ``Verified&nbsp;by&nbsp;Cited``) and a reference link
+(``Verified by [Cited][c]``) are the same mark, one span per occurrence. The removal is followed by the
+postcondition of absence after normalising, and it repeats a bounded number of times because a removal can
+concatenate the ends into a new mark; when it cannot complete, ``strip_mark`` raises
+:class:`SanitizationFailed` and the transformer delivers a fixed safe note instead of the model's text.
+``escape_meta`` also escapes the entity ampersand, so a document or a section can never read as the mark.
 """
 
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass
 
@@ -37,15 +46,31 @@ SOURCE_PREFIX = {"es": "Fuente:", "en": "Source:"}
 #: The visible text of the reserved mark: a run of whitespace between the words, so a line break or the
 #: markup of an emphasis does not hide it.
 _SEAL_RE = re.compile(r"verified\s+by\s+cited(?![\w])", re.IGNORECASE)
-#: A Markdown link or image: the label is the visible text and the target is not.
+#: A Markdown inline link or image: the label is the visible text and the target is not.
 _LINK_RE = re.compile(r"!?\[([^\]\n]*)\]\([^)\n]*\)")
+#: A Markdown reference link or image: the label is visible and the reference is not (M-R5-3).
+_REF_LINK_RE = re.compile(r"!?\[([^\]\n]*)\]\[[^\]\n]*\]")
+#: A named or numeric character reference: what the consumer renders is the decoded character (M-R5-3).
+_ENTITY_RE = re.compile(r"&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});")
 #: The markup that is not visible: emphasis, strong, strikethrough and code spans.
 _INVISIBLE_CHARS = "*_~`"
+#: The characters a backslash can escape in CommonMark; an escaped character is a literal, not markup.
+_ASCII_PUNCT = set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+#: The sentinel that marks where a span of the reserved mark was removed (M-R5-3).
+_SENTINEL = "\x00"
+#: The bounded number of removal passes: a removal can concatenate the ends into a new mark.
+MAX_SANITIZE_PASSES = 8
 #: A line that holds only decoration and punctuation: a mark-only line disappears with it.
 _DECOR_ONLY_RE = re.compile(r"^[\s>*_#~`\-–—•·.,;:!?…¡¿«»\"'\[\]\(\)0-9]*$")
-#: The Markdown characters a document or a section must never carry live (M-R4-4).
-_META_CHARS = "\\`*_[]()#>~|<{}!"
+#: The Markdown characters a document or a section must never carry live (M-R4-4, M-R5-3). The ampersand
+#: is escaped too, so a named entity of the metadata can never read as the reserved mark.
+_META_CHARS = "\\`*_[]()#>~|<{}!&"
 MAX_META = 200
+
+
+class SanitizationFailed(Exception):
+    """The reserved mark could not be removed; the caller delivers a fixed safe note (M-R5-3)."""
+
 
 
 def excerpt_lines(excerpt) -> list:
@@ -63,30 +88,56 @@ def numbered_lines(excerpt) -> list:
     return [{"line": number, "text": text} for number, text in enumerate(excerpt_lines(excerpt), start=1)]
 
 
+def _decoded_entity(text, start):
+    """``(decoded, end)`` of the character reference at *start*, or ``None`` when it is not one."""
+    match = _ENTITY_RE.match(text, start)
+    if match is None:
+        return None
+    value = html.unescape(match.group(0))
+    if value == match.group(0):
+        return None
+    return value, match.end()
+
+
 def _visible_tokens(text):
-    """``(char, start, end)`` of every visible character of the admitted Markdown presentations.
+    """``(char, start, end)`` of every visible character of the supported Markdown presentations.
 
     A link or an image contributes its label; every label character carries the span of the whole
     construct, so a mark that ends inside a label takes the construct with it. The emphasis markup is
-    not visible and contributes no token.
+    not visible and contributes no token. A named or numeric character reference contributes the
+    character the consumer renders, with the span of the whole reference, and a soft line break
+    contributes its whitespace, so a mark broken across a line or written with entities is still the
+    mark (M-R5-3). A reference link contributes its label and not its reference.
     """
     value = str(text or "")
+    length = len(value)
     tokens = []
-    position = 0
-    for match in _LINK_RE.finditer(value):
-        for index in range(position, match.start()):
-            char = value[index]
-            if char not in _INVISIBLE_CHARS:
-                tokens.append((char, index, index + 1))
-        for char in match.group(1):
-            if char not in _INVISIBLE_CHARS:
-                tokens.append((char, match.start(), match.end()))
-        position = match.end()
-    for index in range(position, len(value)):
+    index = 0
+    while index < length:
         char = value[index]
+        if char == "\\" and index + 1 < length and value[index + 1] in _ASCII_PUNCT:
+            tokens.append((value[index + 1], index, index + 2))
+            index += 2
+            continue
+        match = _LINK_RE.match(value, index) or _REF_LINK_RE.match(value, index)
+        if match is not None:
+            for label in match.group(1):
+                if label not in _INVISIBLE_CHARS:
+                    tokens.append((label, index, match.end()))
+            index = match.end()
+            continue
+        if char == "&":
+            decoded = _decoded_entity(value, index)
+            if decoded is not None:
+                for item in decoded[0]:
+                    tokens.append((item, index, decoded[1]))
+                index = decoded[1]
+                continue
         if char not in _INVISIBLE_CHARS:
             tokens.append((char, index, index + 1))
+        index += 1
     return tokens
+
 
 
 def mark_spans(text) -> list:
@@ -118,30 +169,56 @@ def _remove_spans(text: str, spans) -> str:
     return "".join(kept)
 
 
-def strip_mark(text) -> str:
-    """The text without every occurrence of the reserved mark.
-
-    A line that is only the mark (with or without decoration) disappears; a mark inside a line takes its
-    decoration and the punctuation that followed it with it. Lines keep their order and their remaining
-    characters.
-    """
-    value = str(text or "")
-    if not contains_mark(value):
-        return value
+def _blank_spans(text: str, spans) -> str:
+    """The text with every span replaced by the sentinel, so a mark-only line can be told apart."""
     kept = []
-    for line in value.split("\n"):
-        spans = mark_spans(line)
-        cleaned = _remove_spans(line, spans)
-        if spans and _DECOR_ONLY_RE.match(cleaned):
+    position = 0
+    for start, end in spans:
+        kept.append(text[position:start])
+        kept.append(_SENTINEL)
+        position = max(position, end)
+    kept.append(text[position:])
+    return "".join(kept)
+
+
+def _tidy(value: str, spans) -> str:
+    """Remove the spans and drop the lines that held nothing else, keeping every line with content."""
+    blanked = _blank_spans(value, spans)
+    kept = []
+    for raw in blanked.split("\n"):
+        line = raw.replace(_SENTINEL, "")
+        line = re.sub(r"[\s>*_#~`\-–—•·]{2,}", " ", line).rstrip()
+        if _SENTINEL in raw and not any(char.isalnum() for char in line):
             continue
-        cleaned = re.sub(r"[\s>*_#~`\-–—•·]{2,}", " ", cleaned).rstrip()
-        if cleaned.strip() or not kept:
-            kept.append(cleaned.rstrip())
+        kept.append(line)
     while kept and not kept[0].strip():
         kept.pop(0)
     while kept and not kept[-1].strip():
         kept.pop()
     return "\n".join(kept)
+
+
+def strip_mark(text) -> str:
+    """The text without every occurrence of the reserved mark (M-R5-3).
+
+    The spans are computed over the **whole** document, so a mark broken across a line or written with
+    entities, links or emphasis is one span; they are removed, the result is normalised, and the
+    postcondition of absence is checked before returning. A removal can concatenate the ends of the text
+    into a new mark, so the pass repeats a bounded number of times; when it cannot complete, the caller
+    gets :class:`SanitizationFailed` and delivers the fixed safe note instead of the model's text. A line
+    that held only the mark (and decoration) disappears; a line with any content keeps it.
+    """
+    value = str(text or "")
+    for _ in range(MAX_SANITIZE_PASSES):
+        if not contains_mark(value):
+            return value
+        spans = mark_spans(value)
+        if not spans:
+            break
+        value = _tidy(value, spans)
+    raise SanitizationFailed(
+        "the reserved mark could not be removed after {0} passes".format(MAX_SANITIZE_PASSES)
+    )
 
 
 def _neutralise_mark(text: str) -> str:

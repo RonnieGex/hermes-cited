@@ -24,6 +24,14 @@ the turn does not prove the loaded state. When the host module is present but do
 mapping, the snapshot is unreadable and the seal is withheld; a standalone run, with no host on the path,
 falls back to the file. A YAML syntax or type error is an unreadable snapshot too: a missing parser is
 distinguished from an invalid document instead of reinterpreting the error as a permissive configuration.
+
+Round 6 (D11, M-R5-1) separates the two halves of the decision. ``surface_clear`` is what the plugin can
+read. ``accredited`` is what the host accredits: the effective receivers of the turn and the guarantee that
+the terminal message is the plugin's composition. ``accredited_delivery`` is **the single capability point**
+and with Hermes v0.21.6+387 it answers ``False`` on every route, so the seal is retained even on a quiet
+configuration, and the answer carries the fixed note that names the retention. A ``FailedConfigRead`` or any
+object that carries a ``read_error`` is rejected as unreadable instead of being accepted as the last valid
+mapping.
 """
 
 from __future__ import annotations
@@ -131,12 +139,34 @@ REASONS = {
     "tts": "streaming text to speech is on (`tts.auto_tts`), so the answer may have been spoken before it was verified.",
     "unknown": "this platform is not one the plugin can resolve, so it cannot prove that nothing else was visible.",
     "unreadable": "the delivery configuration could not be read, so the plugin cannot prove that nothing else was visible.",
+    "unaccredited": (
+        "the host does not expose a per-turn delivery policy that accredits the effective receivers and the "
+        "guarantee that the terminal message is the plugin's composition, so the plugin cannot prove what "
+        "was delivered."
+    ),
 }
+
+#: D11 of the round 6 mission: **the single capability point** of the seal. The mark ``Verified by Cited``
+#: is emitted only for a turn the host accredits, and a host accredits a turn only when it offers both a
+#: per-turn policy of the effective receivers (text, reasoning, commentary, voice and the SSE route) and the
+#: guarantee that the terminal message is the plugin's composition. Hermes v0.21.6+387 (``dce1e9b``) exposes
+#: neither, so this answers ``False`` on every route; a future host version would turn it on here, and only
+#: with a test of the real host that demonstrates the contract (``docs/upstream-proposal.md``).
+ACCREDITED_DELIVERY = False
+
+
+def accredited_delivery() -> bool:
+    """Whether this host accredits the delivery of a turn (D11). Today: never."""
+    return bool(ACCREDITED_DELIVERY)
 
 
 @dataclass(frozen=True)
 class Snapshot:
-    """The effective delivery configuration of one turn, frozen at its start (H9)."""
+    """The effective delivery configuration of one turn, frozen at its start (H9, H16).
+
+    ``surface_clear`` is what the surfaces the plugin can read say; ``accredited`` is what the host
+    accredits about the receivers and the terminal message. ``seal`` is the effective decision: both.
+    """
 
     platform: str = ""
     readable: bool = False
@@ -147,6 +177,8 @@ class Snapshot:
     known_platform: bool = False
     source: str = ""
     reasons: tuple = field(default_factory=tuple)
+    surface_clear: bool = False
+    accredited: bool = False
     seal: bool = False
 
     def as_dict(self) -> dict:
@@ -160,9 +192,12 @@ class Snapshot:
             "known_platform": self.known_platform,
             "source": self.source,
             "reasons": list(self.reasons),
+            "surface_clear": self.surface_clear,
+            "accredited": self.accredited,
             "seal": self.seal,
             "host_streaming_version": HOST_STREAMING_VERSION,
         }
+
 
 
 def _coerce_bool(value, default: bool = True) -> bool:
@@ -344,6 +379,11 @@ def host_config(home=None):
         raise UnreadableConfig("{0}: {1}".format(type(error).__name__, error))
     if not isinstance(values, dict):
         raise UnreadableConfig("the host configuration is not a mapping")
+    # M-R5-1: Hermes keeps the last valid configuration inside ``FailedConfigRead`` when the YAML is
+    # broken. That object is a mapping, so an ``isinstance`` test accepted it as a readable policy; a
+    # read error is not a configuration and the caller must withhold instead of reinterpreting it.
+    if getattr(values, "read_error", None):
+        raise UnreadableConfig("the host configuration could not be read: {0}".format(values.read_error))
     return values
 
 
@@ -466,6 +506,8 @@ def snapshot(platform: str, home=None, config: dict = None) -> Snapshot:
             known_platform=name in MESSAGING_PLATFORMS or name in ("cli",) or name in SSE_PLATFORMS,
             source="unreadable",
             reasons=("unreadable",),
+            surface_clear=False,
+            accredited=accredited_delivery(),
             seal=False,
         )
 
@@ -490,6 +532,8 @@ def snapshot(platform: str, home=None, config: dict = None) -> Snapshot:
     streaming = "streaming" in reasons
     commentary = "commentary" in reasons
     tts = "tts" in reasons
+    surface_clear = not reasons
+    accredited = accredited_delivery()
     return Snapshot(
         platform=name,
         readable=True,
@@ -500,7 +544,9 @@ def snapshot(platform: str, home=None, config: dict = None) -> Snapshot:
         known_platform=known,
         source=source,
         reasons=tuple(reasons),
-        seal=not reasons,
+        surface_clear=surface_clear,
+        accredited=accredited,
+        seal=surface_clear and accredited,
     )
 
 
@@ -512,12 +558,18 @@ def seal_allowed(platform: str, config: dict = None, home=None, snap: Snapshot =
 
 
 def withheld_note(snap) -> str:
-    """The fixed note that names why the seal was withheld, in the configured language."""
+    """The fixed note that names why the seal was withheld, in the configured language.
+
+    H16/D11: when the surfaces are quiet but the host does not accredit the delivery, the note names that
+    missing accreditation instead of leaving the answer without a reason.
+    """
     if isinstance(snap, Snapshot):
         reasons, platform = snap.reasons, snap.platform
+        if not reasons and not snap.accredited:
+            reasons = ("unaccredited",)
     else:
         platform = str(snap or "").strip().lower()
-        reasons = tuple(snapshot(platform).reasons) or ("unknown",)
+        reasons = tuple(snapshot(platform).reasons) or ("unaccredited",)
     parts = []
     for reason in reasons:
         template = REASONS.get(reason, REASONS["unknown"])
