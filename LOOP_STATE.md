@@ -71,8 +71,8 @@ passed**. Every claim asserts the property it names:
   and result of every task, and the reports of the red run and of the corpus.
 - `README.md`, `README.es.md`, `docs/upstream-proposal.md` and the Cited documentation of `community-hermes`
   (`docs/hermes-agent`) state the round 5 contract and its limits.
-- Five commits in `feature/hermes-plugin` (docs, tests, code, spec scenarios, gate wording) and one in
-  `community-hermes`, each with its local gitleaks scan.
+- Small commits in `feature/hermes-plugin` (docs, tests, code, spec scenarios, gate wording and the
+  green-gate reports with this loop state) and one in `community-hermes`, each with its local gitleaks scan.
 
 ## Hard rules respected
 
