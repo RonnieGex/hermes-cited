@@ -234,29 +234,36 @@ def test_b_r3_3_a_refused_append_leaves_the_record_untouched(tmp_path, monkeypat
     assert path.read_bytes() == before
 
 
-def test_b_r3_3_a_half_written_row_of_a_failed_append_is_detected(tmp_path, monkeypatch):
-    """A write that fails after flushing leaves a broken chain, which refuses the next append."""
+def test_b_r3_3_a_failed_append_never_reaches_the_published_chain(tmp_path, monkeypatch):
+    """R3 B-R3-3 with the round 5 append (M-R4-1): a failure of any stage discards the temporary file.
+
+    Round 5 prepares the new file beside the published one and replaces it atomically, so a failure
+    after a partial write can no longer leave a half row in the published chain. The bytes of the
+    published log are untouched and the next append is accepted.
+    """
     path = tmp_path / "audit.jsonl"
     _chain(path, 1)
-    original = audit._append_line
+    before = path.read_bytes()
 
-    def half_write(log, entry):
-        with open(log, "a", encoding="utf-8", newline="\n") as handle:
-            handle.write("{0}".format(json.dumps(entry)[:20]))
+    def half_write(temp, text):
+        with open(temp, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write("{0}".format(json.dumps(_payload(2))[:20]))
             handle.flush()
             import os
 
             os.fsync(handle.fileno())
         raise OSError("synthetic failure after the partial write")
 
-    monkeypatch.setattr(audit, "_append_line", half_write)
+    monkeypatch.setattr(audit, "_write_temp_file", half_write)
     with pytest.raises(OSError):
         audit.append_entry(path, _payload(2))
+    assert path.read_bytes() == before
     count, error = audit.verify_file(path)
-    assert error is not None
-    monkeypatch.setattr(audit, "_append_line", original)
-    with pytest.raises(audit.AuditError):
-        audit.append_entry(path, _payload(3))
+    assert error is None and count == 1
+    monkeypatch.undo()
+    audit.append_entry(path, _payload(3))
+    count, error = audit.verify_file(path)
+    assert error is None and count == 2
 
 
 def test_b_r3_3_an_append_failure_makes_the_plugin_refuse_without_a_seal(monkeypatch, hermes_home, cited_env):

@@ -237,10 +237,10 @@ def test_a_configuration_that_cannot_be_read_withholds_the_seal(host, monkeypatc
 
     delivery = plugin_module(host, "delivery")
 
-    def unreadable(*args, **kwargs):
-        raise PermissionError("synthetic config.yaml is a directory")
+    def unreadable():
+        raise delivery.UnreadableConfig("synthetic unreadable configuration")
 
-    monkeypatch.setattr(delivery, "read_config", unreadable)
+    monkeypatch.setattr(delivery, "host_config", unreadable)
     session, turn = begin(host)
     select(host, session, turn)
     snapshot = delivery.snapshot("cli", home=host["home"])

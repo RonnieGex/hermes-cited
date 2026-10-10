@@ -587,6 +587,7 @@ def test_an_unreadable_configuration_withholds_the_seal(monkeypatch, hermes_home
     def explode(*args, **kwargs):
         raise PermissionError("synthetic unreadable config.yaml")
 
+    monkeypatch.setattr(delivery, "host_config", lambda home=None: None)
     monkeypatch.setattr(delivery, "read_config", explode)
     pre(context)
     search(context)

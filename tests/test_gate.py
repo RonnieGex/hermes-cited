@@ -130,20 +130,33 @@ def test_the_seal_is_crossed_with_the_audited_entry(gate):
 
 
 def test_a_recorded_block_is_bound_to_its_own_turn(gate):
-    """M-R3-6: the block is resolved against the selection, the source and the turn of that run."""
+    """M-R3-6 and M-R4-7: the block resolves against its evidence row, its source and its turn."""
+    line = {
+        "pid": "P1",
+        "uid": "t1:0:P1",
+        "call": 0,
+        "text": "- Afinacion de bicicleta: 380 pesos.",
+        "document": "cafe-la-horquilla.md",
+        "heading": "Precios",
+        "position": 2,
+    }
     entry = {
         "turn_id": "t1",
         "mode": "cited",
         "response": "Según tus documentos:\n\n- Afinacion de bicicleta: 380 pesos. [1]\nFuente: cafe-la-horquilla.md - Precios\n\nVerified by Cited",
-        "quoted_lines": [
+        "evidence": [
             {
+                "call": 0,
                 "pid": "P1",
                 "uid": "t1:0:P1",
-                "text": "- Afinacion de bicicleta: 380 pesos.",
+                "number": 1,
                 "document": "cafe-la-horquilla.md",
                 "heading": "Precios",
+                "position": 2,
+                "lines": [{"line": 1, "text": "- Afinacion de bicicleta: 380 pesos."}],
             }
         ],
+        "quoted_lines": [dict(line)],
         "tool_calls": [{"excerpt_texts": ["Precios\n- Afinacion de bicicleta: 380 pesos."]}],
     }
     assert gate.blocks_are_bound(entry, entry["quoted_lines"][0]) is True
@@ -153,6 +166,8 @@ def test_a_recorded_block_is_bound_to_its_own_turn(gate):
     assert gate.blocks_are_bound(entry, unbound) is False
     wrong_source = dict(entry["quoted_lines"][0], document="otro.md")
     assert gate.blocks_are_bound(entry, wrong_source) is False
+    wrong_call = dict(entry["quoted_lines"][0], call=9, uid="t1:9:P1")
+    assert gate.blocks_are_bound(entry, wrong_call) is False
     ok, detail = gate.every_block_is_bound([entry])
     assert ok is True, detail
 
