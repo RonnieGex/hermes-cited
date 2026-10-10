@@ -1,16 +1,17 @@
 # LOOP_STATE · hermes-cited, change `hermes-plugin-r4`
 
-STATUS: DONE (gate green), round 8
-CHANGE: hermes-plugin-r4 (OpenSpec), delta over the capability `hermes-plugin`
-BRANCH: feature/hermes-plugin (no remote and no push)
+STATUS: CLOSED, round 8. Archived on 2026-10-10 with the four rounds in `openspec/changes/archive/` and the
+living spec consolidated in `openspec/specs/hermes-plugin/spec.md` (Fable)
+CHANGE: hermes-plugin-r4 (OpenSpec), delta over the capability `hermes-plugin`, now archived as
+`openspec/changes/archive/2026-10-10-hermes-plugin-r4`
+BRANCH: feature/hermes-plugin
 BASE: `06c4efd` (`docs: the round 7 gate run on the clean frozen tree`), round 7
 VERIFIED RUN: `scripts/gate.py` with the Python of the Hermes venv, `GATE: GREEN`, **67 of 67 claims in 648 s**,
 on the clean frozen tree of `54599e8` with both repositories clean; the cross-repository document check ran
 with `CITED_DOCS_REPO` set and the exact SHA of `community-hermes` (`3a636f8`) recorded in
-`openspec/changes/hermes-plugin-r4/reports/2026-10-10-step-5b-docs-repo.md`
-REVIEW: **pending**. The seventh Codex review (`tasks/revision-codex-hermes-cited-r7.md`) is answered finding
-by finding in `tasks/entrega-cited-hermes-r8.md`, by the scope decision D12 of
-`tasks/mision-cited-hermes-r8.md`; no eighth review has been asked for or run.
+`openspec/changes/archive/2026-10-10-hermes-plugin-r4/reports/2026-10-10-step-5b-docs-repo.md`
+REVIEW: **PASS** in the eighth Codex review (`tasks/revision-codex-hermes-cited-r8.md`): no blocking and no major
+finding; its one editorial minor (m-R8-1) was fixed by Fable in `7b171d7`.
 AGENT: DeepSeek (implementer); the publication of `RonnieGex/hermes-cited`, the review and any upstream
 proposal are Fable's and Franc's
 DATE: 2026-10-10
@@ -72,7 +73,7 @@ isolated extraction. Every claim asserts the property it names:
 - `tests/`: the round 8 regressions and the updated D12 assertions; `tests/regressions/test_r6_docs.py`
   resolves its cross-repository checkout from `CITED_DOCS_REPO`.
 - `.github/workflows/tests.yml`: declares the cross-repository omission and drops the retired consumer.
-- `scripts/gate.py`: the D12 fixtures and the docs-repo claim; `openspec/changes/hermes-plugin-r4/`: D19, the
+- `scripts/gate.py`: the D12 fixtures and the docs-repo claim; `openspec/changes/archive/2026-10-10-hermes-plugin-r4/`: D19, the
   spec delta (H4, H16, H17 amended and the new H18) and the reports of the red run, the fixes, the docs, the
   standalone run, the suite and the gate.
 - Small commits in `feature/hermes-plugin` (contract, code, tests, documentation, gate, reports) and one in

@@ -329,7 +329,7 @@ Todo lo de abajo se corrió el 2026-10-10 con Hermes Agent **v0.21.6+387 (`dce1e
 fusionado) en su propio worktree temporal y servido en `127.0.0.1:3246` con los cuatro documentos de su
 `samples/`, y un `HERMES_HOME` temporal. `scripts/gate.py`, corrido con el Python del venv de Hermes,
 afirma las propiedades e imprime `GATE: GREEN`; su salida y las transcripciones están dentro de los cambios
-(`openspec/changes/hermes-plugin-r3/reports/` y `openspec/changes/hermes-plugin-r4/reports/`).
+(`openspec/changes/archive/2026-10-10-hermes-plugin-r3/reports/` y `openspec/changes/archive/2026-10-10-hermes-plugin-r4/reports/`).
 
 La ronda 4 (2026-10-10) retiró la custodia local del registro, así que lo que queda es el registro de
 consistencia encadenado que se describe arriba, sin llave y sin ningún archivo fuera de `HERMES_HOME`.
@@ -360,8 +360,8 @@ ronda 2 ni de la ronda 3 tocó el puerto 3240.
 | `hermes plugins install "file:///…" --enable --yes-deps` | instalado en `$HERMES_HOME/plugins/hermes-cited` y habilitado |
 | El loader real | el plugin instalado carga con el gestor de plugins de Hermes y registra sus tres hooks |
 | La pregunta de precio en la ruta MCP | el stream llama a `mcp__cited__cited_search` y responde **380 pesos** con la cita de `cafe-la-horquilla.md · Precios` |
-| La pregunta de precio en modo cited | el stream llama a la `cited_search` nativa y luego a `cited_quote`; la respuesta entregada es el render del plugin, con `Fuente: cafe-la-horquilla.md - Precios` y la marca `[1]`, y el sello retenido porque el host no acredita la entrega, como muestra la [transcripción](openspec/changes/hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) |
-| `What guarantee on repairs does bike-workshop-policies.md state?` | el render lleva **90 days** desde `bike-workshop-policies.md · Guarantee`, con el sello retenido en la misma [transcripción](openspec/changes/hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) |
+| La pregunta de precio en modo cited | el stream llama a la `cited_search` nativa y luego a `cited_quote`; la respuesta entregada es el render del plugin, con `Fuente: cafe-la-horquilla.md - Precios` y la marca `[1]`, y el sello retenido porque el host no acredita la entrega, como muestra la [transcripción](openspec/changes/archive/2026-10-10-hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) |
+| `What guarantee on repairs does bike-workshop-policies.md state?` | el render lleva **90 days** desde `bike-workshop-policies.md · Guarantee`, con el sello retenido en la misma [transcripción](openspec/changes/archive/2026-10-10-hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) |
 | Una pregunta que los samples no responden | exactamente `No está en los documentos.`, sin dato y sin sello |
 | El registro de consistencia de esos turnos | una entrada por turno con el conteo exacto; `python -m hermes_cited.verify_log` desde el plugin instalado reporta la consistencia interna de la cadena y sale 0; alterar una entrada, quitar una de en medio, reordenarla o introducir un hueco lo hace salir 1, mientras que un corte de sufijo completo o un archivo reescrito con todos los hashes recalculados queda con consistencia interna, que es el límite documentado de la revisión |
 | Modo dot | el texto del modelo se entrega intacto y la entrada se registra con el verificador marcado como no aplicado; la fila registra exactamente el texto que se entrega, y un renglón documental que traiga la frase `Verified by Cited` es dato, porque esta versión no escribe ningún sello (D12) |

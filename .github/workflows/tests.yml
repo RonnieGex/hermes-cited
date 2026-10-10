@@ -20,7 +20,7 @@ jobs:
       # cross-repository assertions of tests/regressions/test_r6_docs.py are **omitted**: they are skipped
       # with the explicit reason "CITED_DOCS_REPO is not set". The local gate of the repository always sets
       # the variable to the sibling checkout, records the exact SHA of `community-hermes` and leaves the
-      # evidence in openspec/changes/hermes-plugin-r4/reports/2026-10-10-step-5b-docs-repo.md.
+      # evidence in openspec/changes/archive/2026-10-10-hermes-plugin-r4/reports/2026-10-10-step-5b-docs-repo.md.
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}

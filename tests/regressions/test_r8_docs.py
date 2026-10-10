@@ -42,6 +42,16 @@ def read(path) -> str:
     return normalized(path.read_text(encoding="utf-8"))
 
 
+def change_dir(name: str) -> Path:
+    """A change lives in `openspec/changes/<name>` while open and in `archive/<date>-<name>` once archived."""
+    changes = REPO / "openspec" / "changes"
+    if (changes / name).is_dir():
+        return changes / name
+    archived = sorted(changes.glob(f"archive/*-{name}"))
+    assert archived, f"the change {name} is neither open nor archived"
+    return archived[-1]
+
+
 @pytest.mark.parametrize(
     "name",
     ["README.md", "README.es.md", "docs/upstream-proposal.md", "hermes_cited/skills/cited/SKILL.md"],
@@ -58,7 +68,7 @@ def test_d12_the_public_documents_state_the_retired_mark(name):
 
 def test_d12_the_future_activation_requires_the_mark_protection_again():
     proposal = read(REPO / "docs" / "upstream-proposal.md").lower()
-    design = read(REPO / "openspec" / "changes" / "hermes-plugin-r4" / "design.md").lower()
+    design = read(change_dir("hermes-plugin-r4") / "design.md").lower()
     assert ENGLISH_ACTIVATION in proposal, "the proposal does not require the mark protection again"
     assert ENGLISH_ACTIVATION in design, "the design does not require the mark protection again"
 

@@ -25,3 +25,10 @@ prefix. Round 1 and round 2 reports stay where they are; this change never rewri
 - [x] 10. Documentation — both READMEs, the skill, `plugin.yaml` and the Cited docs of `community-hermes` describe the new cited mode with a real render, the custody of D6 and the delivery policy of D7.
 - [x] 11. Run `scripts/gate.py` with the Python of the Hermes venv until it prints `GATE: GREEN`, with the reproductions of both reviews as fixtures. Evidence: `reports/2026-10-10-step-11-gate.md` (**52 of 52, 306 s**; the two earlier red runs are recorded in the delivery).
 - [x] 12. Close: `tasks/entrega-cited-hermes-r3.md` with the finding-to-fix table and the `## Issues`, and `LOOP_STATE.md` with `STATUS: DONE`.
+
+## Closure (Fable, 2026-10-10)
+
+- [x] Superseded by `hermes-plugin-r4`: the third adversarial review of this change returned CHANGES, and those findings
+      were resolved in the round 4 to round 8 work of `hermes-plugin-r4` until the eighth review returned PASS
+      (`tasks/revision-codex-hermes-cited-r8.md` in katalis-dev). This change is archived to keep the history of its
+      requirements, which `hermes-plugin-r4` modifies; it is not approved on its own.

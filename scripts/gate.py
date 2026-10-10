@@ -30,7 +30,16 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-CHANGE = REPO / "openspec" / "changes" / "hermes-plugin-r4"
+def change_dir(name):
+    """A change lives in `openspec/changes/<name>` while open and in `archive/<date>-<name>` once archived."""
+    changes = REPO / "openspec" / "changes"
+    if (changes / name).is_dir():
+        return changes / name
+    archived = sorted(changes.glob("archive/*-" + name))
+    return archived[-1] if archived else changes / name
+
+
+CHANGE = change_dir("hermes-plugin-r4")
 REPORTS = CHANGE / "reports"
 RAW_LOGS = REPO / ".tmp" / "gate-r4"
 ROUND_ONE_FACTS = (

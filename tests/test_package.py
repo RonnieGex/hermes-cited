@@ -8,6 +8,16 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 
 
+def change_dir(name: str) -> Path:
+    """A change lives in `openspec/changes/<name>` while open and in `archive/<date>-<name>` once archived."""
+    changes = REPO / "openspec" / "changes"
+    if (changes / name).is_dir():
+        return changes / name
+    archived = sorted(changes.glob(f"archive/*-{name}"))
+    assert archived, f"the change {name} is neither open nor archived"
+    return archived[-1]
+
+
 def read_manifest():
     """A tiny reader for the flat subset of YAML plugin.yaml uses; no third-party dependency."""
     top = {}
@@ -130,15 +140,21 @@ def test_the_upstream_proposal_names_the_hook_it_asks_for():
 
 
 def test_the_reports_live_inside_the_change():
-    assert (REPO / "openspec" / "changes" / "hermes-plugin-r3" / "reports").is_dir()
-    assert (REPO / "openspec" / "changes" / "hermes-plugin-r4" / "reports").is_dir()
-    archive = REPO / "openspec" / "changes" / "archive"
-    assert (archive / "2026-10-10-hermes-plugin" / "reports").is_dir()
-    assert (archive / "2026-10-10-hermes-plugin-r2" / "reports").is_dir()
+    for name in ("hermes-plugin", "hermes-plugin-r2", "hermes-plugin-r3", "hermes-plugin-r4"):
+        assert (change_dir(name) / "reports").is_dir(), name
 
 
 def test_only_two_changes_are_open_at_once():
     """The standard allows at most two open changes per repository (M-R3-7)."""
     changes = REPO / "openspec" / "changes"
     open_changes = sorted(item.name for item in changes.iterdir() if item.is_dir() and item.name != "archive")
-    assert open_changes == ["hermes-plugin-r3", "hermes-plugin-r4"]
+    assert len(open_changes) <= 2, open_changes
+
+
+def test_the_living_spec_exists_once_the_changes_are_archived():
+    """Archiving the four rounds consolidated their latest requirements into the living spec."""
+    spec = REPO / "openspec" / "specs" / "hermes-plugin" / "spec.md"
+    assert spec.is_file()
+    text = spec.read_text(encoding="utf-8")
+    for number in range(0, 19):
+        assert f"### Requirement: H{number} " in text, f"H{number} is missing from the living spec"

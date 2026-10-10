@@ -322,7 +322,7 @@ Everything below was run on 2026-10-10 with Hermes Agent **v0.21.6+387 (`dce1e9b
 in its own temporary worktree and served on `127.0.0.1:3246` with the four documents of its `samples/`, and
 a temporary `HERMES_HOME`. `scripts/gate.py`, run with the Python of the Hermes venv, affirms the properties
 and prints `GATE: GREEN`; its output and the transcripts are inside the changes
-(`openspec/changes/hermes-plugin-r3/reports/` and `openspec/changes/hermes-plugin-r4/reports/`).
+(`openspec/changes/archive/2026-10-10-hermes-plugin-r3/reports/` and `openspec/changes/archive/2026-10-10-hermes-plugin-r4/reports/`).
 
 Round 4 (2026-10-10) retired the local custody of the record, so what remains is the chained consistency
 record described above, with no key and no file outside `HERMES_HOME`. It also took the delivery decision
@@ -353,8 +353,8 @@ once, it is preserved here instead of being claimed away, and it is reported as 
 | `hermes plugins install "file:///…" --enable --yes-deps` | installed into `$HERMES_HOME/plugins/hermes-cited` and enabled |
 | The real loader | the installed plugin loads with the Hermes plugin manager and registers its three hooks |
 | The price question in the MCP route | the stream calls `mcp__cited__cited_search` and answers **380 pesos** with the citation of `cafe-la-horquilla.md · Precios` |
-| The price question in cited mode | the stream calls the native `cited_search`, then `cited_quote`; the delivered answer is the plugin render of the line, with `Fuente: cafe-la-horquilla.md - Precios` and the mark `[1]`, and the seal retained because the host does not accredit the delivery, as the [transcript](openspec/changes/hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) shows |
-| `What guarantee on repairs does bike-workshop-policies.md state?` | the render carries **90 days** from `bike-workshop-policies.md · Guarantee`, with the seal retained in the same [transcript](openspec/changes/hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) |
+| The price question in cited mode | the stream calls the native `cited_search`, then `cited_quote`; the delivered answer is the plugin render of the line, with `Fuente: cafe-la-horquilla.md - Precios` and the mark `[1]`, and the seal retained because the host does not accredit the delivery, as the [transcript](openspec/changes/archive/2026-10-10-hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) shows |
+| `What guarantee on repairs does bike-workshop-policies.md state?` | the render carries **90 days** from `bike-workshop-policies.md · Guarantee`, with the seal retained in the same [transcript](openspec/changes/archive/2026-10-10-hermes-plugin-r4/reports/2026-10-10-step-5-e2e.md) |
 | A question the samples do not answer | exactly `No está en los documentos.`, with no datum and no seal |
 | The consistency record of those turns | one entry per turn with the exact count; `python -m hermes_cited.verify_log` from the installed plugin reports the internal consistency of the chain and exits 0; altering an entry, removing one from the middle, reordering it or introducing a gap makes it exit 1, while a complete suffix cut or a file rewritten with every hash recomputed stays internally consistent, which is the documented limit of the check |
 | Dot mode | the model's text is delivered intact and the entry is logged with the verifier marked as not applied; the row records exactly the text that is delivered, and a documentary line that carries the phrase `Verified by Cited` is data, because this version writes no seal (D12) |
