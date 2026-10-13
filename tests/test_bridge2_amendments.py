@@ -28,13 +28,14 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
 import search_guard
 from bridge_support import FakeContext, inventory
-from hermes_cited import config, plugin
+from hermes_cited import client, config, plugin
 
 REPO = Path(__file__).resolve().parents[1]
 CHANGE = REPO / "openspec" / "changes" / "search-only-bridge"
@@ -376,6 +377,53 @@ def test_lock_size_does_not_silently_truncate_fraction(tmp_path, installer):
     path.write_text(json.dumps({"sha": "e" * 40, "sha256": "2" * 64, "size": 10240.75}), encoding="utf-8")
     with pytest.raises(ValueError):
         installer._read_bridge_lock(path)
+
+
+@pytest.mark.parametrize("key", ["CITED_TIMEOUT_MS", "CITED_SEARCH_TOKEN", "CITED_URL"])
+def test_scope_failure_after_register_is_fixed_and_never_requests_root(tmp_path, monkeypatch, key):
+    """D2/H21: a per-key scope getter failure after registration answers the fixed sentence, no request."""
+    values = {
+        "CITED_BRIDGE_TOOLS": "search",
+        "CITED_URL": "http://127.0.0.1:9",
+        "CITED_SEARCH_TOKEN": "synthetic-search-bridge2",
+        "CITED_TIMEOUT_MS": "500",
+    }
+    home = tmp_path / "search"
+    marker = config.bind_scope(values, str(home))
+    try:
+        context = FakeContext()
+        plugin.register(context)
+    finally:
+        config.unbind_scope(marker)
+    requests = []
+    monkeypatch.setattr(client, "_open", lambda *args, **kwargs: requests.append(args))
+
+    def getter(name, default=""):
+        if name == key:
+            raise RuntimeError("internal synthetic detail")
+        return values.get(name, default)
+
+    marker = config.bind_scope(values, str(home), getter=getter)
+    try:
+        response = context.tools["cited_search"]["handler"]({"query": "new round three query"})
+    finally:
+        config.unbind_scope(marker)
+    assert response == config.SCOPE_SENTENCE
+    assert not requests
+
+
+def test_cli_record_directly_in_temp_root_never_authorizes_all_temp():
+    """Task 1.1/M03: a ``--record`` directly under the process temporary root registers nothing."""
+    from fakes.chassis_surface import prepare_cli_guard
+
+    previous = list(search_guard._WORKSPACES)
+    search_guard._WORKSPACES.clear()
+    try:
+        with pytest.raises(search_guard.GuardError):
+            prepare_cli_guard(Path(tempfile.gettempdir()) / "bridge2-no-file-is-created.jsonl")
+        assert Path(tempfile.gettempdir()).resolve() not in search_guard.workspaces()
+    finally:
+        search_guard._WORKSPACES[:] = previous
 
 
 # --------------------------------------------------------------------------------------------------
