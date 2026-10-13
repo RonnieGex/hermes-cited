@@ -241,3 +241,9 @@ The correction run performs no archive, merge or push; the future implementation
       -k control_characters`: 2 passed, 17 deselected in 0.57s; `tests/test_search_wire.py
       -k 'url or origin'`: 10 passed, 59 deselected in 5.38s.
       External evidence: `bridge-r2-fix-origin.log`, `bridge-r2-origin-regression.log`.
+- [x] 10.6 Wire v1: validate method types and close the fake's tools/call params object.
+      RED: five external R2 `new_closed_wire` cases accepted extra params or returned -32601 with
+      a non-null id for a null, number, array or object method instead of HTTP 400/-32600/id null.
+      GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py
+      -k new_closed_wire`: 5 passed, 14 deselected in 4.63s; `tests/test_chassis_fake.py`:
+      16 passed in 8.40s. External evidence: `bridge-r2-fix-wire.log`, `bridge-r2-wire-regression.log`.

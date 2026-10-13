@@ -273,6 +273,9 @@ def _make_handler(fake: ChassisFake):
             if not isinstance(params, dict) or params.get("name") != "cited_search":
                 self._error(200, -32601, "Unknown tool", request_id)
                 return
+            if set(params) != {"name", "arguments"}:
+                self._error(200, -32602, "Invalid params", request_id)
+                return
             arguments = params.get("arguments")
             error = _invalid_arguments(arguments)
             if error is not None:
@@ -332,7 +335,7 @@ def _invalid_envelope(message: dict) -> bool:
         return True
     if not {"jsonrpc", "id", "method"} <= set(message):
         return True
-    return message.get("jsonrpc") != "2.0"
+    return message.get("jsonrpc") != "2.0" or not isinstance(message.get("method"), str)
 
 
 def _invalid_arguments(arguments):
