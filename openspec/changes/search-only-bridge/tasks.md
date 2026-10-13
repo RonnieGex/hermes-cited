@@ -545,10 +545,12 @@ The correction run performs no archive, merge or push; the future implementation
       commit; no `tasks/` inside the repository. Evidence: `reports/2026-10-13-step-13-r4-core.md` and
       `reports/2026-10-13-step-13-install-r4.md`.
       Re-executed in bridge2 R3: `.venv/Scripts/python -m pytest -q -ra -p no:cacheprovider` 934 passed,
-      4 skipped in 440.33s (0:07:20); the four skips are the three cross-repository documentation checks of
-      `CITED_DOCS_REPO` and the Linux install, which passed separately in 13.4. `openspec validate --all
-      --strict`: 2 passed, 0 failed; `gitleaks protect --staged`: no leaks before each commit; no `tasks/`
-      inside the repository. Evidence: `reports/2026-10-13-step-17-close-r3.md`.
+      4 skipped in 440.33s (0:07:20); with `CITED_DOCS_REPO` at the read-only `community-hermes` checkout
+      `2c5b5d380085cf75923132d58d53390b385a274b` the three cross-repository checks pass and the run is
+      937 passed, 1 skipped in 458.23s (0:07:38), the only skip being the Linux install, which passed
+      separately in 13.4 (`1 passed, 29 deselected in 471.62s`). `openspec validate --all --strict`:
+      2 passed, 0 failed; `gitleaks protect --staged`: no leaks before each commit; no `tasks/` inside the
+      repository. Evidence: `reports/2026-10-13-step-17-close-r3.md`.
 
 ## 14. Bridge2 round 1 independent review corrections
 - [x] 14.1 H6: redact invalid quote selection diagnostics with the validated profile credential.
