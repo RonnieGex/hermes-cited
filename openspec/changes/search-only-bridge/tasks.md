@@ -103,3 +103,9 @@ The correction run performs no archive, merge or push; the future implementation
       `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k response_rejects`:
       RED: 3 failed; unexpected, error=null and method envelope fields were accepted.
       GREEN: the same command returned 3 passed, 15 deselected in 0.77s.
+- [x] 8.3 Enforce H21 origins without even empty userinfo, query or fragment components.
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k origin_rejects`:
+      RED: 3 failed; empty @, ? and # components were accepted.
+      GREEN: the same command returned 3 passed, 15 deselected in 4.43s;
+      `.venv/Scripts/python -m pytest -q tests/test_search_wire.py -k 'url or origin'`:
+      9 passed, 55 deselected in 5.73s.

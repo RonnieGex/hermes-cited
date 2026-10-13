@@ -244,13 +244,13 @@ def chassis_endpoint_of(url) -> str:
         raise CitedConfigError("Cited is not configured: CITED_URL is not an absolute http or https origin.")
     if not parts.scheme or not parts.netloc or parts.scheme not in ("http", "https"):
         raise CitedConfigError("Cited is not configured: CITED_URL must be an absolute http or https origin.")
-    if parts.username or parts.password:
+    if parts.username is not None or parts.password is not None:
         raise CitedConfigError("Cited is not configured: CITED_URL must carry no userinfo.")
     if parts.path:
         raise CitedConfigError(
             "Cited is not configured: CITED_URL must be an origin with no path, not even a trailing slash."
         )
-    if parts.query or parts.fragment:
+    if "?" in value or "#" in value:
         raise CitedConfigError("Cited is not configured: CITED_URL must carry no query and no fragment.")
     return urlunsplit((parts.scheme, parts.netloc, CHASSIS_PATH, "", ""))
 
