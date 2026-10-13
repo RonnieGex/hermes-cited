@@ -99,3 +99,7 @@ The correction run performs no archive, merge or push; the future implementation
       RED: 1 failed on the delivered implementation; the argument key reflected the active search bearer.
       GREEN: 1 passed, 17 deselected; `.venv/Scripts/python -m pytest -q tests/test_search_wire.py`:
       64 passed in 34.99s. Review probes and detailed evidence remain outside the repository as requested.
+- [x] 8.2 Enforce H21 wire v1 response additionalProperties=false before exposing passages.
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k response_rejects`:
+      RED: 3 failed; unexpected, error=null and method envelope fields were accepted.
+      GREEN: the same command returned 3 passed, 15 deselected in 0.77s.

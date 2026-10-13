@@ -385,6 +385,8 @@ def call_tool_search(settings, arguments, request_id: int = 1) -> SearchResult:
             token,
         )
     result = envelope.get("result")
+    if set(envelope) != {"jsonrpc", "id", "result"}:
+        raise _fail("Cited answered the search with a malformed response envelope.", token)
     if not isinstance(result, dict):
         raise _fail("Cited answered without a result.", token)
     if result.get("isError") is True:
