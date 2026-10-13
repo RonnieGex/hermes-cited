@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import socket
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -123,6 +124,42 @@ def test_the_guard_environment_rejects_a_forbidden_url(tmp_path):
     with pytest.raises(guard.GuardError):
         guard.guard_environment({"HERMES_HOME": str(home), "CITED_URL": "http://127.0.0.1:3240"})
     guard.guard_environment({"HERMES_HOME": str(home), "CITED_URL": "http://127.0.0.1:60123"})
+
+
+def test_guard_environment_rejects_missing_overrides_before_any_effect():
+    """M03: an empty run environment fails closed instead of being accepted as safe."""
+    effects = []
+
+    def run(env):
+        guard.guard_environment(env)
+        effects.append("started")
+
+    with pytest.raises(guard.GuardError) as caught:
+        run({})
+    assert "HERMES_HOME" in str(caught.value)
+    assert "CITED_URL" in str(caught.value)
+    assert effects == []
+    with pytest.raises(guard.GuardError):
+        run({"CITED_URL": "http://127.0.0.1:60123"})
+    with pytest.raises(guard.GuardError):
+        run({"HERMES_HOME": ""})
+    assert effects == []
+
+
+def test_guard_environment_rejects_a_home_outside_every_workspace(tmp_path):
+    guard.register_workspace(tmp_path / "workspace")
+    with pytest.raises(guard.GuardError):
+        guard.guard_environment(
+            {
+                "HERMES_HOME": str(Path.home() / "hermes-cited-guard-probe" / "home"),
+                "CITED_URL": "http://127.0.0.1:60123",
+            }
+        )
+
+
+def test_the_guard_does_not_authorise_all_of_the_temp_directory():
+    """M03: authorising tempfile.gettempdir() would make every foreign path look registered."""
+    assert Path(tempfile.gettempdir()).resolve() not in guard.workspaces()
 
 
 def test_the_socket_guard_is_installed_for_every_test():

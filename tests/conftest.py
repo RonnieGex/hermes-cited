@@ -29,11 +29,21 @@ def forbidden_target_guard(monkeypatch, tmp_path):
     """Task 1.1: no test can reach a personal port, and every test has a registered workspace.
 
     The socket guard is installed for the whole suite, so an accidental request to 3240/3241 fails here
-    instead of reaching a personal service. Tests that write under ``HERMES_HOME`` call
-    ``search_guard.guard_path`` themselves to prove the path stays inside the temporary workspace.
+    instead of reaching a personal service. The workspace of this test is registered and an inherited
+    ``HERMES_HOME`` that is not inside a registered temporary workspace (for example the personal
+    installation) is replaced by this test's own temporary home *before* the test body runs, so no test
+    can read or write the personal installation.
     """
     search_guard.install_socket_guard(monkeypatch)
     search_guard.register_workspace(tmp_path)
+    current_home = str(os.environ.get("HERMES_HOME") or "").strip()
+    if current_home:
+        try:
+            search_guard.guard_path(current_home, kind="HERMES_HOME")
+        except search_guard.GuardError:
+            isolated = tmp_path / "isolated-home"
+            isolated.mkdir(exist_ok=True)
+            monkeypatch.setenv("HERMES_HOME", str(isolated))
     yield
 
 PASSAGES = [

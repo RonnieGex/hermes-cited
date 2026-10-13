@@ -95,9 +95,20 @@ def registration(mode="search", home=""):
 
 @contextlib.contextmanager
 def bound_scope(values, home, getter=None):
-    """Bind an explicit profile scope for the duration of one block."""
+    """Bind an explicit profile scope for the duration of one block.
+
+    Before the scope is bound, and therefore before any registration, handler call or write, the
+    isolation guard of task 1.1 checks the profile home: a home outside the registered temporary
+    workspaces (for example the personal installation) raises ``GuardError`` here instead of being
+    exercised by the plugin. An unsafe destination is stopped by the socket guard of the suite.
+    """
     from hermes_cited import config
 
+    import search_guard
+
+    text_home = str(home or "").strip()
+    if text_home:
+        search_guard.guard_path(text_home, kind="profile home")
     token = config.bind_scope(values, home, getter=getter)
     try:
         yield values

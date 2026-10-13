@@ -152,51 +152,56 @@ def _make_handler(fake: ChassisFake):
         def do_PUT(self):
             self._send(405, b"")
 
+        def _entry(self, message, raw):
+            return {
+                "method": "POST",
+                "path": self.path,
+                "headers": {key.lower(): value for key, value in self.headers.items()},
+                "body": message if isinstance(message, dict) else None,
+                "raw": raw.decode("utf-8", "replace"),
+            }
+
         def do_POST(self):
             if self.path != PATH:
                 self._send(404, b"")
                 return
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length else b""
-            try:
-                message = json.loads(raw.decode("utf-8"))
-            except ValueError:
-                message = None
             headers = {key.lower(): value for key, value in self.headers.items()}
-            entry = {
-                "method": "POST",
-                "path": self.path,
-                "headers": headers,
-                "body": message if isinstance(message, dict) else None,
-                "raw": raw.decode("utf-8", "replace"),
-            }
-            fake.record(entry)
-
-            if fake.delay_seconds:
-                time.sleep(fake.delay_seconds)
+            authorization = headers.get("authorization") or ""
+            # Authentication precedes body parsing (wire-contract.md): the body is drained but never
+            # parsed before the bearer is verified, so an unauthenticated oversize is 401 and not 413.
+            if authorization != "Bearer {0}".format(fake.token):
+                fake.record(self._entry(None, raw))
+                self._json(401, {"code": "unauthorized"})
+                return
 
             behavior = fake.behavior
             if behavior in {"redirect_same", "redirect_other"}:
+                fake.record(self._entry(None, raw))
                 self.send_response(int(fake.redirect_status))
                 self.send_header("Location", fake.redirect_to or fake.url)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
             if behavior == "413" or length > MAX_BODY:
+                fake.record(self._entry(None, raw))
                 self._json(413, {"code": "body_too_large"})
                 return
 
-            authorization = headers.get("authorization") or ""
-            expected = "Bearer {0}".format(fake.token)
-            if authorization != expected:
-                self._json(401, {"code": "unauthorized"})
-                return
+            try:
+                message = json.loads(raw.decode("utf-8"))
+            except ValueError:
+                message = _PARSE_ERROR
+            fake.record(self._entry(message, raw))
+
+            if fake.delay_seconds:
+                time.sleep(fake.delay_seconds)
 
             if behavior in {"401", "403", "404", "405"}:
                 self._send(int(behavior), b"")
                 return
-
-            if message is None:
+            if message is _PARSE_ERROR:
                 self._error(400, -32700, "Parse error")
                 return
             if not isinstance(message, dict):
@@ -204,11 +209,8 @@ def _make_handler(fake: ChassisFake):
                 return
 
             request_id = message.get("id")
-            if not _valid_id(request_id):
+            if _invalid_envelope(message) or not _valid_id(request_id):
                 self._error(400, -32600, "Invalid Request")
-                return
-            if message.get("jsonrpc") != "2.0":
-                self._error(400, -32600, "Invalid Request", request_id)
                 return
             if behavior == "badjson":
                 self._send(200, b"this is not json")
@@ -316,6 +318,21 @@ def _valid_id(value) -> bool:
     if isinstance(value, str):
         return 1 <= len(value) <= 128
     return False
+
+
+#: A body that could not be parsed is not the same as a body that parsed to ``null``.
+_PARSE_ERROR = object()
+
+_ENVELOPE_KEYS = frozenset({"jsonrpc", "id", "method", "params"})
+
+
+def _invalid_envelope(message: dict) -> bool:
+    """The closed request envelope: no unknown property and no missing version, id or method."""
+    if set(message) - _ENVELOPE_KEYS:
+        return True
+    if not {"jsonrpc", "id", "method"} <= set(message):
+        return True
+    return message.get("jsonrpc") != "2.0"
 
 
 def _invalid_arguments(arguments):

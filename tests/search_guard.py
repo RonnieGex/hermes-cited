@@ -20,7 +20,6 @@ from __future__ import annotations
 import ipaddress
 import os
 import socket
-import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -184,15 +183,18 @@ def require_names(env, names) -> None:
         raise GuardError("missing override(s) before any effect: {0}".format(", ".join(missing)))
 
 
-def guard_environment(env) -> None:
-    """Validate the overrides of a run: a safe temporary home and no forbidden destination."""
+def guard_environment(env, required=("HERMES_HOME", "CITED_URL")) -> Path:
+    """Validate the overrides of one run *before* any file, process or network effect.
+
+    A run without its temporary home or its test origin fails closed: the absent override raises
+    :class:`GuardError` and no effect follows. An accepted run returns the guarded ``HERMES_HOME``.
+    """
     source = env if env is not None else {}
-    home = str(source.get("HERMES_HOME") or "").strip()
-    if home:
-        guard_path(home, kind="HERMES_HOME")
+    require_names(source, required)
+    home = guard_path(str(source.get("HERMES_HOME") or "").strip(), kind="HERMES_HOME")
     url = str(source.get("CITED_URL") or "").strip()
-    if url:
-        guard_url(url)
+    guard_url(url)
+    return home
 
 
 def install_socket_guard(monkeypatch) -> None:
@@ -210,6 +212,3 @@ def install_socket_guard(monkeypatch) -> None:
 
     monkeypatch.setattr(socket.socket, "connect", connect, raising=True)
     monkeypatch.setattr(socket.socket, "connect_ex", connect_ex, raising=True)
-
-
-register_workspace(tempfile.gettempdir())
