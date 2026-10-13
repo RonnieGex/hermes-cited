@@ -172,3 +172,79 @@ def test_the_guard_knows_the_real_run_uses_a_temporary_home():
     """A guard that cannot see the personal path would be decoration: prove it resolves on this box."""
     assert guard.personal_home().name == "hermes"
     assert str(guard.personal_home()).lower().endswith(os.path.join("local", "hermes"))
+
+
+def test_the_fake_refuses_a_record_path_the_guard_rejects(tmp_path):
+    """M02: el guard precede al efecto; el ``--record`` fuera del taller registrado no crea archivo."""
+    import fakes.chassis_surface as fake_module
+
+    outside = tmp_path.parent / "r3-unregistered-log.jsonl"
+    with pytest.raises(guard.GuardError):
+        guard.guard_path(outside, kind="fake request log")
+    with pytest.raises(guard.GuardError):
+        fake_module.start_chassis(log_path=outside)
+    assert not outside.exists()
+
+
+def test_the_fake_cli_refuses_a_record_path_before_any_effect(tmp_path):
+    """M02: el entry point del script aplica el mismo guard antes de abrir el servidor.
+
+    La ruta elegida está fuera del directorio temporal del proceso y fuera de todo taller registrado, así que
+    el guard la rechaza antes de cualquier efecto (el hilo acota la espera en el estado RED).
+    """
+    import threading
+
+    import fakes.chassis_surface as fake_module
+
+    outside = Path.home() / "hermes-cited-r3-guard-probe" / "cli-log.jsonl"
+    outcome = {}
+
+    def run():
+        try:
+            fake_module.main(["--record", str(outside), "--port", "0", "--requests", "1"])
+        except BaseException as error:  # noqa: BLE001 - the guard error is the assertion
+            outcome["error"] = error
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(timeout=10)
+    assert isinstance(outcome.get("error"), guard.GuardError)
+    assert not outside.exists()
+
+
+def test_the_fake_cli_prepares_a_guarded_record_path(tmp_path):
+    """M02: un ``--record`` bajo el directorio temporal autoriza sólo su propio directorio padre."""
+    import fakes.chassis_surface as fake_module
+
+    record = tmp_path / "cli-record.jsonl"
+    guarded = fake_module.prepare_cli_guard(str(record))
+    assert guarded == record.resolve()
+    with pytest.raises(guard.GuardError):
+        fake_module.prepare_cli_guard(str(Path.home() / "hermes-cited-r3-guard-probe" / "cli.jsonl"))
+
+
+def test_the_fake_writes_its_record_only_inside_the_registered_workspace(tmp_path):
+    """M02: un ``--record`` registrado sí se escribe, y con el bearer redactado."""
+    import json as _json
+
+    import fakes.chassis_surface as fake_module
+
+    log = tmp_path / "r3-record.jsonl"
+    running = fake_module.start_chassis(log_path=log)
+    try:
+        token = running.token
+        import urllib.request
+
+        request = urllib.request.Request(
+            running.url + "/api/chassis/mcp",
+            data=_json.dumps({"jsonrpc": "2.0", "id": 7, "method": "tools/list", "params": {}}).encode(),
+            headers={"Content-Type": "application/json", "Authorization": "Bearer " + token},
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            assert response.status == 200
+    finally:
+        running.stop()
+    assert log.exists()
+    body = log.read_text(encoding="utf-8")
+    assert token not in body
+    assert '"method": "tools/list"' in body or '"method":"tools/list"' in body

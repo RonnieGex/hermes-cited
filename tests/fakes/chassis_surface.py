@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -101,7 +102,8 @@ class ChassisFake:
         self.passages = [dict(passage) for passage in PASSAGES]
         self.requests = []
         self.url = ""
-        self.log_path = Path(log_path) if log_path else None
+        #: Task 1.1/M02: the record file is a write effect, so it is guarded before the fake exists.
+        self.log_path = Path(search_guard.guard_path(log_path, kind="fake request log")) if log_path else None
         self.recorded = []
 
     def record(self, entry: dict) -> None:
@@ -377,9 +379,15 @@ class RunningChassis:
 
 
 def start_chassis(port=0, token=SEARCH_TOKEN, behavior="ok", log_path=None) -> RunningChassis:
-    """Start one fake on a guarded free loopback port and return it."""
+    """Start one fake on a guarded free loopback port and return it.
+
+    M02: both the port and the record file are checked *before* the server is created, so a rejected
+    destination cannot leave a socket open or a file behind.
+    """
     if port:
         search_guard.guard_target("127.0.0.1", port)
+    if log_path:
+        search_guard.guard_path(log_path, kind="fake request log")
     fake = ChassisFake(token=token, behavior=behavior, log_path=log_path)
     server = ThreadingHTTPServer(("127.0.0.1", port), _make_handler(fake))
     server.daemon_threads = True
@@ -390,10 +398,32 @@ def start_chassis(port=0, token=SEARCH_TOKEN, behavior="ok", log_path=None) -> R
     return running
 
 
+def prepare_cli_guard(record_path, workspaces=()) -> Path:
+    """M02: register the declared workspaces and validate ``--record`` before any effect.
+
+    The script is an entry point of its own, so it has no pre-registered workspace. A caller declares one
+    with ``--workspace``; a record file under the process temporary directory additionally authorises only
+    its own parent directory, never all of ``tempfile.gettempdir()``. Anything else fails closed here.
+    """
+    for workspace in workspaces or ():
+        search_guard.register_workspace(workspace)
+    if not record_path:
+        return None
+    target = Path(record_path).expanduser().resolve(strict=False)
+    temp_root = Path(tempfile.gettempdir()).resolve(strict=False)
+    parent = target.parent
+    if parent == temp_root or temp_root in parent.parents:
+        search_guard.register_workspace(parent)
+    return search_guard.guard_path(target, kind="fake request log")
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Fake of the Cited search-only chassis surface (wire v1).")
     parser.add_argument("--port", type=int, default=0, help="loopback port; 0 picks a free one")
     parser.add_argument("--record", default="", help="append every redacted request as one JSON line")
+    parser.add_argument(
+        "--workspace", action="append", default=[], help="a directory this run may write under"
+    )
     parser.add_argument("--token", default=SEARCH_TOKEN, help="synthetic bearer expected by the fake")
     parser.add_argument("--behavior", default="ok", choices=BEHAVIORS)
     parser.add_argument("--requests", type=int, default=0, help="stop after N requests (0 = until killed)")
@@ -401,7 +431,8 @@ def main(argv=None) -> int:
     parser.add_argument("--redirect-to", default="")
     args = parser.parse_args(argv)
 
-    running = start_chassis(port=args.port, token=args.token, behavior=args.behavior, log_path=args.record or None)
+    record = prepare_cli_guard(args.record, args.workspace)
+    running = start_chassis(port=args.port, token=args.token, behavior=args.behavior, log_path=record)
     running.fake.redirect_status = args.redirect_status
     running.fake.redirect_to = args.redirect_to
     print("chassis fake on {0} (path {1})".format(running.url, PATH), flush=True)
