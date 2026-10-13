@@ -364,3 +364,11 @@ The correction run performs no archive, merge or push; the future implementation
       GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-fix-size
       .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
       -k lock_size`: 1 passed, 12 deselected in 1.61s.
+- [x] 12.5 Task 1.1: never implicitly register the whole system temporary directory for --record.
+      RED: `test_bridge_codex_r3.py -k cli_record`: 1 failed, 13 deselected in 3.66s;
+      prepare_cli_guard accepts a file directly under the temporary root and registers that root.
+      Evidence: `bridge-codex-r3-guard-red.log`. No file or server is created by this predicate probe.
+      GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-fix-guard
+      .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
+      -k cli_record`: 1 passed, 13 deselected in 1.43s. Regression: `pytest -q -p no:cacheprovider
+      tests/test_search_guard.py tests/test_chassis_fake.py`: 47 passed in 9.29s.

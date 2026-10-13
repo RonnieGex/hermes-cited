@@ -412,7 +412,7 @@ def prepare_cli_guard(record_path, workspaces=()) -> Path:
     target = Path(record_path).expanduser().resolve(strict=False)
     temp_root = Path(tempfile.gettempdir()).resolve(strict=False)
     parent = target.parent
-    if parent == temp_root or temp_root in parent.parents:
+    if temp_root in parent.parents:
         search_guard.register_workspace(parent)
     return search_guard.guard_path(target, kind="fake request log")
 
