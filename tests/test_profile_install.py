@@ -148,10 +148,9 @@ def _read_bridge_lock(path) -> BridgeLock:
         raise ValueError("bridge.lock must be a JSON object")
     sha = str(data.get("sha") or "").strip()
     digest = str(data.get("sha256") or "").strip().lower()
-    try:
-        size = int(data.get("size"))
-    except (TypeError, ValueError):
-        raise ValueError("bridge.lock must carry the byte size of the canonical archive") from None
+    size = data.get("size")
+    if isinstance(size, bool) or not isinstance(size, int):
+        raise ValueError("bridge.lock must carry an integer byte size of the canonical archive")
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("bridge.lock must carry the full 40-hex commit")
     if not re.fullmatch(r"[0-9a-f]{64}", digest):

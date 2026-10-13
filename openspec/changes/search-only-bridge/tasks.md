@@ -358,3 +358,9 @@ The correction run performs no archive, merge or push; the future implementation
       GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-fix-archive
       .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
       -k archive_digest`: 1 passed, 12 deselected in 3.37s.
+- [x] 12.4 D5: require the lock byte size to be an integer without numeric coercion.
+      RED: external `test_bridge_codex_r3.py -k lock_size` accepts 10240.75 as 10240 bytes.
+      Evidence: `bridge-codex-r3-real-red.log` records DID NOT RAISE.
+      GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-fix-size
+      .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
+      -k lock_size`: 1 passed, 12 deselected in 1.61s.
