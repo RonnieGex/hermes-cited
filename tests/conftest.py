@@ -8,13 +8,33 @@ reports/2026-10-09-cited-runbook.md).
 from __future__ import annotations
 
 import json
+import os
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import search_guard  # noqa: E402  (the guard lives beside this file)
+
 TOKEN = "cited-test-token-6f2c1a0d"
+
+
+@pytest.fixture(autouse=True)
+def forbidden_target_guard(monkeypatch, tmp_path):
+    """Task 1.1: no test can reach a personal port, and every test has a registered workspace.
+
+    The socket guard is installed for the whole suite, so an accidental request to 3240/3241 fails here
+    instead of reaching a personal service. Tests that write under ``HERMES_HOME`` call
+    ``search_guard.guard_path`` themselves to prove the path stays inside the temporary workspace.
+    """
+    search_guard.install_socket_guard(monkeypatch)
+    search_guard.register_workspace(tmp_path)
+    yield
 
 PASSAGES = [
     {
@@ -243,6 +263,39 @@ def _make_handler(fake):
             )
 
     return Handler
+
+
+@pytest.fixture()
+def chassis():
+    """One started fake of the search-only chassis surface, stopped with the test."""
+    import importlib
+
+    module = importlib.import_module("fakes.chassis_surface")
+    running = module.start_chassis()
+    try:
+        yield running
+    finally:
+        running.stop()
+
+
+@pytest.fixture()
+def chassis_factory():
+    """Build as many chassis fakes as one test needs, and stop every one of them."""
+    import importlib
+
+    module = importlib.import_module("fakes.chassis_surface")
+    running = []
+
+    def factory(**kwargs):
+        started = module.start_chassis(**kwargs)
+        running.append(started)
+        return started
+
+    try:
+        yield factory
+    finally:
+        for started in running:
+            started.stop()
 
 
 @pytest.fixture()
