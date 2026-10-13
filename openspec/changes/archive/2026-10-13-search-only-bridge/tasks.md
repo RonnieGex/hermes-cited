@@ -164,10 +164,17 @@ The correction run performs no archive, merge or push; the future implementation
       opción siempre»), recorded with its reasons in `katalis-dev/tasks/aceptaciones.md`; the same entry
       authorizes the merge into `main` and the push, because the Harness contract (task 1.1 of
       `harness-foundation`) is blocked on exactly that merge.
-- [ ] 7.4 After the authorized merge, record full merge SHA, SHA-256 and byte size of
+- [x] 7.4 After the authorized merge, record full merge SHA, SHA-256 and byte size of
       `git archive --format=tar <sha>` without prefix/gzip for A's bridge.lock. Never use this spec commit as a
       completed bridge pin. Update the consuming lock in a later commit.
-      Not executed: it depends on the forbidden merge.
+      Merged into `main` on 2026-10-13 as `1c7bbd046d32c9662a80535d70e3e6aaf74a6fc1` (`--no-ff`). In a fresh
+      clone from GitHub, `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1 git -c
+      core.attributesFile=/dev/null archive --format=tar --output=<file> 1c7bbd046d32c9662a80535d70e3e6aaf74a6fc1`
+      produced, twice, **2181120 bytes** with SHA-256
+      **b56631d8d7cca6f14433095dfad74261527e35864490b14d711ddf6d30634a45**. Remote CI `tests` on the merge
+      commit: success on ubuntu-latest and windows-latest (Python 3.11), run 38474829570. The consuming lock
+      (`scripts/install/bridge.lock` of cited-ledger-harness, task 1.1 of harness-foundation) is written in that
+      repository in a later commit with exactly these values.
 
 ## 8. Round 1 review corrections
 - [x] 8.1 Enforce H6/H21 redaction on invalid search arguments. External new probe:
