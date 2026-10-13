@@ -314,8 +314,8 @@ The correction run performs no archive, merge or push; the future implementation
       `reports/2026-10-13-step-13-r4-core.md`.
       Reclosed in bridge2 R2: the D6/H14 closure was reopened by the bridge2 round 1 counterexamples. The
       turn cap is now per owner and an explicit unmatched execution identity is refused. RED 2 failed in
-      1.45s → GREEN `tests/test_round4_amendments.py` 9 passed in 2.49s; the ported probes are 152 passed,
-      1 deselected in 70.22s, the external `test_bridge2_codex_r1.py` is 12 passed, and the D6/H14
+      1.45s → GREEN `tests/test_round4_amendments.py` 9 passed in 2.49s; the ported probes are 156 passed,
+      1 deselected in 71.92s, the external `test_bridge2_codex_r1.py` is 12 passed, and the D6/H14
       regression subsets are 286 passed in 133.64s and 101 passed, 1 skipped in 59.08s. Evidence:
       `reports/2026-10-13-step-15-turn-identity-b2r1.md`.
 - [x] 11.2 B01 — reproduce the three paths over the real pinned `agent.secret_scope`.

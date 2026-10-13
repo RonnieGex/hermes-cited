@@ -62,7 +62,7 @@ La sonda de evidencia documental queda RED por diseño; se cierra con los report
 # 12 passed in 3.60s
 
 .venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_bridge2_amendments.py tests/regressions/test_r3_regressions.py -k "not reopened_rounds"
-# 152 passed, 1 deselected in 70.22s
+# 156 passed, 1 deselected in 71.92s
 ```
 
 Regresiones H14/D6 de `full` (sin cambio de comportamiento fuera de D6-D8):
