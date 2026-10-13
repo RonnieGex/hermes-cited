@@ -222,3 +222,9 @@ The correction run performs no archive, merge or push; the future implementation
       -k http_failure`: 4 passed, 15 deselected in 0.69s; `tests/test_search_wire.py
       -k 'bad_response or exception or reflected'`: 14 passed, 55 deselected in 7.41s.
       External evidence: `bridge-r2-fix-http.log`, `bridge-r2-http-regression.log`.
+- [x] 10.3 D2: contain membership and getter failures while reading a profile setting.
+      RED: external R2 `test_registration_contains_scope_getter_failure` raises the raw getter exception
+      out of registration instead of refusing with the fixed scope sentence.
+      GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py
+      -k scope_getter`: 1 passed, 18 deselected in 0.58s; `tests/test_profile_scope.py`: 26 passed in 4.35s.
+      External evidence: `bridge-r2-fix-getter.log`, `bridge-r2-getter-regression.log`.

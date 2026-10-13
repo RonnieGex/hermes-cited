@@ -110,11 +110,14 @@ class ProfileScope:
 
     def get(self, name, default=""):
         """The documented default when the key is absent; never a process-environment fallback."""
-        if name not in self.values:
-            return default
-        reader = self.getter
-        value = reader(name, default) if reader is not None else self.values.get(name, default)
-        return default if value is None else str(value)
+        try:
+            if name not in self.values:
+                return default
+            reader = self.getter
+            value = reader(name, default) if reader is not None else self.values.get(name, default)
+            return default if value is None else str(value)
+        except Exception:
+            raise CitedScopeError(SCOPE_SENTENCE) from None
 
 
 _SCOPE_STACK: contextvars.ContextVar = contextvars.ContextVar("hermes_cited_profile_scope", default=None)
