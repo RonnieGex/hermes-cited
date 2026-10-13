@@ -98,7 +98,7 @@ entorno raíz.
 ### El wire de búsqueda, versión 1
 
 La herramienta de búsqueda habla el wire v1 cerrado de
-`openspec/changes/search-only-bridge/wire-contract.md`: solo `POST /api/chassis/mcp` con
+`openspec/changes/archive/2026-10-13-search-only-bridge/wire-contract.md`: solo `POST /api/chassis/mcp` con
 `Content-Type: application/json` y `Authorization: Bearer <CITED_SEARCH_TOKEN>`, cuerpo máximo de 16 KiB,
 `tools/list` y `tools/call` autenticados. `CITED_URL` debe ser un origen http/https explícito, sin userinfo,
 sin ruta (ni una barra final), sin query y sin fragmento. Todo 3xx se rechaza sin una segunda petición, así

@@ -2,7 +2,7 @@
 
 This manual is the reference of the two modes of the plugin, the profile-scoped configuration, the search
 wire and the pinned per-profile installation. It describes the implementation of
-`openspec/changes/search-only-bridge`; the normative contracts are `spec.md` (H0-H22),
+`openspec/changes/archive/2026-10-13-search-only-bridge`; the normative contracts are `spec.md` (H0-H22),
 `design.md` (D1-D10) and `wire-contract.md` of that change.
 
 ## 1. The closed mode switch

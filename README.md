@@ -96,7 +96,7 @@ secret of the profile whose callback failed, never with the root environment's.
 
 ### The search wire, version 1
 
-The search tool speaks the closed wire v1 of `openspec/changes/search-only-bridge/wire-contract.md`: only
+The search tool speaks the closed wire v1 of `openspec/changes/archive/2026-10-13-search-only-bridge/wire-contract.md`: only
 `POST /api/chassis/mcp` with `Content-Type: application/json` and `Authorization: Bearer
 <CITED_SEARCH_TOKEN>`, a 16 KiB body limit, an authenticated `tools/list` and `tools/call`. `CITED_URL` must
 be an explicit http/https origin with no userinfo, path (not even a trailing slash), query or fragment.
