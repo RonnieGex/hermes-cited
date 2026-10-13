@@ -253,6 +253,7 @@ def _effective_catalog(python, profile_home) -> dict:
     """Ask the pinned host's real loader for the effective catalog of one profile (M01)."""
     completed = subprocess.run(
         [str(python), "-c", CATALOG_PROBE, str(profile_home)],
+        env=dict(os.environ, HERMES_HOME=str(profile_home), PYTHONDONTWRITEBYTECODE="1"),
         capture_output=True,
         text=True,
         timeout=300,

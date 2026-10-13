@@ -333,3 +333,14 @@ The correction run performs no archive, merge or push; the future implementation
       round. `.venv/Scripts/python -m pytest -q`: 898 passed, 4 skipped in 314.14s (0:05:14);
       `openspec validate --all --strict`: 2 passed, 0 failed; gitleaks clean before each commit.
       Evidence: `reports/2026-10-12-step-11-suite-r3.md`.
+
+## 12. Independent round 3 review corrections
+- [x] 12.1 H22/D4: run the real catalog subprocess with the supplied profile as HERMES_HOME.
+      RED: external `test_bridge_codex_r3.py -k new_catalog_probe`, executed through
+      `../tasks/bridge-codex-r3-run.py`: the real pinned loader discovers no hermes-cited plugin and
+      dispatch returns Unknown tool: cited_search. Evidence: `bridge-codex-r3-real-red.log` outside
+      the repository. Preserve the profile scope and test a successful real dispatch after correction.
+      GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-fix-catalog
+      .venv/Scripts/python.exe -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
+      -k new_catalog_probe`: 1 passed, 12 deselected in 4.45s. The real catalog has one search tool,
+      zero full hooks and a successful scoped HTTP call. This is loader integration, not the VM install.
