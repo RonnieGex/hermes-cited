@@ -136,3 +136,7 @@ The correction run performs no archive, merge or push; the future implementation
       RED: 1 failed, 22 deselected. Preserve the original reports as historical evidence.
       GREEN: the same command returned 1 passed, 22 deselected in 1.28s;
       `openspec validate --all --strict`: 2 passed, 0 failed.
+- [x] 8.8 Update the remaining registration regression to reject padded uppercase mode values under H19.
+      RED: the full suite returned 1 failed, 833 passed, 1 skipped in 272.51s;
+      `test_absent_empty_and_full_register_the_full_surface[ FULL ]` still asserted the undocumented behavior.
+      GREEN: `.venv/Scripts/python -m pytest -q tests/test_search_only_mode.py`: 11 passed in 5.54s.

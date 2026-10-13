@@ -19,7 +19,7 @@ FIXTURE = REPO / "openspec" / "changes" / "search-only-bridge" / "fixtures" / "s
 MCP_TOKEN = "mcp-token-5e1c0a"  # synthetic
 
 
-@pytest.mark.parametrize("value", [None, "", "full", " FULL "])
+@pytest.mark.parametrize("value", [None, "", "full"])
 def test_absent_empty_and_full_register_the_full_surface(value, tmp_path):
     values = {"CITED_URL": "http://127.0.0.1:60123", "CITED_MCP_TOKEN": MCP_TOKEN}
     if value is not None:
@@ -46,9 +46,10 @@ def test_search_registers_exactly_one_tool_and_nothing_else(chassis, tmp_path):
     assert context.skills == {}
 
 
-def test_an_unknown_mode_registers_nothing_with_a_redacted_error(tmp_path, capsys):
+@pytest.mark.parametrize("value", ["bridge", " FULL "])
+def test_an_unknown_mode_registers_nothing_with_a_redacted_error(tmp_path, capsys, value):
     values = {
-        "CITED_BRIDGE_TOOLS": "bridge",
+        "CITED_BRIDGE_TOOLS": value,
         "CITED_URL": "http://127.0.0.1:60123",
         "CITED_MCP_TOKEN": MCP_TOKEN,
         "CITED_SEARCH_TOKEN": "search-token-9ab34f",
