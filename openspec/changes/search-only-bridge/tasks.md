@@ -563,3 +563,15 @@ The correction run performs no archive, merge or push; the future implementation
       with their measured reports instead of requiring them open. RED 2 failed in 1.45s → GREEN 9 passed in
       2.49s; the full round evidence is in `reports/2026-10-13-step-15-turn-identity-b2r1.md`,
       `reports/2026-10-13-step-15-install-b2r1.md` and `reports/2026-10-13-step-15-close-b2r1.md`.
+
+## 15. Bridge2 round 2 independent review corrections
+- [x] 15.1 H21/wire v1: reject malformed UTF-8 response bytes before exposing search passages.
+      External new probe: `../tasks/test_bridge2_codex_r2.py -k invalid-utf8`.
+      RED: `pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r2.py` accepts invalid byte 0xff
+      in both content and excerpt and exposes replacement characters as documentary text.
+      Evidence: `C:/Users/Franc/Documents/katalis-dev/tasks/bridge2-codex-r2-probes-red.log`.
+      Planned correction: decode the search response strictly inside its existing failure boundary;
+      retain the full-mode decoder and its compatibility behavior.
+      GREEN: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider
+      ../tasks/test_bridge2_codex_r2.py -k invalid-utf8`: 1 passed, 12 deselected in 1.11s.
+      External `bridge2-codex-r2-fix-utf8.log` records the fixed diagnostic and unchanged temporary home.

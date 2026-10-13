@@ -353,7 +353,7 @@ def call_tool_search(settings, arguments, request_id: int = 1) -> SearchResult:
 
     try:
         with response:
-            raw = _read_body(response)
+            raw = response.read().decode("utf-8")
             status = getattr(response, "status", 200)
     except Exception:
         raise _fail("the answer of Cited at {0} could not be read.".format(_origin_of(endpoint)), token)
