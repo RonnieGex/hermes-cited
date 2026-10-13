@@ -338,7 +338,7 @@ def call_tool_search(settings, arguments, request_id: int = 1) -> SearchResult:
                 "surface.",
                 token,
             )
-        raise _fail(_json_rpc_sentence(raw, status), token)
+        raise _fail("Cited refused the search request (HTTP {0}).".format(status), token)
     except CitedError:
         raise
     except TimeoutError:
@@ -359,7 +359,7 @@ def call_tool_search(settings, arguments, request_id: int = 1) -> SearchResult:
         raise _fail("the answer of Cited at {0} could not be read.".format(_origin_of(endpoint)), token)
 
     if status >= 400:
-        raise _fail(_json_rpc_sentence(raw, status), token)
+        raise _fail("Cited refused the search request (HTTP {0}).".format(status), token)
     try:
         envelope = json.loads(raw)
     except ValueError:

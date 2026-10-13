@@ -215,3 +215,10 @@ The correction run performs no archive, merge or push; the future implementation
       `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_profile_scope.py`: 26 passed in 5.98s.
       Logs are external by the owner's instruction: `bridge-r2-adversarial-before.log`,
       `bridge-r2-fix-host.log`, `bridge-r2-host-regression.log`. Independent approval remains pending.
+- [x] 10.2 H21: discard remote HTTP error text in search diagnostics.
+      RED: external R2 probe `test_http_failure_does_not_publish_remote_error_text` failed for HTTP
+      400, 429, 500 and 503; each copied the server's private error message into the model response.
+      GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py
+      -k http_failure`: 4 passed, 15 deselected in 0.69s; `tests/test_search_wire.py
+      -k 'bad_response or exception or reflected'`: 14 passed, 55 deselected in 7.41s.
+      External evidence: `bridge-r2-fix-http.log`, `bridge-r2-http-regression.log`.
