@@ -10,6 +10,9 @@ context: |
   selected token and the audit path of a turn come from that profile and not from the process root.
   Live turns are keyed by that profile's canonical home together with the host session and turn identifiers, so
   identical identifiers in two profiles are two turns and a refused foreign callback performs no cleanup. The
+  turn table's capacity is per profile: the oldest turn of the calling owner is evicted, never another
+  profile's pending turn, and an explicit execution identifier that resolves to no open turn is refused
+  instead of quoting a different live turn. The
   persisted conversation mode uses the host's plain mode.profile key, which the host partitions per home: the
   plugin never prefixes it with a path or NUL and never hides a host key error. A failure diagnostic is redacted
   with the secret of the profile whose callback failed, tracebacks included. The disposable install runner

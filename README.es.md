@@ -86,7 +86,9 @@ ese perfil, nunca de la raíz del proceso. Una llamada en otro home o con un mod
 cualquier efecto, así que ninguna evidencia, modo o bitácora de un perfil se sirve desde otro. Los turnos vivos
 se indexan por el home de ese perfil junto con los identificadores de sesión y de turno, así que dos perfiles
 que reciben los mismos identificadores conservan dos turnos independientes y un callback ajeno rechazado no
-limpia nada. El modo persistido de la conversación usa la clave plana `mode.profile` del propio host, que el
+limpia nada. La capacidad de la tabla de turnos es por perfil, así que un perfil ocupado nunca expulsa el turno
+pendiente de otro, y un identificador de ejecución explícito que no resuelve ningún turno abierto se rechaza en
+lugar de citar otro turno vivo. El modo persistido de la conversación usa la clave plana `mode.profile` del propio host, que el
 host particiona por home del perfil, de modo que un modo escrito por una versión anterior se honra sin
 migración. Un diagnóstico de fallo se redacta con el secreto del perfil cuyo callback falló, nunca con el del
 entorno raíz.

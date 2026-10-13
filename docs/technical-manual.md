@@ -68,7 +68,12 @@ Round 4 (D6-D8) makes that binding explicit:
   the host session and turn identifiers, so two profiles that receive identical `session_id`/`turn_id` values
   hold two independent turns. A callback whose active scope resolves to another home or mode is refused before
   any turn is read, created or dropped, and the refusal performs no cleanup; the transformer drops only the
-  turn its own validated call owns, through the same key.
+  turn its own validated call owns, through the same key. The turn table's capacity is per profile as well:
+  the oldest key of the calling owner is evicted, never the first key of the whole table, so a busy profile
+  cannot remove another profile's pending turn. An explicit execution identity (`turn_id` or `task_id`) that
+  resolves to no open turn is refused instead of falling back to the only active turn; the implicit form with
+  no identity still uses the single open turn and refuses an ambiguous session. Both rules are ported as
+  regressions in `tests/test_round4_amendments.py` (D6/M01-B2R1, H14/M02-B2R1).
 - **Persisted mode (D7).** The host's `PluginState` already partitions its state per profile home, so the
   plugin writes the plain `mode.profile` key of the previous version and never a path or NUL prefix. Every key
   satisfies the host pattern `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`; a `mode.profile` value written before the

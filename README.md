@@ -84,8 +84,10 @@ registered them, and the default mode, the language, the selected token and the 
 that profile, never from the process root. A call in another home or with a changed mode is refused before any
 effect, so no evidence, mode or log of one profile is served from another. Live turns are keyed by that
 profile's home together with the session and turn identifiers, so two profiles that receive the same
-identifiers keep two independent turns and a refused foreign callback cleans up nothing. The persisted
-conversation mode uses the host's own plain `mode.profile` key, which the host partitions per profile home, so
+identifiers keep two independent turns and a refused foreign callback cleans up nothing. The turn table's
+capacity is per profile, so a busy profile never evicts another profile's pending turn, and an explicit
+execution identifier that resolves to no open turn is refused instead of quoting a different live turn. The
+persisted conversation mode uses the host's own plain `mode.profile` key, which the host partitions per profile home, so
 a mode written by an older version is honoured without migration. A failure diagnostic is redacted with the
 secret of the profile whose callback failed, never with the root environment's.
 
