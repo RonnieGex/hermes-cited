@@ -532,6 +532,18 @@ fallback. Registration mode SHALL be immutable until registration is repeated.
 - **WHEN** profiles A/B register and call concurrently with different tokens, URLs and modes and a contradictory root environment
 - **THEN** each uses only its own values and a missing, changed-home or failing scope sends zero requests
 
+#### Scenario: Identical execution identifiers in two profiles are two turns
+- **WHEN** two full registrations with different homes open turns with the same session and turn identifiers through the real secret scope
+- **THEN** each pre-hook SHALL return its own profile's rules, nothing SHALL raise, and dropping one turn SHALL leave the other intact
+
+#### Scenario: A refused foreign callback leaves the owner's turn intact
+- **WHEN** an owner opens a turn and a callback with the same identifiers runs under another profile's scope
+- **THEN** the call SHALL be refused before any turn is read or dropped, and the owner's later lookup SHALL return its live turn
+
+#### Scenario: Failure diagnostics keep the profile redaction
+- **WHEN** a command or transformer callback fails with an exception that includes the profile's synthetic secret while the root environment holds a different synthetic secret
+- **THEN** no returned message, log record or traceback SHALL contain the profile's secret, and the profile's identity and configuration SHALL remain valid for its next call
+
 ### Requirement: H20 - Search registers one tool and writes nothing
 
 Search SHALL register only cited_search with wire v1 arguments and no command, hook, skill or audit writer.
@@ -580,3 +592,11 @@ Full SHALL retain H0-H18, and spec synchronization SHALL find no duplicate requi
 - **WHEN** the agent installs the pinned bridge in a new disposable profile using the D4 command after writing search configuration
 - **THEN** the profile home holds that commit/digest, the catalog has cited_search only, a scoped call succeeds,
   full hooks are absent, and root values cannot change its mode
+
+#### Scenario: Persisted mode survives the upgrade with host-valid keys
+- **WHEN** `mode.profile=cited` was stored through the pinned host's real PluginState before registration, the registration runs with default `dot`, `/cited` and `/dot` are executed and the next turn opens
+- **THEN** every key SHALL satisfy the host pattern, the stored mode SHALL be honoured, the commands SHALL persist through that real state, and the pre-hook SHALL return the rules of the persisted mode
+
+#### Scenario: Offline provisioning reaches the catalog comparison
+- **WHEN** the disposable runner provisions the host's required runtimes before closing the network and installs the pinned bridge
+- **THEN** no download SHALL be attempted, the install SHALL complete, the catalog SHALL hold `cited_search` only, a scoped dispatch SHALL succeed, and the full profile inventory after setup SHALL equal its baseline

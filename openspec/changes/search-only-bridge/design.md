@@ -63,3 +63,46 @@ no tar.umask override), honoring only tracked .gitattributes, so producer and ve
 Use Git's binary --output option when capturing bytes on Windows; PowerShell text redirection is forbidden.
 README examples use an existing tested commit; the final release lock is written in a later consumer commit,
 never a self-referential hash. This correction run commits specifications only, without archive, merge or push.
+
+## D6. Turn identity and lifecycle belong to the registering profile (round 4 amendment)
+
+Every live turn is keyed by the canonical profile home captured at registration plus the host session and turn
+identifiers. Two registrations with different homes and identical session/turn identifiers are two independent
+turns. A callback whose current secret scope resolves to a different home, or to a different mode, than its
+registration is refused before any turn is read, created or dropped, and the refusal performs no cleanup.
+`_drop_turn` and every other cleanup run only for the turn the current callback owns, resolved through the same
+(home, session, turn) key, never through a module-global lookup by session and turn alone. Eviction and migration
+of the turn table use the same key, so a colliding owner never receives `None` where a turn is expected.
+
+## D7. Persisted mode uses host-valid keys and keeps compatibility (round 4 amendment)
+
+The pinned host's `PluginState` already partitions state per profile home. The plugin therefore uses the plain key
+`mode.profile`, the key of the version before this change, and never prefixes keys with paths, NUL or any character
+outside the host pattern `^[A-Za-z0-9_.:-]{1,128}$` without `..`. A `mode.profile` value written by the previous
+version is honoured after the upgrade without migration. `get` does not turn a host validation error into the
+default: an invalid key is a defect, surfaced by a test that runs the real `hermes_cli.plugins_state.PluginState`
+of the pinned host in a temporary profile. `/cited` and `/dot` persist through that real state.
+
+## D8. Failure diagnostics keep the profile's redaction context (round 4 amendment)
+
+The redaction set of a diagnostic is the one of the profile whose callback failed. `_profile_call` keeps the call
+context active, or hands the resolved redaction set explicitly, until the failure has been reported, so
+`_report_failure` and every logger record, tracebacks included, are redacted with the failing profile's secrets and
+not with the root environment's. No logger output contains a profile secret. The test places synthetic secret A in
+the profile and a different synthetic secret in the root environment, provokes the command-mode and transformer
+failures of the third review, captures every log record and asserts that none carries A.
+
+## D9. The install test provisions the host's runtimes offline (round 4 amendment)
+
+Before the network is closed, the disposable install runner provisions every runtime the pinned host's
+`plugins install` requires beyond the venv: at pin `dce1e9b37581dd62e480a9064dc04a709c2940d3` that is the managed
+CPython 3.14.7 the host's package manager tries to download. The report records the interpreter version, the
+SHA-256 of the provisioned archive, its install path and the environment variables that point the host to it.
+During the test the network stays closed; a download attempt is a failure, never a skip. The test then reaches the
+catalog comparison and compares the full inventory of the profile home after setup against its baseline (D5), not
+only the absence of `cited/`.
+
+## D10. The Ledger holdout is not a criterion of this change (round 4 amendment)
+
+R10 of `contrato-ledger-consulta-atomica.md` measures the lexical gate of `cited-ledger`. It is not a requirement of
+this plugin and its result does not enter this change's verdict; the bridge reviewer measures the bridge.

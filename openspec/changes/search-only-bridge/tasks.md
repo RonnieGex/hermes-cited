@@ -408,3 +408,25 @@ The correction run performs no archive, merge or push; the future implementation
       External supervisor `bridge-codex-r3-run.py bridge-codex-r3-linux-native9 docker run ...`
       records exit 1, 92.38s, unchanged outer home and process_stopped=true. The exact argv and
       independent integration evidence are in `reports/2026-10-12-step-12-install-codex-r3.md`.
+
+## 13. Round 4 implementation (contract amendment D6-D10 by Fable, 2026-10-12)
+- [ ] 13.0 Read the third review and design D6-D10 before any code. Port the six failing external probes of the
+      third review (owner collision, refused foreign callback, real PluginState keys, persisted mode, command and
+      transformer diagnostics) into `tests/` as RED regression cases that use the real `agent.secret_scope` and the
+      real `PluginState` of the pinned host; record the red run in a report.
+- [ ] 13.1 D8 (B01-R3): diagnostics redacted with the failing profile's set. `tests/test_profile_callbacks.py`
+      captures every log record and asserts that no synthetic profile secret appears in messages or tracebacks.
+      GREEN with counts.
+- [ ] 13.2 D6 (M01-R3): turn table keyed by (home, session, turn); refusal before any turn access; cleanup only of
+      the owned turn; eviction and migration on the same key. GREEN for both H19 scenarios plus the H14 regressions.
+- [ ] 13.3 D7 (M02-R3): plain `mode.profile` key through the real PluginState; no path or NUL prefix; `get` never
+      hides a host validation error; the legacy value is honoured after the upgrade; `/cited` and `/dot` persist.
+      GREEN with the real host state.
+- [ ] 13.4 D9 (M03-R3): offline provisioning of the host's required runtimes in the Linux runner (versions and
+      digests recorded), network closed, install completes, catalog and scoped dispatch verified, full profile
+      inventory compared with the post-setup baseline (`tests/test_profile_install.py` compares the whole profile,
+      not only `cited/`). Re-run 5.3 and record it; a download attempt is a failure, not a skip.
+- [ ] 13.5 Close 11.1, 11.4 and 11.6 only with the evidence of 13.1-13.4; update the living context and the manuals
+      where D6-D9 changed behaviour; `openspec validate --all --strict` green.
+- [ ] 13.6 Full suite with counts and runtime; `gitleaks protect --staged` before every commit; no `tasks/` inside
+      the repository; delivery with `## Issues`.
