@@ -128,6 +128,8 @@ def _check_host_pin(host_root, expected=HOST_PIN) -> str:
         raise ValueError(
             "the host checkout is {0}, not the pinned host {1}".format(head or "<unknown>", expected)
         )
+    if _git(Path(host_root), "status", "--porcelain", "--untracked-files=no").strip():
+        raise ValueError("the pinned host checkout has tracked modifications")
     return head
 
 

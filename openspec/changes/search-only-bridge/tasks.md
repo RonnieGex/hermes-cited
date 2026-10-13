@@ -344,3 +344,10 @@ The correction run performs no archive, merge or push; the future implementation
       .venv/Scripts/python.exe -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
       -k new_catalog_probe`: 1 passed, 12 deselected in 4.45s. The real catalog has one search tool,
       zero full hooks and a successful scoped HTTP call. This is loader integration, not the VM install.
+- [x] 12.2 D4: reject tracked host modifications even when HEAD still equals the expected pin.
+      RED: `test_bridge_codex_r3.py -k host_pin_rejects_modified` accepts a changed tracked file;
+      `bridge-codex-r3-real-red.log` records DID NOT RAISE. This check validates checkout cleanliness,
+      not the provenance of executables installed in the host venv.
+      GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-fix-host
+      .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
+      -k host_pin_rejects_modified`: 1 passed, 12 deselected in 1.87s.
