@@ -33,7 +33,7 @@ The correction run performs no archive, merge or push; the future implementation
       Closed in R2: authentication precedes body parsing, the envelope is closed, `null` is -32600 and an
       invalid version or id answers a null id. RED 5 failed, 11 passed; GREEN 16 passed in 10.12s;
       probe case `delivered_fake_conforms` 4 passed. Evidence: `reports/2026-10-12-step-1-wire-fake-r2.md`.
-- [ ] 1.3 RED `tests/test_search_only_mode.py`, `tests/test_profile_scope.py`, `tests/test_search_wire.py` for every
+- [x] 1.3 RED `tests/test_search_only_mode.py`, `tests/test_profile_scope.py`, `tests/test_search_wire.py` for every
       H19-H21 scenario and Mapping access spies. Record before/after including failure paths.
       Evidence: `reports/2026-10-12-step-1-red.md`, `reports/2026-10-12-step-2-implementation.md`.
       Reopened in R1: missing-scope registration and real multiplex root fallback are not covered by these tests.
@@ -44,6 +44,8 @@ The correction run performs no archive, merge or push; the future implementation
       Reclosed in R3: B01 — the full callbacks and their turn state are bound to the registering profile; the
       new cases are `tests/test_profile_callbacks.py` and the R2 probe is 21 passed; see 11.1/11.2/11.5 and
       `reports/2026-10-12-step-11-callbacks-r3.md`.
+      Flag reconciled by independent bridge2 R3 execution: full suite 937 passed, 1 skipped; 12 new probes
+      passed. Historical RED evidence above is retained. See `reports/2026-10-13-step-18-integration-codex-r3.md`.
 - [x] 1.4 RED `tests/test_manifest_modes.py`, `tests/test_profile_install.py`, and README/manual tests for H22;
       preserve full regression cases H12-H18 and check unique IDs on a temporary synchronized spec copy.
       Evidence: `reports/2026-10-12-step-1-red.md`, `reports/2026-10-12-step-6-docs.md`.
@@ -70,7 +72,7 @@ The correction run performs no archive, merge or push; the future implementation
 - [x] 2.2 client.py/tools.py: search-only strict arguments, wire v1 endpoint, response validation and redaction;
       retain full behavior. Do not coerce booleans, numbers or fractional limits in search.
       Evidence: `reports/2026-10-12-step-2-implementation.md`, `tests/test_search_wire.py`.
-- [ ] 2.3 plugin.py: search registration with one handler bound to its profile identity, no shared settings cache.
+- [x] 2.3 plugin.py: search registration with one handler bound to its profile identity, no shared settings cache.
       Evidence: `reports/2026-10-12-step-2-implementation.md`, `tests/test_search_only_mode.py`.
       Reopened in R1: empty search home still registers; an unreadable full scope registers and reads root credentials.
       Closed in R2: `register` refuses every mode when the scope cannot be read, there is no environment fallback
@@ -79,6 +81,8 @@ The correction run performs no archive, merge or push; the future implementation
       `reports/2026-10-12-step-2-scope-r2.md`.
       Reclosed in R3: B01 — every full callback validates its registration before an effect and reads its own
       settings, so no callback serves the root or another profile; see 11.1/11.2.
+      Flag reconciled after independent full-suite, new scoped identity/rotation probes and real offline
+      install: `reports/2026-10-13-step-18-integration-codex-r3.md`. The new comparator defect is fixed in 16.1.
 - [x] 2.4 plugin.yaml: implement fixtures/plugin-search.yaml semantics and version 0.2.0.
       Evidence: `reports/2026-10-12-step-2-implementation.md`, `tests/test_manifest_modes.py`.
 
@@ -133,7 +137,7 @@ The correction run performs no archive, merge or push; the future implementation
 - [x] 6.1 Update README.md, README.es.md and docs/technical-manual.md with modes, scope failures, conditional
       secrets, complete wire, no writes, per-profile install and canonical pin command.
       Evidence: `reports/2026-10-12-step-6-docs.md`.
-- [ ] 6.2 Verify openspec/config.yaml against implementation; update schema/fixture consumers, never silently drift.
+- [x] 6.2 Verify openspec/config.yaml against implementation; update schema/fixture consumers, never silently drift.
       Evidence: `reports/2026-10-12-step-6-docs.md` (no drift found; no edit needed).
       Reopened in R1: the claimed fail-closed scope behavior contradicts the actual full-mode fallback.
       Closed in R2: `openspec/config.yaml` states the fail-closed scope rule, the package version matches the
@@ -141,10 +145,14 @@ The correction run performs no archive, merge or push; the future implementation
       Evidence: `reports/2026-10-12-step-6-config-r2.md`.
       Reclosed in R3: the living context and the documents state the per-callback binding of `full`; see 11.6
       and `reports/2026-10-12-step-11-config-r3.md`.
+      Flag reconciled after independent documentation/configuration diff inspection, full-suite documentation
+      checks, identical consumer wire bytes and strict validation (2 passed, 0 failed); see step 18 below.
 
 ## 7. Implementation closing (not executed by this contract correction)
 - [ ] 7.1 `/verify`, then independent `/adversarial-review`; resolve Blockers/Majors and re-verify corrections.
-      Not executed: no other agent review was requested or available in this round.
+      Independent bridge2 R3 review and local re-verification are executed; final approval of Codex's
+      review corrections remains with Fable. Evidence: `reports/2026-10-13-step-18-integration-codex-r3.md`
+      and external `C:/Users/Franc/Documents/katalis-dev/tasks/revision-bridge2-r3.md`.
 - [ ] 7.2 Automated tests and CI green for the delivering SHA; `gitleaks protect --staged` before every commit.
       Partially covered: the suite is green and gitleaks ran before each commit of this round; remote CI has not
       run because no push is authorized (see `reports/2026-10-12-step-4-suite.md`).
@@ -236,7 +244,7 @@ The correction run performs no archive, merge or push; the future implementation
       the unit suite keeps running outside Hermes. `tests/test_host.py tests/test_plugin.py
       tests/test_adversarial.py tests/regressions`: 511 passed, 3 skipped in 227.55s.
       Evidence: `reports/2026-10-12-step-2-scope-r2.md`.
-- [ ] 9.8 6.2 — the living context against the corrected implementation; the package version drift (0.1.0 vs the
+- [x] 9.8 6.2 — the living context against the corrected implementation; the package version drift (0.1.0 vs the
       0.2.0 manifest) is corrected and config.yaml states the fail-closed scope rule.
       Evidence: `reports/2026-10-12-step-6-config-r2.md`.
       Reclosed in R3: `openspec/config.yaml` states the per-callback binding and the manual and both READMEs
@@ -671,3 +679,18 @@ The correction run performs no archive, merge or push; the future implementation
       Implemented as a two-line comparator correction. GREEN: the same command returns 12 passed in
       16.49s (`bridge2-codex-r3-probes-green.log`). The three complete identities now return P1 and their
       literal selected line; the short task is refused and leaves zero selections in the owner's turn.
+- [x] 16.2 Reconcile stale 1.3/2.3/6.2/9.8 flags with their completed successor tasks only after the
+      independent full suite, new probes, curl and real offline installation finish successfully.
+      RED: `.venv/Scripts/python -m pytest -q -p no:cacheprovider
+      ../tasks/test_bridge2_codex_r3_evidence.py`: 1 failed in 5.97s; 1.3 is still open despite its
+      documented successors. External evidence: `bridge2-codex-r3-evidence-red.log`.
+      Preserve all historical reports and leave final independent approval, remote CI and release tasks open.
+      Full suite on the corrected product: 937 passed, 1 skipped in 459.92s; new external probes: 12 passed
+      in 35.81s. Eight new curl cases pass on port 53719, PID 30272 terminated and the port is closed.
+      Real offline install at 2ebf7c5: 1 passed, 29 deselected in 433.51s; supervisor exit 0 in 542.61s,
+      container removed, complete 275-file profile inventory unchanged. These runs also refresh
+      5.1/5.3/11.4/13.4. Evidence: `reports/2026-10-13-step-18-integration-codex-r3.md`.
+      GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider
+      ../tasks/test_bridge2_codex_r3_evidence.py tests/test_bridge2_amendments.py
+      -k 'current_task_flags or reopened_rounds'`: 2 passed, 24 deselected in 1.38s;
+      external `bridge2-codex-r3-evidence-green.log`.
