@@ -51,14 +51,69 @@ corre el plugin):
 
 | Variable | Obligatoria | Qué hace |
 |---|---|---|
-| `CITED_URL` | sí | La dirección de la instalación, como `https://cited.example.com`. El plugin llama a `<CITED_URL>/api/mcp`. Una URL que ya termina en `/api/mcp` se usa tal cual. |
-| `CITED_MCP_TOKEN` | sí | El token bearer de esa instalación. Viaja solo en el encabezado `Authorization` de una petición a `CITED_URL`. |
-| `CITED_TIMEOUT_MS` | no | Cuánto puede tardar una llamada a Cited, en milisegundos. `30000` por omisión. |
+| `CITED_URL` | sí | El origen de la instalación, como `https://cited.example.com`. Full llama a `<CITED_URL>/api/mcp`; search llama a `<CITED_URL>/api/chassis/mcp` y exige un origen sin ruta. |
+| `CITED_BRIDGE_TOOLS` | no | `full` o `search`. `full` cuando falta o está vacía. Cualquier otro valor rechaza el registro. |
+| `CITED_MCP_TOKEN` | en `full` | El bearer de la superficie MCP. Viaja solo en el encabezado `Authorization` de una petición a `<CITED_URL>/api/mcp`, y en modo `search` nunca se lee. |
+| `CITED_SEARCH_TOKEN` | en `search` | El bearer de solo búsqueda. Viaja solo a `<CITED_URL>/api/chassis/mcp`. |
+| `CITED_TIMEOUT_MS` | no | Cuánto puede tardar una llamada a Cited, en milisegundos. `30000` por omisión; search acepta un entero de 1 a 120000. |
 | `CITED_DEFAULT_MODE` | no | El modo con el que arranca una conversación, `dot` o `cited`. `dot` por omisión. |
 | `CITED_LANGUAGE` | no | El idioma del render de cited, `es` o `en`. `es` por omisión. Los renglones citados siempre son los bytes del documento. |
 
-Sin `CITED_URL` o `CITED_MCP_TOKEN` las herramientas de búsqueda responden una oración que nombra la
+Sin `CITED_URL` o sin el token del modo elegido las herramientas responden una oración que nombra la
 variable faltante. Nunca lanzan una excepción hacia Hermes y Hermes sigue funcionando.
+
+## El interruptor de modo: `full` y `search`
+
+`CITED_BRIDGE_TOOLS` elige la superficie que registra el plugin. Es un interruptor **cerrado**: ausente o
+vacía elige `full`, el valor `search` elige el puente de solo búsqueda, y cualquier otro valor rechaza el
+registro antes de instalar un solo callback. El modo es inmutable para ese registro.
+
+| Valor | Superficie registrada | Endpoint | Bearer |
+|---|---|---|---|
+| `full` (omisión) | `cited_search`, `cited_ask`, `cited_quote`, los comandos `/cited` y `/dot`, los tres hooks y la skill `cited` | `POST <CITED_URL>/api/mcp` | `CITED_MCP_TOKEN` |
+| `search` | exactamente una herramienta, `cited_search`, y ningún comando, hook, skill ni escritor de auditoría | `POST <CITED_URL>/api/chassis/mcp` | `CITED_SEARCH_TOKEN` |
+
+En modo `search` el plugin lee la configuración del perfil activo de Hermes a través de
+`agent.secret_scope`, exige el mapeo y el home de ese perfil en el registro y en cada llamada, y toma el
+valor por omisión documentado cuando falta una clave: nunca cae al entorno del proceso. Un scope ausente,
+con home cambiado o ilegible responde una oración redactada y no envía ninguna petición, y el modo de un
+registro no cambia sin volver a registrar ese perfil. La ruta de búsqueda nunca pide `CITED_MCP_TOKEN`, ni
+siquiera para comprobarlo o redactarlo.
+
+### El wire de búsqueda, versión 1
+
+La herramienta de búsqueda habla el wire v1 cerrado de
+`openspec/changes/search-only-bridge/wire-contract.md`: solo `POST /api/chassis/mcp` con
+`Content-Type: application/json` y `Authorization: Bearer <CITED_SEARCH_TOKEN>`, cuerpo máximo de 16 KiB,
+`tools/list` y `tools/call` autenticados. `CITED_URL` debe ser un origen http/https explícito, sin userinfo,
+sin ruta (ni una barra final), sin query y sin fragmento. Todo 3xx se rechaza sin una segunda petición, así
+que el bearer nunca viaja a otro destino. El `id` de la respuesta debe coincidir con el de la petición, los
+pasajes deben cumplir el esquema fijado (`n` secuencial, `document`, `heading`, `position`, `excerpt`) y el
+bloque de contenido debe recomponerse a partir de ellos; cualquier otra cosa es una oración redactada, nunca
+un cuerpo crudo, una excepción, un encabezado ni una credencial. La herramienta devuelve la **cadena** JSON
+`{"cited_tool":"cited_search","query":…,"text":…,"passages":[… con lines …]}`, nunca el sobre RPC ni un `pid`.
+
+El modo search **no escribe nada** bajo `HERMES_HOME`: ninguna entrada de auditoría, ningún archivo de
+bloqueo, ninguna caché. Una prueba aislada toma el inventario ordenado y el SHA-256 de cada archivo regular
+del home antes del registro y después de una llamada exitosa y de una llamada fallida, y ambos inventarios
+son idénticos.
+
+### Instalar el puente fijado en un perfil
+
+En el pin de Hermes `dce1e9b37581dd62e480a9064dc04a709c2940d3` el comando por perfil es:
+
+```bash
+env HERMES_HOME=<root> <chassis>/.venv/bin/hermes --profile <name> \
+  plugins install file://<release>/hermes-cited.git --ref <full-sha> --enable --yes-deps
+```
+
+El perfil ya existe en `<root>/profiles/<name>`, y `--profile default` elige la raíz. Una instalación
+pública nombra la URL del repositorio y pasa el commit en un `--ref` aparte, nunca como `repo@sha`, y el
+espejo local es de solo lectura para el chasis. El artefacto de release son exactamente los bytes de
+`git archive --format=tar <sha-de-fusión-archivada>` sin prefijo ni gzip; en Windows captura los bytes con
+la opción binaria `--output` de Git, no con una redirección de texto. El lock registra el SHA completo, el
+SHA-256 y el tamaño en bytes, y se escribe en un commit consumidor posterior, nunca con un hash
+autorreferente.
 
 ## Las tres herramientas nativas
 
