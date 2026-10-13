@@ -21,6 +21,9 @@ The correction run performs no archive, merge or push; the future implementation
       tempdir registration is removed, conftest isolates an inherited personal HERMES_HOME and the host
       imports, and `bound_scope` guards the profile home. RED 2 failed, 1 passed; GREEN 27 passed in 5.99s.
       Evidence: `reports/2026-10-12-step-1-guard-r2.md`.
+      Reclosed in R3: M02 — the fake and its CLI now apply `guard_path` to the `--record` destination before
+      the server exists, so the guard precedes every file and process effect; see 11.3 and
+      `reports/2026-10-12-step-11-guard-r3.md`.
 - [x] 1.2 Write `tests/fakes/chassis_surface.py` for wire v1 on a guarded free loopback port, including tools/list,
       every error and both redirect classes. No real provider is used. Add a script entry accepting --port and
       --record in this test file for the curl checks below.
@@ -38,6 +41,9 @@ The correction run performs no archive, merge or push; the future implementation
       spelling and every fixed transport diagnostic have cases. RED 11 failed, 2 passed; GREEN 107 passed in
       44.02s; the R1 probe is 27 passed, including the two real-host scope cases.
       Evidence: `reports/2026-10-12-step-2-scope-r2.md`.
+      Reclosed in R3: B01 — the full callbacks and their turn state are bound to the registering profile; the
+      new cases are `tests/test_profile_callbacks.py` and the R2 probe is 21 passed; see 11.1/11.2/11.5 and
+      `reports/2026-10-12-step-11-callbacks-r3.md`.
 - [ ] 1.4 RED `tests/test_manifest_modes.py`, `tests/test_profile_install.py`, and README/manual tests for H22;
       preserve full regression cases H12-H18 and check unique IDs on a temporary synchronized spec copy.
       Evidence: `reports/2026-10-12-step-1-red.md`, `reports/2026-10-12-step-6-docs.md`.
@@ -45,6 +51,10 @@ The correction run performs no archive, merge or push; the future implementation
       Closed in R2: the host pin and the bridge ref are separate, the runner writes the search configuration
       before discovery and verifies digest, manifest, catalog and a scoped handler call. RED 7 failed;
       GREEN 14 passed, 1 skipped. Evidence: `reports/2026-10-12-step-1-install-r2.md`.
+      Reclosed in R3: M01 — the runner verifies the host pin against the checkout, the canonical archive
+      SHA-256/size against `bridge.lock`, and the effective catalog through the real host loader and registry;
+      the VM E2E of 5.3 remains BLOCKED. GREEN `tests/test_profile_install.py`: 29 passed, 1 skipped; see 11.4
+      and `reports/2026-10-12-step-11-install-r3.md`.
 - [x] 1.5 `pytest -q tests/test_search_guard.py tests/test_search_only_mode.py tests/test_profile_scope.py
       tests/test_search_wire.py tests/test_manifest_modes.py` before implementation; record intended failures.
       Evidence: `reports/2026-10-12-step-1-red.md` (104 failed, 34 passed, 1 skipped).
@@ -67,12 +77,18 @@ The correction run performs no archive, merge or push; the future implementation
       while the host is present, and a search scope without a home registers nothing. The real-host probe case
       `test_real_hermes_multiplex_missing_scope_never_uses_root` passes. Evidence:
       `reports/2026-10-12-step-2-scope-r2.md`.
+      Reclosed in R3: B01 — every full callback validates its registration before an effect and reads its own
+      settings, so no callback serves the root or another profile; see 11.1/11.2.
 - [x] 2.4 plugin.yaml: implement fixtures/plugin-search.yaml semantics and version 0.2.0.
       Evidence: `reports/2026-10-12-step-2-implementation.md`, `tests/test_manifest_modes.py`.
 
 ## 3. Review existing tests
 - [x] 3.1 Run full-mode H0-H18 regression suite, list every existing test updated and why; preserve delivery policy.
       Evidence: `reports/2026-10-12-step-3-regression.md` (502 passed, 3 skipped; only the manifest test updated).
+      Round 3 adds one more updated test: `tests/regressions/test_r8_dot_passthrough.py` selected the default
+      mode with `monkeypatch.setenv("CITED_DEFAULT_MODE", "dot")`, which D2 no longer honours while a profile
+      scope is active (the mode now comes from that profile). Its setup rebinds the profile scope to `dot` and
+      the assertions are unchanged. See 11.1 and `reports/2026-10-12-step-11-suite-r3.md`.
 
 ## 4. Unit verification and state
 - [x] 4.1 `pytest -q` with counts/runtime and complete before/after home inventory. No database test is invented.
@@ -112,6 +128,8 @@ The correction run performs no archive, merge or push; the future implementation
       Closed in R2: `openspec/config.yaml` states the fail-closed scope rule, the package version matches the
       0.2.0 manifest, and `openspec validate --all --strict` is 2 passed, 0 failed.
       Evidence: `reports/2026-10-12-step-6-config-r2.md`.
+      Reclosed in R3: the living context and the documents state the per-callback binding of `full`; see 11.6
+      and `reports/2026-10-12-step-11-config-r3.md`.
 
 ## 7. Implementation closing (not executed by this contract correction)
 - [ ] 7.1 `/verify`, then independent `/adversarial-review`; resolve Blockers/Majors and re-verify corrections.
@@ -190,6 +208,8 @@ The correction run performs no archive, merge or push; the future implementation
       is no longer authorised, an inherited personal `HERMES_HOME` is replaced by a temporary one, and the
       host modules of one test are removed afterwards. RED 2 failed, 1 passed; GREEN `tests/test_search_guard.py`
       27 passed in 5.99s. Evidence: `reports/2026-10-12-step-1-guard-r2.md`.
+      Reclosed in R3: M02 — the guard is connected to the fake and its CLI before any effect; GREEN
+      `tests/test_search_guard.py` 31 passed; see 11.3.
 - [x] 9.5 M04 — the fake conforms to the closed wire. Authentication precedes body parsing, the envelope rejects
       unknown properties and a missing version, `null` is -32600 and an invalid version or id answers a null id.
       RED 5 failed, 11 passed; GREEN 16 passed in 10.12s; probe case `delivered_fake_conforms` 4 passed.
@@ -198,6 +218,8 @@ The correction run performs no archive, merge or push; the future implementation
       configuration written before discovery, digest, manifest, catalog and scoped handler call. RED 7 failed;
       GREEN 14 passed, 1 skipped. The isolated E2E of 5.3 remains BLOCKED without the disposable VM.
       Evidence: `reports/2026-10-12-step-1-install-r2.md`.
+      Reclosed in R3: M01 — the runner proves the host pin, the canonical archive digest/size and the real
+      loader catalog offline; GREEN `tests/test_profile_install.py` 29 passed, 1 skipped; see 11.4.
 - [x] 9.7 Legacy H0-H18 compatibility — the real-host integration tests install the profile scope their
       temporary profile needs before discovery, and the host imports one test added are removed afterwards so
       the unit suite keeps running outside Hermes. `tests/test_host.py tests/test_plugin.py
@@ -206,6 +228,8 @@ The correction run performs no archive, merge or push; the future implementation
 - [ ] 9.8 6.2 — the living context against the corrected implementation; the package version drift (0.1.0 vs the
       0.2.0 manifest) is corrected and config.yaml states the fail-closed scope rule.
       Evidence: `reports/2026-10-12-step-6-config-r2.md`.
+      Reclosed in R3: `openspec/config.yaml` states the per-callback binding and the manual and both READMEs
+      carry it; see 11.6 and `reports/2026-10-12-step-11-config-r3.md`.
 
 ## 10. Independent round 2 corrections
 - [x] 10.1 D2/H19: treat a missing internal agent submodule as a broken host, not an absent host.
@@ -261,3 +285,51 @@ The correction run performs no archive, merge or push; the future implementation
       Documentation must state that these gates are open; the approved D2/D4/H19/H22 requirements remain intact.
       GREEN: the same `-k checked_tasks` command returned 1 passed, 20 deselected in 2.05s
       (`bridge-r2-tasks-green.log`); `openspec validate --all --strict`: 2 passed, 0 failed.
+
+## 11. Round 3 review corrections
+- [x] 11.1 B01 — bind every full callback and its turn state to the registering profile (D2/H19/H20/H21).
+      `plugin._profile_call` validates the scope and reads its settings before an effect; `hermes_home`,
+      `_secret` and `_language` resolve through the call in progress; `_ProfileState` scopes `ctx.state` per
+      profile; `Turn.home` plus the explicit home of each callback keeps a turn visible only to its profile.
+      RED: `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_profile_callbacks.py` 7 failed
+      (root default mode, root language, command language, cross-profile quote, transform after a switch,
+      root audit path, shared mode state); the run is in `tasks/bridge-r3-red.log`. GREEN: the same command
+      7 passed in 0.26s.
+      Evidence: `reports/2026-10-12-step-11-callbacks-r3.md`.
+- [x] 11.2 B01 — reproduce the three paths over the real pinned `agent.secret_scope`.
+      `.venv/Scripts/python ../tasks/bridge-r2-real-scope.py`: the pre-hook takes `cited` from profile A, one
+      request reaches A's URL, the quote after the switch to B answers the redacted scope sentence, and the
+      captured audit writes are `[]` (before: root default, profile A's passage, one prepared write).
+      Evidence: `reports/2026-10-12-step-11-callbacks-r3.md`.
+- [x] 11.3 M02 — apply the isolation guard before every effect of the fake and its CLI.
+      `start_chassis` guards `--port` and `--record`, `ChassisFake.__init__` guards the record path and the
+      script's `main` runs `prepare_cli_guard` before opening the server; a `--record` under the process
+      temporary directory authorises only its own parent, never all of `tempfile.gettempdir()`. RED: two cases
+      failed (`start_chassis(log_path=outside)` and `main --record outside` started the server and created the
+      file). GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_search_guard.py` 31
+      passed in 3.24s. The 5.1 curl probe still runs the fake as a subprocess: 6 cases correct, port closed,
+      home inventory identical (`tasks/bridge-r3-curl.log`). Evidence:
+      `reports/2026-10-12-step-11-guard-r3.md`.
+- [x] 11.4 M01 — complete the D4/H22 runner. `_check_host_pin` proves the CLI is the pinned host checkout,
+      `_read_bridge_lock`/`_canonical_archive`/`_verify_bridge_lock` compare the SHA-256 and byte size of
+      `git archive --format=tar` with the lock under D5's isolated Git configuration, and `_effective_catalog`
+      asks the real host loader and the real registry for the effective catalog and a scoped dispatch. RED:
+      `.venv/Scripts/python ../tasks/bridge-r3-m01-red.py` reports all six verifications missing from HEAD
+      (exit 1). GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_profile_install.py`
+      29 passed, 1 skipped in 1.61s (the VM E2E is the skip). Evidence:
+      `reports/2026-10-12-step-11-install-r3.md`.
+- [x] 11.5 Re-run the independent R2 probe after the corrections.
+      `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py`: before
+      4 failed, 17 passed; after 21 passed in 6.02s. `.venv/Scripts/python -m pytest -q -p no:cacheprovider
+      tests/test_plugin.py tests/test_modes.py tests/test_host.py tests/test_adversarial.py
+      tests/test_profile_scope.py tests/test_search_only_mode.py`: 173 passed in 84.29s.
+      Evidence: `reports/2026-10-12-step-11-callbacks-r3.md`.
+- [x] 11.6 6.2 — the living context and the documents state the per-callback binding with no drift.
+      `openspec/config.yaml` carries the rule; `docs/technical-manual.md`, `README.md` and `README.es.md` state
+      it. `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_docs_bridge.py
+      tests/test_manifest_modes.py`: 16 passed; `openspec validate --all --strict`: 2 passed, 0 failed.
+      Evidence: `reports/2026-10-12-step-11-config-r3.md`.
+- [x] 11.7 Full suite with counts and runtime, and `gitleaks protect --staged` before every commit of this
+      round. `.venv/Scripts/python -m pytest -q`: 898 passed, 4 skipped in 314.14s (0:05:14);
+      `openspec validate --all --strict`: 2 passed, 0 failed; gitleaks clean before each commit.
+      Evidence: `reports/2026-10-12-step-11-suite-r3.md`.

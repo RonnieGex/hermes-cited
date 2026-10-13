@@ -79,6 +79,11 @@ missing, changed-home or unreadable scope answers a redacted sentence and sends 
 of a registration cannot change without registering that profile again. The search path never requests
 `CITED_MCP_TOKEN`, not even to check or to redact it.
 
+The same boundary applies to `full`: every registered callback and its turn state belong to the profile that
+registered them, and the default mode, the language, the selected token and the audit path of a turn come from
+that profile, never from the process root. A call in another home or with a changed mode is refused before any
+effect, so no evidence, mode or log of one profile is served from another.
+
 ### The search wire, version 1
 
 The search tool speaks the closed wire v1 of `openspec/changes/search-only-bridge/wire-contract.md`: only

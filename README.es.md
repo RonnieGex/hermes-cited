@@ -80,6 +80,11 @@ con home cambiado o ilegible responde una oración redactada y no envía ninguna
 registro no cambia sin volver a registrar ese perfil. La ruta de búsqueda nunca pide `CITED_MCP_TOKEN`, ni
 siquiera para comprobarlo o redactarlo.
 
+El mismo límite aplica a `full`: cada callback registrado y su estado de turno pertenecen al perfil que los
+registró, y el modo por omisión, el idioma, el token seleccionado y la ruta de auditoría de un turno vienen de
+ese perfil, nunca de la raíz del proceso. Una llamada en otro home o con un modo cambiado se rechaza antes de
+cualquier efecto, así que ninguna evidencia, modo o bitácora de un perfil se sirve desde otro.
+
 ### El wire de búsqueda, versión 1
 
 La herramienta de búsqueda habla el wire v1 cerrado de

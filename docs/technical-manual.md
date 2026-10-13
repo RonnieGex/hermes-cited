@@ -56,6 +56,13 @@ The failures are:
 Rotations take effect on the next call: the URL, the selected token and the timeout are read freshly from
 the same profile scope on every handler call.
 
+Every registered callback of `full` — `cited_search`, `cited_ask`, `cited_quote`, the three hooks and the two
+commands — validates the registration's profile before an effect and reads its settings from that profile. The
+default mode, the language, the selected token and the audit path of a turn come from the profile that
+registered the callback, the mode state of a registration lives in a per-profile view of `ctx.state`, and a
+turn is visible only to the profile that opened it. A process that hosts more than one Hermes profile therefore
+never serves one profile's mode, evidence or log from another.
+
 ## 3. The search wire, version 1
 
 `wire-contract.md` and `fixtures/search-wire-v1.schema.json` are normative and hash-pinned. The schema is

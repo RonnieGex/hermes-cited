@@ -5,6 +5,9 @@ context: |
   with a profile-scoped CITED_SEARCH_TOKEN, no hooks, commands, skill or local writes. Configuration is read
   from the active profile: a missing, non-mapping or unreadable scope fails closed at registration and at every
   call, and there is no fallback to the process environment while the agent package of Hermes is present.
+  Every registered callback of full and its turn state belong to the profile that registered them: a call in
+  another home or with a changed mode is refused before any effect, and the default mode, the language, the
+  selected token and the audit path of a turn come from that profile and not from the process root.
   H6 applies to both modes.
   Full-mode hermes_cited/ implements cited_search and cited_ask over the configured Cited POST /api/mcp endpoint,
   the /cited and /dot conversation modes, the deterministic cited-mode verifier and the hash-chained
