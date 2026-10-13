@@ -46,6 +46,24 @@ def forbidden_target_guard(monkeypatch, tmp_path):
             monkeypatch.setenv("HERMES_HOME", str(isolated))
     yield
 
+
+#: The namespaces of the real Hermes host. A host integration test imports them from the read-only copy;
+#: if those modules stayed in ``sys.modules`` every later test would look like a run *inside* Hermes and
+#: the profile scope of D2 would refuse registration there. The fixture removes exactly what one test
+#: added, so the legacy unit tests keep running outside the host.
+_HOST_NAMESPACES = ("agent", "hermes_cli", "hermes_plugins", "hermes_constants", "gateway")
+
+
+@pytest.fixture(autouse=True)
+def isolate_host_imports():
+    before = set(sys.modules)
+    yield
+    for name in list(sys.modules):
+        if name in before:
+            continue
+        if any(name == prefix or name.startswith(prefix + ".") for prefix in _HOST_NAMESPACES):
+            sys.modules.pop(name, None)
+
 PASSAGES = [
     {
         "n": 1,

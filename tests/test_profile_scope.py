@@ -117,6 +117,82 @@ def test_a_failing_accessor_fails_closed(monkeypatch):
         config.active_scope()
 
 
+def _install_fake_agent(monkeypatch, values, home, getter=None):
+    """Install a stand-in ``agent.secret_scope`` so the host is present but its scope can be probed."""
+    agent = types.ModuleType("agent")
+    secret_scope = types.ModuleType("agent.secret_scope")
+    secret_scope.current_secret_scope = lambda: values
+    secret_scope.current_secret_scope_home = lambda: home
+    secret_scope.get_secret = getter if getter is not None else (lambda name, default="": default)
+    agent.secret_scope = secret_scope
+    monkeypatch.setitem(sys.modules, "agent", agent)
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", secret_scope)
+    return secret_scope
+
+
+def test_a_non_mapping_scope_fails_closed(monkeypatch):
+    """D2: the accessor must answer a Mapping, not merely a non-null value."""
+    _install_fake_agent(monkeypatch, values=["not", "a", "mapping"], home="/tmp/home")
+    with pytest.raises(config.CitedScopeError):
+        config.active_scope()
+
+
+def test_a_blank_home_fails_closed(monkeypatch):
+    _install_fake_agent(monkeypatch, values={"CITED_URL": "http://127.0.0.1:60123"}, home="   ")
+    with pytest.raises(config.CitedScopeError):
+        config.active_scope()
+
+
+def test_a_broken_host_dependency_is_not_an_absent_host(monkeypatch):
+    """B01: ``ModuleNotFoundError`` from inside ``agent`` is a failing host, not an absent host."""
+    import builtins
+
+    original = builtins.__import__
+
+    def failing(name, *args, **kwargs):
+        if name == "agent":
+            raise ModuleNotFoundError("No module named 'host_dependency'", name="host_dependency")
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", failing)
+    with pytest.raises(config.CitedScopeError):
+        config.active_scope()
+
+
+@pytest.mark.parametrize("mode", ["full", "search"])
+def test_a_missing_host_scope_registers_nothing(monkeypatch, mode):
+    """B01: with Hermes present and no readable scope the registration refuses every mode."""
+    _install_fake_agent(monkeypatch, values=None, home=None)
+    monkeypatch.setenv("CITED_URL", "http://127.0.0.1:60123")
+    monkeypatch.setenv("CITED_MCP_TOKEN", CITED_MCP_TOKEN)
+    monkeypatch.setenv("CITED_SEARCH_TOKEN", CITED_SEARCH_TOKEN)
+    monkeypatch.setenv("CITED_BRIDGE_TOOLS", mode)
+    context = support.FakeContext()
+    plugin.register(context)
+    assert context.tools == {}
+    assert context.hooks == {}
+    assert context.commands == {}
+    assert context.skills == {}
+
+
+def test_an_equivalent_home_spelling_keeps_the_identity(tmp_path):
+    """m01: the same directory written through ``..`` is the same profile identity."""
+    values = support.search_values("http://127.0.0.1:60123", CITED_SEARCH_TOKEN)
+    alias = str(tmp_path / "child" / "..")
+    with support.bound_scope(values, home=alias):
+        settings = config.search_settings_for(support.registration(home=tmp_path))
+    assert settings.token == CITED_SEARCH_TOKEN
+    assert settings.url == "http://127.0.0.1:60123"
+
+
+def test_a_different_home_stays_refused_after_normalization(tmp_path):
+    """m01: normalization must not make two genuinely different homes look equal."""
+    values = support.search_values("http://127.0.0.1:60123", CITED_SEARCH_TOKEN)
+    with support.bound_scope(values, home=tmp_path / "home-a"):
+        with pytest.raises(config.CitedScopeError):
+            config.search_settings_for(support.registration(home=tmp_path / "home-b"))
+
+
 def test_a_rotated_token_is_read_fresh_on_every_call(chassis, tmp_path):
     values = support.search_values(chassis.url, CITED_SEARCH_TOKEN)
     with support.bound_scope(values, home=tmp_path):

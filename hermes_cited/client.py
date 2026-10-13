@@ -341,25 +341,22 @@ def call_tool_search(settings, arguments, request_id: int = 1) -> SearchResult:
         raise _fail(_json_rpc_sentence(raw, status), token)
     except CitedError:
         raise
-    except TimeoutError as error:
-        raise _fail("Cited did not answer within {0} ms: {1}".format(settings.timeout_ms, error), token)
+    except TimeoutError:
+        raise _fail("Cited did not answer within {0} ms.".format(settings.timeout_ms), token)
     except urllib.error.URLError as error:
         reason = getattr(error, "reason", error)
         if isinstance(reason, TimeoutError):
             raise _fail("Cited did not answer within {0} ms.".format(settings.timeout_ms), token)
-        raise _fail(
-            "Cited could not be reached at {0}: {1}".format(_origin_of(endpoint), reason),
-            token,
-        )
-    except OSError as error:
-        raise _fail("Cited could not be reached at {0}: {1}".format(_origin_of(endpoint), error), token)
+        raise _fail("Cited could not be reached at {0}.".format(_origin_of(endpoint)), token)
+    except OSError:
+        raise _fail("Cited could not be reached at {0}.".format(_origin_of(endpoint)), token)
 
     try:
         with response:
             raw = _read_body(response)
             status = getattr(response, "status", 200)
-    except Exception as error:
-        raise _fail("the answer of Cited at {0} could not be read: {1}".format(_origin_of(endpoint), error), token)
+    except Exception:
+        raise _fail("the answer of Cited at {0} could not be read.".format(_origin_of(endpoint)), token)
 
     if status >= 400:
         raise _fail(_json_rpc_sentence(raw, status), token)

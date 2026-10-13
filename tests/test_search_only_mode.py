@@ -46,6 +46,20 @@ def test_search_registers_exactly_one_tool_and_nothing_else(chassis, tmp_path):
     assert context.skills == {}
 
 
+def test_search_with_an_empty_home_registers_nothing(capsys):
+    """B01: a search scope without a profile home must refuse before the tool is registered."""
+    values = support.search_values("http://127.0.0.1:60123", "search-token-9ab34f")
+    with support.bound_scope(values, home=""):
+        context = support.FakeContext()
+        plugin.register(context)
+    captured = capsys.readouterr()
+    assert context.tools == {}
+    assert context.hooks == {}
+    assert context.commands == {}
+    assert context.skills == {}
+    assert "Cited" in captured.err
+
+
 @pytest.mark.parametrize("value", ["bridge", " FULL "])
 def test_an_unknown_mode_registers_nothing_with_a_redacted_error(tmp_path, capsys, value):
     values = {

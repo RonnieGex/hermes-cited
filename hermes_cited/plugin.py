@@ -439,42 +439,28 @@ def register(ctx) -> None:
 
     The mode and the canonical home identity of the active profile are captured once, here. An unknown
     mode, a missing scope or an unreadable accessor registers nothing and leaves a redacted sentence,
-    before any callback is installed.
+    before any callback is installed. There is no fallback to the process environment when Hermes is
+    present: only a run in which the ``agent`` package is genuinely absent reads ``os.environ`` (D2, B01).
     """
     try:
         scope = config.active_scope()
     except config.CitedError as scope_error:
-        _register_without_scope(ctx, scope_error)
+        _refuse_registration(scope_error)
         return
     try:
         mode = config.bridge_mode_of(scope.get(config.BRIDGE_TOOLS_ENV))
     except config.CitedError as error:
         _refuse_registration(error)
         return
-    registration = config.Registration(
-        mode=mode, home=str(scope.home or ""), explicit=scope.source == "explicit"
-    )
+    home = config.canonical_home(scope.home)
+    if mode == config.BRIDGE_SEARCH and not home:
+        _refuse_registration(config.CitedScopeError(config.SCOPE_SENTENCE))
+        return
+    registration = config.Registration(mode=mode, home=home, explicit=scope.source == "explicit")
     if mode == config.BRIDGE_SEARCH:
         _register_search(ctx, registration)
         return
     _register_full(ctx, registration)
-
-
-def _register_without_scope(ctx, scope_error) -> None:
-    """No readable profile scope: full keeps its H0-H18 environment path, search registers nothing.
-
-    The legacy full surface read the process environment, so a run outside a profile scope must keep
-    behaving exactly as before; only the search bridge, which exists to be profile-scoped, is refused.
-    """
-    try:
-        mode = config.bridge_mode_of(os.environ.get(config.BRIDGE_TOOLS_ENV, ""))
-    except config.CitedError as error:
-        _refuse_registration(error)
-        return
-    if mode == config.BRIDGE_SEARCH:
-        _refuse_registration(scope_error)
-        return
-    _register_full(ctx, config.Registration(mode=config.BRIDGE_FULL, home="", explicit=False))
 
 
 def _refuse_registration(error) -> None:

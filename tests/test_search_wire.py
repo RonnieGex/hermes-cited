@@ -7,6 +7,7 @@ the guard of task 1.1 forbids 3240/3241 for the whole suite.
 
 from __future__ import annotations
 
+import io
 import json
 import urllib.error
 import urllib.request
@@ -242,6 +243,63 @@ def test_a_network_failure_is_a_sentence(monkeypatch, chassis, tmp_path):
     answer = run(wire(chassis), tmp_path, {"query": "hours"})
     assert "could not be reached" in answer
     assert chassis.token not in answer
+
+
+def test_an_unexpected_transport_exception_is_never_exposed(monkeypatch, chassis, tmp_path):
+    """M02: an exception outside the known categories is a fixed sentence, never its own text."""
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("private transport metadata marker-r2")
+
+    monkeypatch.setattr(client, "_open", explode)
+    answer = run(wire(chassis), tmp_path, {"query": "hours"})
+    assert "marker-r2" not in answer
+    assert "RuntimeError" not in answer
+    assert answer.startswith("Cited")
+
+
+def test_a_timeout_exception_text_is_never_exposed(monkeypatch, chassis, tmp_path):
+    def explode(*args, **kwargs):
+        raise TimeoutError("private timeout marker-r2")
+
+    monkeypatch.setattr(client, "_open", explode)
+    answer = run(wire(chassis), tmp_path, {"query": "hours"})
+    assert "marker-r2" not in answer
+    assert "did not answer" in answer
+
+
+def test_a_url_error_reason_is_never_exposed(monkeypatch, chassis, tmp_path):
+    def explode(*args, **kwargs):
+        raise urllib.error.URLError(RuntimeError("private reason marker-r2"))
+
+    monkeypatch.setattr(client, "_open", explode)
+    answer = run(wire(chassis), tmp_path, {"query": "hours"})
+    assert "marker-r2" not in answer
+    assert "could not be reached" in answer
+
+
+def test_an_os_error_text_is_never_exposed(monkeypatch, chassis, tmp_path):
+    def explode(*args, **kwargs):
+        raise OSError("private os marker-r2")
+
+    monkeypatch.setattr(client, "_open", explode)
+    answer = run(wire(chassis), tmp_path, {"query": "hours"})
+    assert "marker-r2" not in answer
+    assert "could not be reached" in answer
+
+
+def test_a_read_failure_text_is_never_exposed(monkeypatch, chassis, tmp_path):
+    class BadResponse(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            raise RuntimeError("private read marker-r2")
+
+    monkeypatch.setattr(client, "_open", lambda *args, **kwargs: BadResponse(b"{}"))
+    answer = run(wire(chassis), tmp_path, {"query": "hours"})
+    assert "marker-r2" not in answer
+    assert "could not be read" in answer
 
 
 # --------------------------------------------------------------------------------------------------

@@ -14,6 +14,7 @@ mode keeps the ``POST <CITED_URL>/api/mcp`` contract and its ``CITED_MCP_TOKEN``
 
 from __future__ import annotations
 
+import collections.abc
 import contextvars
 import os
 from dataclasses import dataclass
@@ -157,6 +158,43 @@ def _environ_scope() -> ProfileScope:
     )
 
 
+def _agent_is_absent(error) -> bool:
+    """True only when ``agent`` itself is missing, not when one of its own dependencies is (B01)."""
+    name = str(getattr(error, "name", "") or "")
+    return name == "agent" or name.startswith("agent.")
+
+
+def host_is_present() -> bool:
+    """True when the ``agent`` package of Hermes is installed, even when importing it fails.
+
+    A ``ModuleNotFoundError`` raised by a dependency *inside* the host (its ``name`` is not ``agent``)
+    means the host is present and broken; that must fail closed and never fall back to the environment
+    (D2, B01).
+    """
+    try:
+        import agent  # noqa: F401
+    except ModuleNotFoundError as error:
+        return not _agent_is_absent(error)
+    except Exception:
+        return True
+    return True
+
+
+def canonical_home(value) -> str:
+    """One canonical spelling of a home directory, so ``home/child/..`` is the same identity (m01)."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        resolved = os.path.realpath(text)
+    except Exception:
+        resolved = os.path.abspath(text)
+    try:
+        return os.path.normcase(os.path.normpath(resolved))
+    except Exception:
+        return resolved
+
+
 def active_scope() -> ProfileScope:
     """The scope of the active profile, or :class:`CitedScopeError` when it cannot be read."""
     override = _SCOPE_STACK.get()
@@ -164,8 +202,10 @@ def active_scope() -> ProfileScope:
         return override
     try:
         import agent  # noqa: F401
-    except ModuleNotFoundError:
-        return _environ_scope()
+    except ModuleNotFoundError as error:
+        if _agent_is_absent(error):
+            return _environ_scope()
+        raise CitedScopeError(SCOPE_SENTENCE) from None
     except Exception:
         raise CitedScopeError(SCOPE_SENTENCE) from None
     try:
@@ -177,14 +217,18 @@ def active_scope() -> ProfileScope:
         home = current_secret_scope_home()
     except Exception:
         raise CitedScopeError(SCOPE_SENTENCE) from None
-    if values is None or home is None:
+    if not isinstance(values, collections.abc.Mapping):
+        raise CitedScopeError(SCOPE_SENTENCE)
+    if home is None or not str(home).strip():
         raise CitedScopeError(SCOPE_SENTENCE)
     return ProfileScope(values=values, home=str(home), getter=get_secret, source="hermes")
 
 
 def _check_registration(scope: ProfileScope, registration: Registration) -> None:
     """A call in another home or with a changed mode is refused until that profile registers again."""
-    if not scope.home or not registration.home or str(scope.home) != str(registration.home):
+    if not scope.home or not registration.home:
+        raise CitedScopeError(SCOPE_SENTENCE)
+    if canonical_home(scope.home) != canonical_home(registration.home):
         raise CitedScopeError(SCOPE_SENTENCE)
     if bridge_mode_of(scope.get(BRIDGE_TOOLS_ENV)) != registration.mode:
         raise CitedScopeError(SCOPE_SENTENCE)
@@ -332,10 +376,13 @@ def settings_from_scope(scope: ProfileScope) -> Settings:
 def settings_for(registration: Registration) -> Settings:
     """The full-mode settings of one registration, read fresh from its own profile scope.
 
-    A registration without a home is the legacy full surface outside a profile scope: it reads the
-    process environment exactly as H0-H18 always did. A registration with a home is strict.
+    A registration without a home is the legacy full surface outside Hermes: it reads the process
+    environment exactly as H0-H18 always did. Inside Hermes a registration without a home can only be a
+    stale one, so it fails closed instead of reaching the environment (D2, B01).
     """
     if not registration.home:
+        if host_is_present():
+            raise CitedScopeError(SCOPE_SENTENCE)
         return settings_from_env()
     scope = active_scope()
     _check_registration(scope, registration)

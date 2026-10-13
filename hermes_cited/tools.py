@@ -267,9 +267,12 @@ def search_only(args, registration) -> str:
         result = call_tool_search(settings, arguments)
     except CitedError as error:
         return redact(str(error), settings.token)
-    except Exception as error:
+    except Exception:
+        # The transport categories are fixed sentences in the client; anything outside them is a fixed
+        # sentence here too, so an exception's own text never reaches the model (M02, H21).
         return redact(
-            "Cited could not be called: {0}: {1}".format(type(error).__name__, error), settings.token
+            "Cited could not be called: the search transport failed before an answer was read.",
+            settings.token,
         )
     return redact(search_model_envelope(result, arguments), settings.token)
 
