@@ -15,7 +15,8 @@ import bridge_support as support
 from hermes_cited import config, plugin, tools
 
 REPO = Path(__file__).resolve().parents[1]
-FIXTURE = REPO / "openspec" / "changes" / "search-only-bridge" / "fixtures" / "search-wire-v1.json"
+from openspec_paths import change_dir
+FIXTURE = change_dir("search-only-bridge") / "fixtures" / "search-wire-v1.json"
 MCP_TOKEN = "mcp-token-5e1c0a"  # synthetic
 
 
@@ -143,7 +144,7 @@ def test_search_writes_nothing_under_the_home_on_success_and_on_error(chassis, t
 
 def test_the_search_schema_is_the_wire_arguments_schema():
     schema = json.loads(
-        (REPO / "openspec" / "changes" / "search-only-bridge" / "fixtures" / "search-wire-v1.schema.json").read_text(
+        (change_dir("search-only-bridge") / "fixtures" / "search-wire-v1.schema.json").read_text(
             encoding="utf-8"
         )
     )

@@ -41,7 +41,8 @@ from bridge_support import FakeContext, inventory
 from hermes_cited import client, config, plugin
 
 REPO = Path(__file__).resolve().parents[1]
-CHANGE = REPO / "openspec" / "changes" / "search-only-bridge"
+from openspec_paths import change_dir
+CHANGE = change_dir("search-only-bridge")
 TASKS = CHANGE / "tasks.md"
 REPORTS = CHANGE / "reports"
 

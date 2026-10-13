@@ -19,9 +19,10 @@ import bridge_support as support
 from hermes_cited import client, config, tools
 
 REPO = Path(__file__).resolve().parents[1]
+from openspec_paths import change_dir
 SCHEMA = json.loads(
     (
-        REPO / "openspec" / "changes" / "search-only-bridge" / "fixtures" / "search-wire-v1.schema.json"
+        change_dir("search-only-bridge") / "fixtures" / "search-wire-v1.schema.json"
     ).read_text(encoding="utf-8")
 )
 
