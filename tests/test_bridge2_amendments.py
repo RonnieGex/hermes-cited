@@ -9,6 +9,9 @@ the same probes ported back so the suite itself guards the findings. Two sources
 * ``tasks/revision-bridge-r3.md`` (round 3 of the previous cycle): the tracked-modification host pin,
   the ``tar.umask`` override, the fractional lock size, the real loader catalog of a profile and the
   empty-retrieval home inventory.
+* ``tasks/revision-bridge2-r2.md`` (round 2 of this cycle): the real host dispatcher that carries the
+  task but not the turn, the authoritative ``turn_id``, the identical spelling of creation and
+  resolution, the task-only observer and the late observation of a completed turn.
 
 The two turn-ownership counterexamples of the bridge2 round (M01-B2R1 and M02-B2R1) live in
 ``tests/test_round4_amendments.py`` beside the D6/H14 cases. Every host-coupled case below uses the real
@@ -345,6 +348,168 @@ def test_real_scope_empty_retrieval_and_scope_rejection_preserve_every_home_file
         assert snapshot() == baseline
     finally:
         running.stop()
+
+
+# --------------------------------------------------------------------------------------------------
+# Ported probes of the bridge2 round 2 review (tasks/revision-bridge2-r2.md).
+#
+# The review exercised the pinned host's real dispatcher and found five open defects: the host composes
+# its turn identifier as ``"<session>:<task>:<suffix>"`` and its tool dispatch carries the task and the
+# session but never the turn, so search shipped passages without ``pid`` and ``cited_quote`` refused a
+# normal turn; an unmatched ``turn_id`` fell through to the live turn its ``task_id`` named; a whitespace
+# spelling selected another turn; a task-only observer fabricated an identity-less second execution; and a
+# late observer revived a turn that had already returned from the transformer.
+# --------------------------------------------------------------------------------------------------
+
+
+def _calibrated(fake):
+    """One searchable passage so a bound turn holds a quotable line."""
+    fake.passages = [
+        {
+            "n": 1,
+            "document": "calibration.md",
+            "heading": None,
+            "position": 0,
+            "excerpt": "Calibrate the blue instrument.",
+        }
+    ]
+
+
+def _open_turn(context, identity, session="review-session"):
+    assert context.hooks["pre_llm_call"][0](
+        session_id=session, turn_id=identity, user_message="Which instrument is calibrated?"
+    )
+
+
+def _search(context, identity="", task="", session="review-session"):
+    return context.tools["cited_search"]["handler"](
+        {"query": "calibration"}, session_id=session, turn_id=identity, task_id=task
+    )
+
+
+def _quote(context, identity="", task="", session="review-session"):
+    return context.tools["cited_quote"]["handler"](
+        {"passage": "P1", "lines": [1]}, session_id=session, turn_id=identity, task_id=task
+    )
+
+
+@requires_host
+def test_unmatched_primary_identity_cannot_fall_through_to_live_task(tmp_path, host, fake_cited):
+    """H14/R01-B2R2: a present ``turn_id`` is authoritative; a failed primary never quotes the task's turn."""
+    _calibrated(fake_cited)
+    home = tmp_path / "stale-primary"
+    with scoped(host, home, CITED_DEFAULT_MODE="cited", CITED_URL=fake_cited.url):
+        context = registered()
+        _open_turn(context, "current-execution")
+        _search(context, "current-execution")
+        result = _quote(context, "completed-execution", "current-execution")
+        assert "Calibrate the blue instrument." not in result
+        assert plugin._turn_of("review-session", "current-execution", home=home).selections == []
+
+
+@requires_host
+def test_opaque_whitespace_identity_does_not_select_another_turn(tmp_path, host, fake_cited):
+    """H14/M02-B2R2: creation and resolution use the identical spelling of the turn identifier."""
+    _calibrated(fake_cited)
+    home = tmp_path / "opaque-identity"
+    with scoped(host, home, CITED_DEFAULT_MODE="cited", CITED_URL=fake_cited.url):
+        context = registered()
+        _open_turn(context, "opaque")
+        _search(context, "opaque")
+        _open_turn(context, " opaque ")
+        data = json.loads(_search(context, " opaque "))
+        assert data["passages"][0]["uid"].startswith(" opaque :")
+        assert len(plugin._turn_of("review-session", "opaque", home=home).passages) == 1
+
+
+@requires_host
+def test_task_only_observer_does_not_fabricate_a_second_execution(tmp_path, host, fake_cited):
+    """H14/M02-B2R2: the observer resolves the task identity instead of creating an empty one."""
+    _calibrated(fake_cited)
+    home = tmp_path / "task-only-observer"
+    with scoped(host, home, CITED_DEFAULT_MODE="cited", CITED_URL=fake_cited.url):
+        context = registered()
+        _open_turn(context, "host-task")
+        result = _search(context, task="host-task")
+        context.hooks["post_tool_call"][0](
+            tool_name="cited_search",
+            args={"query": "calibration"},
+            result=result,
+            session_id="review-session",
+            turn_id="",
+            task_id="host-task",
+            status="ok",
+        )
+        turns = plugin._active_turns("review-session", home=home)
+        assert [turn.turn_id for turn in turns] == ["host-task"]
+        assert _quote(context) == "Calibrate the blue instrument."
+
+
+@requires_host
+def test_completed_turn_is_not_revived_by_a_late_observer(tmp_path, host, fake_cited):
+    """H14/R01-B2R2: an observation after the transformer never recreates the dropped turn."""
+    _calibrated(fake_cited)
+    home = tmp_path / "late-observer"
+    with scoped(host, home, CITED_DEFAULT_MODE="cited", CITED_URL=fake_cited.url):
+        context = registered()
+        _open_turn(context, "completed")
+        result = _search(context, "completed")
+        _quote(context, "completed")
+        context.hooks["transform_llm_output"][0](
+            session_id="review-session", turn_id="completed", response_text="discard"
+        )
+        assert plugin._turn_of("review-session", "completed", home=home) is None
+        context.hooks["post_tool_call"][0](
+            tool_name="cited_search",
+            args={"query": "calibration"},
+            result=result,
+            session_id="review-session",
+            turn_id="completed",
+            status="ok",
+        )
+        assert plugin._turn_of("review-session", "completed", home=home) is None
+
+
+@requires_host
+def test_pinned_host_execution_dispatch_preserves_a_normal_full_turn(tmp_path, host, fake_cited, monkeypatch):
+    """D6/H14/M01-B2R2: the real dispatcher binds ``pid`` and quotes inside the same normal turn.
+
+    The pinned ``model_tools._execute_tool`` dispatches with ``task_id`` and ``session_id`` only, while the
+    pre-hook opened the turn with the composed turn identifier. Both search and quote must resolve that
+    execution; the historical plugin relied on the single-live-turn fallback, which H14 forbids.
+    """
+    from tools.registry import ToolRegistry
+    import model_tools
+
+    _calibrated(fake_cited)
+    home = tmp_path / "host-dispatch"
+    with scoped(host, home, CITED_DEFAULT_MODE="cited", CITED_URL=fake_cited.url):
+        context = registered()
+        registry = ToolRegistry()
+        for name, entry in context.tools.items():
+            registry.register(name, entry["toolset"], entry["schema"], entry["handler"])
+        monkeypatch.setattr(model_tools, "registry", registry)
+        task = "workspace-session-b2r2"
+        turn = "review-session:workspace-session-b2r2:0123abcd"
+        _open_turn(context, turn)
+        ids = model_tools._CallIds(
+            task_id=task, session_id="review-session", turn_id=turn, tool_call_id="call-b2r2"
+        )
+
+        def dispatch(name, arguments):
+            return model_tools._execute_tool(
+                name,
+                arguments,
+                dict(arguments),
+                ids,
+                user_task="calibration",
+                enabled_tools=None,
+                skip_tool_execution_middleware=True,
+            )
+
+        result = dispatch("cited_search", {"query": "calibration"})
+        assert json.loads(result)["passages"][0]["pid"] == "P1"
+        assert dispatch("cited_quote", {"passage": "P1", "lines": [1]}) == "Calibrate the blue instrument."
 
 
 # --------------------------------------------------------------------------------------------------
