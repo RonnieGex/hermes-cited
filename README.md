@@ -87,6 +87,9 @@ profile's home together with the session and turn identifiers, so two profiles t
 identifiers keep two independent turns and a refused foreign callback cleans up nothing. The turn table's
 capacity is per profile, so a busy profile never evicts another profile's pending turn, and an explicit
 execution identifier that resolves to no open turn is refused instead of quoting a different live turn. The
+pinned host composes its turn identifier from the session, the task and a suffix and its tool dispatch carries
+the task, so the same execution resolves through either spelling; a present `turn_id` is authoritative, and a
+turn that already returned is never revived. The
 persisted conversation mode uses the host's own plain `mode.profile` key, which the host partitions per profile home, so
 a mode written by an older version is honoured without migration. A failure diagnostic is redacted with the
 secret of the profile whose callback failed, never with the root environment's.

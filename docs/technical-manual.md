@@ -72,8 +72,15 @@ Round 4 (D6-D8) makes that binding explicit:
   the oldest key of the calling owner is evicted, never the first key of the whole table, so a busy profile
   cannot remove another profile's pending turn. An explicit execution identity (`turn_id` or `task_id`) that
   resolves to no open turn is refused instead of falling back to the only active turn; the implicit form with
-  no identity still uses the single open turn and refuses an ambiguous session. Both rules are ported as
-  regressions in `tests/test_round4_amendments.py` (D6/M01-B2R1, H14/M02-B2R1).
+  no identity still uses the single open turn and refuses an ambiguous session. The pinned host composes its
+  turn identifier as `"<session>:<task>:<suffix>"` and hands the tool dispatch the task and the session but
+  never the turn, so both spellings resolve the same execution; a present `turn_id` is authoritative and a
+  failed primary is never replaced by the `task_id` of the same call. Creation, resolution and observation use
+  the identical raw spelling of the identifier, and an observation locates a live turn without ever
+  fabricating one, so a turn that already returned from the transformer is not revived and an identity-less
+  second execution is never opened. Both rules are ported as
+  regressions in `tests/test_round4_amendments.py` (D6/M01-B2R1, H14/M02-B2R1) and
+  `tests/test_bridge2_amendments.py` (D6/H14, M01-B2R2, M02-B2R2).
 - **Persisted mode (D7).** The host's `PluginState` already partitions its state per profile home, so the
   plugin writes the plain `mode.profile` key of the previous version and never a path or NUL prefix. Every key
   satisfies the host pattern `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`; a `mode.profile` value written before the

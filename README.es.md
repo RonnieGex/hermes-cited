@@ -88,7 +88,9 @@ se indexan por el home de ese perfil junto con los identificadores de sesión y 
 que reciben los mismos identificadores conservan dos turnos independientes y un callback ajeno rechazado no
 limpia nada. La capacidad de la tabla de turnos es por perfil, así que un perfil ocupado nunca expulsa el turno
 pendiente de otro, y un identificador de ejecución explícito que no resuelve ningún turno abierto se rechaza en
-lugar de citar otro turno vivo. El modo persistido de la conversación usa la clave plana `mode.profile` del propio host, que el
+lugar de citar otro turno vivo. El host fijado compone el identificador de turno con la sesión, la tarea y un
+sufijo, y su despacho de herramientas lleva la tarea, así que la misma ejecución resuelve por cualquiera de las
+dos grafías; un `turn_id` presente es autoritativo y un turno que ya regresó del transformer nunca se revive. El modo persistido de la conversación usa la clave plana `mode.profile` del propio host, que el
 host particiona por home del perfil, de modo que un modo escrito por una versión anterior se honra sin
 migración. Un diagnóstico de fallo se redacta con el secreto del perfil cuyo callback falló, nunca con el del
 entorno raíz.

@@ -597,12 +597,19 @@ def test_cli_record_directly_in_temp_root_never_authorizes_all_temp():
 
 
 def test_reopened_rounds_close_only_with_their_measured_reports():
-    """Keep historical evidence while the new real-dispatch failure reopens turn compliance."""
+    """The rounds close with measured evidence, and their historical reports stay on the record.
+
+    The bridge2 round 2 review reopened 11.1/11.6/13.2/13.5 with the real-dispatch counterexample: the
+    pinned dispatcher carries the task but not the turn, so search shipped no ``pid`` and quote refused a
+    normal turn. The bridge2 round 3 fixes the identity resolution, ports the counterexample as a permanent
+    regression and closes the reopened tasks with its own reports. The reports of the earlier closures and
+    the historical counterexample stay asserted so a later round cannot delete that record.
+    """
     text = TASKS.read_text(encoding="utf-8")
     status = {number: flag for flag, number in re.findall(r"^- \[([ x])\] (\d+\.\d+)\b", text, re.M)}
-    for number in ("11.1", "11.6", "13.2", "13.5"):
-        assert status[number] == " ", number + " remains open after the real-dispatch counterexample"
-    assert status["11.4"] == status["13.4"] == "x"
+    for number in ("11.1", "11.4", "11.6", "13.2", "13.5"):
+        assert status[number] == "x", number + " closes only with the measured evidence of its round"
+    assert status["13.4"] == "x"
     assert "bridge2-codex-r2-real-dispatch.log" in text
     assert "bridge2-codex-r2-real-dispatch-baseline.log" in text
     measured = {
@@ -613,6 +620,17 @@ def test_reopened_rounds_close_only_with_their_measured_reports():
     for name, numbers in measured.items():
         path = REPORTS / name
         assert path.is_file(), "the closure of {0} needs {1}".format(", ".join(numbers), name)
+        body = path.read_text(encoding="utf-8")
+        for number in numbers:
+            assert number in body, "{0} must record {1}".format(name, number)
+    current = {
+        "2026-10-13-step-17-r4-core.md": ("13.1", "13.2", "13.3"),
+        "2026-10-13-step-17-install-r4.md": ("13.4", "11.4"),
+        "2026-10-13-step-17-close-r3.md": ("11.1", "11.6", "13.5"),
+    }
+    for name, numbers in current.items():
+        path = REPORTS / name
+        assert path.is_file(), "the bridge2 round 3 closure of {0} needs {1}".format(", ".join(numbers), name)
         body = path.read_text(encoding="utf-8")
         for number in numbers:
             assert number in body, "{0} must record {1}".format(name, number)
