@@ -262,7 +262,7 @@ def search_only(args, registration) -> str:
         return "Cited could not search: the configuration of this profile could not be read."
     arguments, error = validate_search_arguments(args)
     if error:
-        return error
+        return redact(error, settings.token)
     try:
         result = call_tool_search(settings, arguments)
     except CitedError as error:

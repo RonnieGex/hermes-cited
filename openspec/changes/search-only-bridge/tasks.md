@@ -93,4 +93,9 @@ The correction run performs no archive, merge or push; the future implementation
       completed bridge pin. Update the consuming lock in a later commit.
       Not executed: it depends on the forbidden merge.
 
-(End of file - total 86 lines)
+## 8. Round 1 review corrections
+- [x] 8.1 Enforce H6/H21 redaction on invalid search arguments. External new probe:
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k unknown_argument`.
+      RED: 1 failed on the delivered implementation; the argument key reflected the active search bearer.
+      GREEN: 1 passed, 17 deselected; `.venv/Scripts/python -m pytest -q tests/test_search_wire.py`:
+      64 passed in 34.99s. Review probes and detailed evidence remain outside the repository as requested.
