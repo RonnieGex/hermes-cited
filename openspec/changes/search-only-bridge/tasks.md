@@ -109,3 +109,8 @@ The correction run performs no archive, merge or push; the future implementation
       GREEN: the same command returned 3 passed, 15 deselected in 4.43s;
       `.venv/Scripts/python -m pytest -q tests/test_search_wire.py -k 'url or origin'`:
       9 passed, 55 deselected in 5.73s.
+- [x] 8.4 Enforce the literal closed values required by H19 without case folding or whitespace trimming.
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k closed_mode`:
+      RED: 4 failed. Update the existing mode test that incorrectly admits undocumented spellings.
+      GREEN: the same command returned 4 passed, 14 deselected in 0.59s;
+      `.venv/Scripts/python -m pytest -q tests/test_profile_scope.py -k mode`: 11 passed, 8 deselected in 1.19s.

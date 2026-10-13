@@ -121,7 +121,7 @@ _SCOPE_STACK: contextvars.ContextVar = contextvars.ContextVar("hermes_cited_prof
 
 def bridge_mode_of(value) -> str:
     """``full`` for absent or empty, ``search`` for search, and a refusal for anything else."""
-    text = str(value or "").strip().lower()
+    text = "" if value is None else str(value)
     if not text:
         return BRIDGE_FULL
     if text in BRIDGE_MODES:

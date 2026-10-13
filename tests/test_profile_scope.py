@@ -22,16 +22,16 @@ CITED_SEARCH_TOKEN = "search-token-9ab34f"  # synthetic
 
 @pytest.mark.parametrize(
     "value, expected",
-    [(None, "full"), ("", "full"), ("   ", "full"), ("full", "full"), ("FULL", "full"),
-     ("search", "search"), (" Search ", "search")],
+    [(None, "full"), ("", "full"), ("full", "full"), ("search", "search")],
 )
 def test_the_mode_is_closed_and_defaults_to_full(value, expected):
     assert config.bridge_mode_of(value) == expected
 
 
-def test_an_unknown_mode_is_refused_without_echoing_a_secret():
+@pytest.mark.parametrize("value", ["bridge", "FULL", " Search ", "full ", "   "])
+def test_an_unknown_mode_is_refused_without_echoing_a_secret(value):
     with pytest.raises(config.CitedConfigError) as caught:
-        config.bridge_mode_of("bridge")
+        config.bridge_mode_of(value)
     message = str(caught.value)
     assert config.BRIDGE_TOOLS_ENV in message
     assert "bridge" not in message
