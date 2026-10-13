@@ -503,14 +503,50 @@ def _active_turn(session_id, home=None):
     return turns[0] if len(turns) == 1 else None
 
 
+def _identity_sequence(turn_id, task_id) -> tuple:
+    """The explicit execution identities of a call, in precedence order (D6, H14).
+
+    The pinned host composes its turn identifier as ``"<session>:<task>:<suffix>"`` and its tool
+    dispatch hands the handler the task and the session, never the turn (``model_tools._execute_tool``).
+    Both spellings are therefore accepted, but a present ``turn_id`` is authoritative: when it names no
+    open turn the callback is refused instead of quoting the turn its ``task_id`` names. An empty value
+    is not an identity. Creation, resolution and observation use the same raw spelling, never a trimmed
+    variant, so two distinct identifiers never collapse into one (M02-B2R2).
+    """
+    turn_value = str(turn_id or "")
+    if turn_value:
+        return (("turn", turn_value),)
+    task_value = str(task_id or "")
+    if task_value:
+        return (("task", task_value),)
+    return ()
+
+
+def _turn_has_identity(turn, session_id, kind, value) -> bool:
+    """Whether *turn* is the one the host execution identity names (D6, H14).
+
+    A ``turn`` identity matches the exact host turn identifier. A ``task`` identity matches that same
+    identifier, which the host also uses as the middle component of the composed spelling, so a dispatch
+    that carries only the task still reaches the turn its pre-hook opened.
+    """
+    turn_value = str(turn.turn_id or "")
+    if kind == "turn":
+        return turn_value == value
+    if turn_value == value:
+        return True
+    parts = turn_value.split(":", 2)
+    return len(parts) == 3 and parts[0] == str(session_id or "") and parts[1] == value
+
+
 def _resolve_active_turn(session_id, turn_id="", task_id="", home=None):
     """Bind a selection to the turn of the execution identity, never to the latest one (H14).
 
     Returns ``(turn, error)``. The resolution distinguishes three cases: no identity at all, where the
     only open turn of the session is used and more than one is refused; an explicit identity (``turn_id``
-    or ``task_id``) that resolves to exactly one turn; and an explicit identity that resolves to no open
-    turn, which is refused instead of being treated as an absent identity. A contradictory identifier
-    never quotes a different live turn.
+    or ``task_id``) that resolves to exactly one open turn; and an explicit identity that resolves to no
+    open turn, which is refused instead of being treated as an absent identity. A contradictory
+    identifier never quotes a different live turn, and a present ``turn_id`` is never replaced by the
+    ``task_id`` of the same call.
     """
     owner = _owner(home)
     turns = _active_turns(session_id, home=owner)
@@ -519,22 +555,23 @@ def _resolve_active_turn(session_id, turn_id="", task_id="", home=None):
             "Cited has no turn to quote from. Call `cited_search` or `cited_ask` first in this same turn, "
             "then `cited_quote`."
         )
-    candidates = [str(value or "").strip() for value in (turn_id, task_id) if str(value or "").strip()]
-    if not candidates:
+    identities = _identity_sequence(turn_id, task_id)
+    if not identities:
         if len(turns) == 1:
             return turns[0], ""
         return None, (
             "Cited cannot tell which of the {0} open turns of this session this quote belongs to: pass no "
             "passage, or ask again in a single turn".format(len(turns))
         )
-    for candidate in candidates:
-        matches = [turn for turn in turns if turn.turn_id == candidate]
+    for kind, value in identities:
+        matches = [turn for turn in turns if _turn_has_identity(turn, session_id, kind, value)]
         if len(matches) == 1:
             return matches[0], ""
-        with _TURNS_LOCK:
-            unique = _find_turn_locked(session_id, candidate, owner)
-        if unique is not None:
-            return unique, ""
+        if len(matches) > 1:
+            return None, (
+                "Cited cannot tell which of the {0} open turns of this session this quote belongs to: pass "
+                "no passage, or ask again in a single turn".format(len(matches))
+            )
     return None, (
         "Cited cannot bind this selection to the execution identity it names: no open turn of this "
         "session has that identifier. Call `cited_search` or `cited_ask` in this same turn, then "
@@ -783,16 +820,45 @@ def _bind_result(result, args, session_id, turn_id, task_id, home=None):
         return result
 
 
-def _note_tool_call(tool_name, args, result, session_id, turn_id, status, home=None):
+def _observed_turn(session_id, turn_id, task_id, home=None):
+    """The live turn an observation names, located with the identity policy of the handlers (D6, H14).
+
+    The pinned host's ``post_tool_call`` carries the composed turn identifier, but a reduced observation
+    may carry only the task. Both resolve to the same turn. The observation never fabricates one: an
+    explicit identity that names no open turn is ignored instead of reviving a returned turn or opening an
+    identity-less second execution (M02-B2R2).
+    """
+    owner = _owner(home)
+    sid = str(session_id or "")
+    identities = _identity_sequence(turn_id, task_id)
+    with _TURNS_LOCK:
+        if not identities:
+            return _TURNS.get((owner, sid, ""))
+        for kind, value in identities:
+            matches = [
+                turn
+                for key, turn in _TURNS.items()
+                if key[0] == owner and key[1] == sid and _turn_has_identity(turn, sid, kind, value)
+            ]
+            if len(matches) == 1:
+                return matches[0]
+            if len(matches) > 1:
+                return None
+        return None
+
+
+def _note_tool_call(tool_name, args, result, session_id, turn_id, status, home=None, task_id=""):
     if tool_name not in tools.EVIDENCE_TOOLS:
         try:
-            turn = _turn_of(session_id, turn_id, create=False, home=home)
+            turn = _observed_turn(session_id, turn_id, task_id, home=home)
         except BaseException:
             turn = None
         if turn is not None:
             turn.note_quote_call(args if isinstance(args, dict) else {}, status)
         return None
-    turn = _turn_of(session_id, turn_id, create=True, home=home)
+    turn = _observed_turn(session_id, turn_id, task_id, home=home)
+    if turn is None:
+        return None
     envelope = tools.parse_tool_result(result, tool_name)
     if envelope is not None:
         turn.note_call(envelope, tool_name, args, status)
@@ -800,7 +866,7 @@ def _note_tool_call(tool_name, args, result, session_id, turn_id, status, home=N
 
 
 def _post_tool_call(registration=None):
-    def post_tool_call(tool_name="", args=None, result=None, session_id="", turn_id="", status="", **kwargs):
+    def post_tool_call(tool_name="", args=None, result=None, session_id="", turn_id="", task_id="", status="", **kwargs):
         if tool_name not in tools.TOOL_NAMES:
             return None
         home = registration.home if registration is not None else None
@@ -808,7 +874,9 @@ def _post_tool_call(registration=None):
         try:
             with _profile_call(registration) as settings:
                 secret = settings.token
-                return _note_tool_call(tool_name, args, result, session_id, turn_id, status, home=home)
+                return _note_tool_call(
+                    tool_name, args, result, session_id, turn_id, status, home=home, task_id=task_id
+                )
         except config.CitedError:
             return None
         except BaseException as error:

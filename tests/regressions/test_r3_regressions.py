@@ -387,12 +387,18 @@ def test_r3_m_r3_2_two_open_turns_are_never_guessed(monkeypatch, hermes_home, ci
 
 
 def test_r3_m_r3_2_the_execution_identity_binds_the_selection(monkeypatch, hermes_home, cited_env):
-    """R3 M-R3-2: with an identity of the execution, the selection is bound instead of refused."""
+    """R3 M-R3-2: with an identity of the execution, the selection is bound instead of refused.
+
+    R01-B2R2 fixed the precedence between the two identity fields: a present ``turn_id`` is authoritative
+    and a failed primary is never replaced by the ``task_id`` of the same call (see
+    ``tests/test_bridge2_amendments.py::test_unmatched_primary_identity_cannot_fall_through_to_live_task``).
+    The helper's default ``turn_id`` is therefore cleared here so the task identity is exercised alone.
+    """
     ctx = context(monkeypatch, hermes_home)
     for turn in ("turn-a", "turn-b"):
         begin(ctx, turn=turn)
         post(ctx, envelope(GROUNDED, document="{0}.md".format(turn)), turn=turn)
-    assert quote(ctx, "P1", session="s1", task_id="turn-a") == GROUNDED
+    assert quote(ctx, "P1", session="s1", turn="", task_id="turn-a") == GROUNDED
 
 
 DOT_TEXTS = [
