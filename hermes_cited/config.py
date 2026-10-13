@@ -340,7 +340,8 @@ def search_timeout_of(value) -> int:
         raise CitedConfigError(
             "Cited is not configured: CITED_TIMEOUT_MS must be an integer between 1 and 120000."
         )
-    number = int(text)
+    digits = text.lstrip("0")
+    number = int(digits or "0") if len(digits) <= len(str(MAX_TIMEOUT_MS)) else 0
     if not MIN_TIMEOUT_MS <= number <= MAX_TIMEOUT_MS:
         raise CitedConfigError(
             "Cited is not configured: CITED_TIMEOUT_MS must be an integer between 1 and 120000."

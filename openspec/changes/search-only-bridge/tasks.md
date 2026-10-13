@@ -575,3 +575,13 @@ The correction run performs no archive, merge or push; the future implementation
       GREEN: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider
       ../tasks/test_bridge2_codex_r2.py -k invalid-utf8`: 1 passed, 12 deselected in 1.11s.
       External `bridge2-codex-r2-fix-utf8.log` records the fixed diagnostic and unchanged temporary home.
+- [x] 15.2 H21: keep the named setting diagnostic for arbitrarily long decimal timeout strings.
+      RED: external `test_oversized_numeric_timeout_names_the_setting_without_connecting` receives
+      the generic profile error for 5000 digits instead of a sentence naming CITED_TIMEOUT_MS.
+      Evidence: `C:/Users/Franc/Documents/katalis-dev/tasks/bridge2-codex-r2-probes-red.log`.
+      Planned correction: bound the significant decimal digits before integer conversion, preserving
+      valid leading-zero forms and the existing 1..120000 range; no request on invalid configuration.
+      GREEN: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider
+      ../tasks/test_bridge2_codex_r2.py -k oversized_numeric_timeout`: 1 passed, 12 deselected in 1.32s.
+      Added a valid 5000-leading-zero control; the same pytest file with `-k timeout` gives
+      2 passed, 12 deselected in 1.81s (`bridge2-codex-r2-timeout-boundaries.log`).
