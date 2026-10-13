@@ -29,20 +29,24 @@ until that profile registers again.
 ## 2. Profile-scoped configuration and its failures
 
 Inside Hermes the plugin imports `agent.secret_scope`: `current_secret_scope()`,
-`current_secret_scope_home()` and `get_secret()`. Both the mapping and the home are required at registration
-and at every handler call. A key that is absent from the mapping takes its documented default; there is no
-fallback to the process environment. An accessor that raises, or that answers `None`, fails closed with the
-redacted sentence that names neither the profile, nor the URL, nor the token.
+`current_secret_scope_home()` and `get_secret()`. The accessor must answer a `Mapping` and a non-empty home;
+both are required at registration and at every handler call. A key that is absent from the mapping takes its
+documented default; there is no fallback to the process environment. An accessor that raises, that answers
+`None`, a non-mapping value or a blank home fails closed with the redacted sentence that names neither the
+profile, nor the URL, nor the token. When `import agent` fails, only a missing `agent` package **itself**
+selects the environment; a `ModuleNotFoundError` raised by a dependency inside the host means the host is
+present and broken, and it fails closed too.
 
-Only a run **outside Hermes**, where the `agent` package is absent, reads `os.environ`. That is what keeps
-the unit suite and a standalone client testable.
+Only a run **outside Hermes**, where the `agent` package is genuinely absent, reads `os.environ`. That is
+what keeps the unit suite and a standalone client testable.
 
 The failures are:
 
 | Situation | Answer | Requests |
 |---|---|---|
-| no mapping or no home | redacted configuration sentence | zero |
-| a home different from the registration's | redacted configuration sentence | zero |
+| no mapping, a non-mapping value or no home | redacted configuration sentence | zero |
+| the host is present but its scope cannot be imported | redacted configuration sentence | zero |
+| a home different from the registration's (canonical paths, so `home/child/..` is the same identity) | redacted configuration sentence | zero |
 | a mode different from the registration's | redacted configuration sentence | zero |
 | absent `CITED_URL` | a sentence that names `CITED_URL` | zero |
 | absent token of the mode | a sentence that names `CITED_SEARCH_TOKEN` or `CITED_MCP_TOKEN` | zero |
@@ -72,7 +76,9 @@ the same profile scope on every handler call.
   the excerpt, joined with two LF characters. The client rejects a block that does not recompose.
 - The client rejects non-JSON, a mismatched id, a malformed passage, an `isError` result, a JSON-RPC error
   and any reflected bearer, each with a redacted diagnostic sentence that carries no raw body, exception,
-  credential or header.
+  credential or header. The transport categories are fixed sentences: a timeout, a network failure, an
+  `OSError`, a read failure and any unexpected exception name the condition, never the text of the
+  underlying exception (M02).
 - **Every redirect is refused**: 301, 302, 303, 307 and 308, to the same origin and to another one, without
   a second request, so the bearer never reaches a `Location`.
 - The model envelope is a JSON *string*:
