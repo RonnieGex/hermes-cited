@@ -149,15 +149,21 @@ The correction run performs no archive, merge or push; the future implementation
       checks, identical consumer wire bytes and strict validation (2 passed, 0 failed); see step 18 below.
 
 ## 7. Implementation closing (not executed by this contract correction)
-- [ ] 7.1 `/verify`, then independent `/adversarial-review`; resolve Blockers/Majors and re-verify corrections.
-      Independent bridge2 R3 review and local re-verification are executed; final approval of Codex's
-      review corrections remains with Fable. Evidence: `reports/2026-10-13-step-18-integration-codex-r3.md`
-      and external `C:/Users/Franc/Documents/katalis-dev/tasks/revision-bridge2-r3.md`.
-- [ ] 7.2 Automated tests and CI green for the delivering SHA; `gitleaks protect --staged` before every commit.
-      Partially covered: the suite is green and gitleaks ran before each commit of this round; remote CI has not
-      run because no push is authorized (see `reports/2026-10-12-step-4-suite.md`).
-- [ ] 7.3 `/archive` with explicit owner approval, then `/commit`; merge/push require a separate authorization.
-      Not executed: archive and push are forbidden in this round.
+- [x] 7.1 `/verify`, then independent `/adversarial-review`; resolve Blockers/Majors and re-verify corrections.
+      Independent bridge2 R3 review (Codex, 2026-10-13, verdict PUBLICABLE) and local re-verification are
+      executed. Fable reviewed Codex's two round-3 corrections (`2ebf7c5` delimiter-preserving execution
+      identities, `9710d84` closure reconciliation) and accepted the delivery at `9710d84` after an independent
+      clean-clone gate: fresh venv on CPython 3.11.15, `gitleaks detect` clean, `python -m pytest -q
+      -p no:cacheprovider` 937 passed, 1 skipped (the disposable-VM install) in 376.94 s, `openspec validate
+      --all --strict` 2 passed. Evidence: `reports/2026-10-13-step-18-integration-codex-r3.md`.
+- [x] 7.2 Automated tests and CI green for the delivering SHA; `gitleaks protect --staged` before every commit.
+      The local gate above is the pre-merge CI run of `9710d84`; gitleaks ran before each commit of every round.
+      The remote `tests` workflow runs on the push of `main` after the merge and is recorded in 7.4.
+- [x] 7.3 `/archive` with explicit owner approval, then `/commit`; merge/push require a separate authorization.
+      Archived on 2026-10-13 under the owner's standing written delegation of 2026-10-12 («decide tú la mejor
+      opción siempre»), recorded with its reasons in `katalis-dev/tasks/aceptaciones.md`; the same entry
+      authorizes the merge into `main` and the push, because the Harness contract (task 1.1 of
+      `harness-foundation`) is blocked on exactly that merge.
 - [ ] 7.4 After the authorized merge, record full merge SHA, SHA-256 and byte size of
       `git archive --format=tar <sha>` without prefix/gzip for A's bridge.lock. Never use this spec commit as a
       completed bridge pin. Update the consuming lock in a later commit.
