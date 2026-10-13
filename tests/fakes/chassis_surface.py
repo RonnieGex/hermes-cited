@@ -154,6 +154,11 @@ def _make_handler(fake: ChassisFake):
         def do_PUT(self):
             self._send(405, b"")
 
+        def __getattr__(self, name):
+            if name.startswith("do_"):
+                return self.do_GET
+            raise AttributeError(name)
+
         def _entry(self, message, raw):
             return {
                 "method": "POST",

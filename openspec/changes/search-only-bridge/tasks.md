@@ -372,3 +372,10 @@ The correction run performs no archive, merge or push; the future implementation
       .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
       -k cli_record`: 1 passed, 13 deselected in 1.43s. Regression: `pytest -q -p no:cacheprovider
       tests/test_search_guard.py tests/test_chassis_fake.py`: 47 passed in 9.29s.
+- [x] 12.6 Wire v1: return 405 for unsupported HTTP methods in the fake.
+      RED: new external `bridge-codex-r3-curl.py` receives 501 for PATCH, DELETE and HEAD where
+      wire-contract.md requires 405. Five other new cases pass. `bridge-codex-r3-curl-red.log`
+      records the requests, response bodies, stopped PID, closed port and unchanged home inventory.
+      GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-curl-green
+      .venv/Scripts/python.exe ../tasks/bridge-codex-r3-curl.py`: exit 0, eight cases passed in 3.11s.
+      Evidence for 5.1 and this correction: `reports/2026-10-12-step-12-curl-codex-r3.md`.
