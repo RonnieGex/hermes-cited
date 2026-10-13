@@ -298,7 +298,7 @@ The correction run performs no archive, merge or push; the future implementation
       (`bridge-r2-tasks-green.log`); `openspec validate --all --strict`: 2 passed, 0 failed.
 
 ## 11. Round 3 review corrections
-- [ ] 11.1 B01 — bind every full callback and its turn state to the registering profile (D2/H19/H20/H21).
+- [x] 11.1 B01 — bind every full callback and its turn state to the registering profile (D2/H19/H20/H21).
       `plugin._profile_call` validates the scope and reads its settings before an effect; `hermes_home`,
       `_secret` and `_language` resolve through the call in progress; `_ProfileState` scopes `ctx.state` per
       profile; `Turn.home` plus the explicit home of each callback keeps a turn visible only to its profile.
@@ -312,6 +312,12 @@ The correction run performs no archive, merge or push; the future implementation
       performs no cleanup and the command/transformer diagnostics keep the profile redaction set. RED 7 failed
       → GREEN 7 passed in 2.52s; `tests/test_profile_callbacks.py` 9 passed in 0.74s. Evidence:
       `reports/2026-10-13-step-13-r4-core.md`.
+      Reclosed in bridge2 R2: the D6/H14 closure was reopened by the bridge2 round 1 counterexamples. The
+      turn cap is now per owner and an explicit unmatched execution identity is refused. RED 2 failed in
+      1.45s → GREEN `tests/test_round4_amendments.py` 9 passed in 2.49s; the ported probes are 152 passed,
+      1 deselected in 70.22s, the external `test_bridge2_codex_r1.py` is 12 passed, and the D6/H14
+      regression subsets are 286 passed in 133.64s and 101 passed, 1 skipped in 59.08s. Evidence:
+      `reports/2026-10-13-step-15-turn-identity-b2r1.md`.
 - [x] 11.2 B01 — reproduce the three paths over the real pinned `agent.secret_scope`.
       `.venv/Scripts/python ../tasks/bridge-r2-real-scope.py`: the pre-hook takes `cited` from profile A, one
       request reaches A's URL, the quote after the switch to B answers the redacted scope sentence, and the
@@ -338,13 +344,16 @@ The correction run performs no archive, merge or push; the future implementation
       runtimes and build wheelhouse, closed external network, real install with `--enable`, real loader
       catalog, scoped dispatch and full post-setup inventory comparison. `1 passed, 29 deselected in 264.38s`.
       Evidence: `reports/2026-10-13-step-13-install-r4.md`.
+      Re-executed in bridge2 R2 at the D6/H14 product commit: a fresh read-only mirror and canonical archive
+      of the new HEAD, the provisioned managed CPython/uv and wheelhouse mounted read-only, `--network none`
+      and the container removed. Result recorded in `reports/2026-10-13-step-15-install-b2r1.md`.
 - [x] 11.5 Re-run the independent R2 probe after the corrections.
       `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py`: before
       4 failed, 17 passed; after 21 passed in 6.02s. `.venv/Scripts/python -m pytest -q -p no:cacheprovider
       tests/test_plugin.py tests/test_modes.py tests/test_host.py tests/test_adversarial.py
       tests/test_profile_scope.py tests/test_search_only_mode.py`: 173 passed in 84.29s.
       Evidence: `reports/2026-10-12-step-11-callbacks-r3.md`.
-- [ ] 11.6 6.2 — the living context and the documents state the per-callback binding with no drift.
+- [x] 11.6 6.2 — the living context and the documents state the per-callback binding with no drift.
       `openspec/config.yaml` carries the rule; `docs/technical-manual.md`, `README.md` and `README.es.md` state
       it. `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_docs_bridge.py
       tests/test_manifest_modes.py`: 16 passed; `openspec validate --all --strict`: 2 passed, 0 failed.
@@ -353,6 +362,10 @@ The correction run performs no archive, merge or push; the future implementation
       `mode.profile` key, the failing profile's redaction and the offline runtime provisioning; the D6-D9
       documents agree with the implementation. Evidence: `reports/2026-10-13-step-13-r4-core.md` and
       `reports/2026-10-13-step-13-install-r4.md`.
+      Reclosed in bridge2 R2: the context and the manuals add the per-owner turn capacity and the
+      explicit-identity precedence of D6/H14; `tests/test_docs_bridge.py tests/test_manifest_modes.py` pass
+      and `openspec validate --all --strict` is 2 passed, 0 failed. Evidence:
+      `reports/2026-10-13-step-15-close-b2r1.md`.
 - [x] 11.7 Full suite with counts and runtime, and `gitleaks protect --staged` before every commit of this
       round. `.venv/Scripts/python -m pytest -q`: 898 passed, 4 skipped in 314.14s (0:05:14);
       `openspec validate --all --strict`: 2 passed, 0 failed; gitleaks clean before each commit.
@@ -444,12 +457,18 @@ The correction run performs no archive, merge or push; the future implementation
       post-tool and quote callbacks hand it over. GREEN:
       `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_profile_callbacks.py` 9 passed in 0.74s.
       Evidence: `reports/2026-10-13-step-13-r4-core.md`.
-- [ ] 13.2 D6 (M01-R3): turn table keyed by (home, session, turn); refusal before any turn access; cleanup only of
+- [x] 13.2 D6 (M01-R3): turn table keyed by (home, session, turn); refusal before any turn access; cleanup only of
       the owned turn; eviction and migration on the same key. GREEN for both H19 scenarios plus the H14 regressions.
       `_find_turn_locked`/`_turn_of`/`_drop_turn` use the composite key and `_transform_llm_output` validates before
       any turn access and drops only when the call passed validation. GREEN: 286 passed in 140.99s (callbacks and
       regressions) and 92 passed, 1 skipped in 73.36s (host, scope, search and install). Evidence:
       `reports/2026-10-13-step-13-r4-core.md`.
+      Reclosed in bridge2 R2: `_evict_oldest_locked(owner)` keeps the capacity inside the calling owner's key
+      space, so a busy foreign profile never evicts the owner's pending turn, and `_resolve_active_turn`
+      distinguishes an absent identity from an explicit one that resolves to no open turn (refused, never
+      quoted). RED 2 failed in 1.45s → GREEN 9 passed in 2.49s; external probe 12 passed; H14/D6 regression
+      subsets 286 passed in 133.64s and 101 passed, 1 skipped in 59.08s. Evidence:
+      `reports/2026-10-13-step-15-turn-identity-b2r1.md`.
 - [x] 13.3 D7 (M02-R3): plain `mode.profile` key through the real PluginState; no path or NUL prefix; `get` never
       hides a host validation error; the legacy value is honoured after the upgrade; `/cited` and `/dot` persist.
       GREEN with the real host state.
@@ -467,7 +486,10 @@ The correction run performs no archive, merge or push; the future implementation
       `hooks: 0`, `commands: 0`, scoped dispatch answered, and the full profile inventory identical after setup.
       `1 passed, 29 deselected in 264.38s`; container exit 0, 301.95s, removed. Evidence:
       `reports/2026-10-13-step-13-install-r4.md`.
-- [ ] 13.5 Close 11.1, 11.4 and 11.6 only with the evidence of 13.1-13.4; update the living context and the manuals
+      Re-executed in bridge2 R2 on the delivery commit with the same pinned image, `--network none`,
+      read-only mirror/inputs/runtime/cache/wheelhouse and temporary homes; the fresh mirror and canonical
+      archive pin the new bridge commit. Evidence: `reports/2026-10-13-step-15-install-b2r1.md`.
+- [x] 13.5 Close 11.1, 11.4 and 11.6 only with the evidence of 13.1-13.4; update the living context and the manuals
       where D6-D9 changed behaviour; `openspec validate --all --strict` green.
       11.1 closed with 13.1/13.2; 11.4 with 13.4; 11.6 with the context/manual updates below. `openspec/config.yaml`,
       `docs/technical-manual.md`, `README.md` and `README.es.md` state the `(home, session, turn)` key, the plain
@@ -475,6 +497,10 @@ The correction run performs no archive, merge or push; the future implementation
       `tests/test_docs_bridge.py tests/test_manifest_modes.py`: 16 passed; `openspec validate --all --strict`:
       2 passed, 0 failed. Evidence: `reports/2026-10-13-step-13-r4-core.md`,
       `reports/2026-10-13-step-13-install-r4.md`.
+      Reclosed in bridge2 R2 with the D6/H14 corrections of this round: `openspec/config.yaml`, the technical
+      manual and both READMEs now state the per-owner turn capacity and the explicit-identity precedence
+      besides the composite key, the plain `mode.profile` key, the failing profile's redaction and the offline
+      provisioning. Evidence: `reports/2026-10-13-step-15-close-b2r1.md`.
 - [x] 13.6 Full suite with counts and runtime; `gitleaks protect --staged` before every commit; no `tasks/` inside
       the repository; delivery with `## Issues`.
       `.venv/Scripts/python -m pytest -q -p no:cacheprovider`: 910 passed, 1 skipped in 339.03s (0:05:39);
@@ -532,3 +558,8 @@ The correction run performs no archive, merge or push; the future implementation
       reopened turn tasks above.
       GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge2_codex_r1_evidence.py`:
       1 passed in 1.18s; external `bridge2-codex-r1-evidence-green.log`.
+      Reclosed in bridge2 R2: the two turnaround counterexamples are corrected in `plugin.py` and ported as
+      `tests/test_round4_amendments.py`; the evidence-consistency probe now closes 11.1/11.4/11.6/13.2/13.5
+      with their measured reports instead of requiring them open. RED 2 failed in 1.45s → GREEN 9 passed in
+      2.49s; the full round evidence is in `reports/2026-10-13-step-15-turn-identity-b2r1.md`,
+      `reports/2026-10-13-step-15-install-b2r1.md` and `reports/2026-10-13-step-15-close-b2r1.md`.
