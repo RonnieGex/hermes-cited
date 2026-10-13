@@ -432,17 +432,14 @@ def test_cli_record_directly_in_temp_root_never_authorizes_all_temp():
 
 
 def test_reopened_rounds_close_only_with_their_measured_reports():
-    """The bridge reviews reopened 11.1/11.4/11.6/13.2/13.5; each closure names a report on disk.
-
-    This is the ported intent of the external ``test_tasks_do_not_close_the_unexecuted_real_catalog``
-    probe, flipped to its final contract: the tasks are closed **and** the reports that measured them
-    exist with their counts. When 13.4 was re-executed offline its probe's expectation that 11.4 stays
-    open became obsolete, so the invariant is the evidence, not the permanent openness.
-    """
+    """Keep historical evidence while the new real-dispatch failure reopens turn compliance."""
     text = TASKS.read_text(encoding="utf-8")
     status = {number: flag for flag, number in re.findall(r"^- \[([ x])\] (\d+\.\d+)\b", text, re.M)}
-    for number in ("11.1", "11.4", "11.6", "13.2", "13.5"):
-        assert status[number] == "x", number + " must be closed with the measured report of this round"
+    for number in ("11.1", "11.6", "13.2", "13.5"):
+        assert status[number] == " ", number + " remains open after the real-dispatch counterexample"
+    assert status["11.4"] == status["13.4"] == "x"
+    assert "bridge2-codex-r2-real-dispatch.log" in text
+    assert "bridge2-codex-r2-real-dispatch-baseline.log" in text
     measured = {
         "2026-10-13-step-15-turn-identity-b2r1.md": ("13.2", "11.1"),
         "2026-10-13-step-15-install-b2r1.md": ("13.4", "11.4"),

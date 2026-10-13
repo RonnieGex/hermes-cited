@@ -298,7 +298,7 @@ The correction run performs no archive, merge or push; the future implementation
       (`bridge-r2-tasks-green.log`); `openspec validate --all --strict`: 2 passed, 0 failed.
 
 ## 11. Round 3 review corrections
-- [x] 11.1 B01 — bind every full callback and its turn state to the registering profile (D2/H19/H20/H21).
+- [ ] 11.1 B01 — bind every full callback and its turn state to the registering profile (D2/H19/H20/H21).
       `plugin._profile_call` validates the scope and reads its settings before an effect; `hermes_home`,
       `_secret` and `_language` resolve through the call in progress; `_ProfileState` scopes `ctx.state` per
       profile; `Turn.home` plus the explicit home of each callback keeps a turn visible only to its profile.
@@ -353,7 +353,7 @@ The correction run performs no archive, merge or push; the future implementation
       tests/test_plugin.py tests/test_modes.py tests/test_host.py tests/test_adversarial.py
       tests/test_profile_scope.py tests/test_search_only_mode.py`: 173 passed in 84.29s.
       Evidence: `reports/2026-10-12-step-11-callbacks-r3.md`.
-- [x] 11.6 6.2 — the living context and the documents state the per-callback binding with no drift.
+- [ ] 11.6 6.2 — the living context and the documents state the per-callback binding with no drift.
       `openspec/config.yaml` carries the rule; `docs/technical-manual.md`, `README.md` and `README.es.md` state
       it. `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_docs_bridge.py
       tests/test_manifest_modes.py`: 16 passed; `openspec validate --all --strict`: 2 passed, 0 failed.
@@ -457,7 +457,7 @@ The correction run performs no archive, merge or push; the future implementation
       post-tool and quote callbacks hand it over. GREEN:
       `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_profile_callbacks.py` 9 passed in 0.74s.
       Evidence: `reports/2026-10-13-step-13-r4-core.md`.
-- [x] 13.2 D6 (M01-R3): turn table keyed by (home, session, turn); refusal before any turn access; cleanup only of
+- [ ] 13.2 D6 (M01-R3): turn table keyed by (home, session, turn); refusal before any turn access; cleanup only of
       the owned turn; eviction and migration on the same key. GREEN for both H19 scenarios plus the H14 regressions.
       `_find_turn_locked`/`_turn_of`/`_drop_turn` use the composite key and `_transform_llm_output` validates before
       any turn access and drops only when the call passed validation. GREEN: 286 passed in 140.99s (callbacks and
@@ -489,7 +489,7 @@ The correction run performs no archive, merge or push; the future implementation
       Re-executed in bridge2 R2 on the delivery commit with the same pinned image, `--network none`,
       read-only mirror/inputs/runtime/cache/wheelhouse and temporary homes; the fresh mirror and canonical
       archive pin the new bridge commit. Evidence: `reports/2026-10-13-step-15-install-b2r1.md`.
-- [x] 13.5 Close 11.1, 11.4 and 11.6 only with the evidence of 13.1-13.4; update the living context and the manuals
+- [ ] 13.5 Close 11.1, 11.4 and 11.6 only with the evidence of 13.1-13.4; update the living context and the manuals
       where D6-D9 changed behaviour; `openspec validate --all --strict` green.
       11.1 closed with 13.1/13.2; 11.4 with 13.4; 11.6 with the context/manual updates below. `openspec/config.yaml`,
       `docs/technical-manual.md`, `README.md` and `README.es.md` state the `(home, session, turn)` key, the plain
@@ -585,3 +585,32 @@ The correction run performs no archive, merge or push; the future implementation
       ../tasks/test_bridge2_codex_r2.py -k oversized_numeric_timeout`: 1 passed, 12 deselected in 1.32s.
       Added a valid 5000-leading-zero control; the same pytest file with `-k timeout` gives
       2 passed, 12 deselected in 1.81s (`bridge2-codex-r2-timeout-boundaries.log`).
+- [x] 15.3 Reconcile turn completion claims with the newly executed host-dispatch counterexample and
+      preserve historical reports as evidence of their specific executions, not current compliance.
+      RED: `.venv/Scripts/python -m pytest -q -p no:cacheprovider
+      ../tasks/test_bridge2_codex_r2_evidence.py`: 1 failed in 5.21s (`bridge2-codex-r2-evidence-red.log`).
+      The pinned host's real `model_tools._execute_tool` passes task_id and session_id to the real registry,
+      but omits turn_id. Its normal task_id differs from its pre-hook turn_id. With the current plugin,
+      search returns no pid and cited_quote refuses the normal turn. External new probe:
+      `pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r2.py -k pinned_host_execution`:
+      1 failed, 12 deselected in 5.91s (`bridge2-codex-r2-real-dispatch.log`). The identical probe with
+      only plugin.py loaded from 65b3051 passes in 6.78s (`bridge2-codex-r2-real-dispatch-baseline.log`).
+      Reopen 11.1/11.6/13.2/13.5. This supersedes their earlier bridge2 R2 closure assertions and 14.5's
+      reclosed note. The new opaque-identity and task-only-observer probes also find inconsistent turn
+      resolution. A delayed observer can recreate a completed turn; actual host delivery of that ordering
+      has not been established. None of these turn paths is repaired by a search-only wire fix.
+      11.4/13.4 remain backed by the independently executed offline installation; D10 excludes Ledger R10.
+      Identity resolution across pre-hook, handler, observer and cleanup requires the next implementation
+      round with its approved contract. No host or personal installation was modified.
+      GREEN: `pytest -q -p no:cacheprovider tests/test_bridge2_amendments.py
+      ../tasks/test_bridge2_codex_r2_evidence.py -k 'reopened_rounds or current_turn_closure'`:
+      2 passed, 19 deselected in 2.05s (`bridge2-codex-r2-closure-green.log`). The existing closure test
+      first failed after reopening 11.1 (1 failed, 19 deselected in 0.56s); it now preserves the historical
+      report assertions and checks the measured open turn tasks separately from the completed install.
+      Independent integration: `reports/2026-10-13-step-16-integration-codex-r2.md`. Eight new curl cases
+      pass with stopped PID/closed port; the real offline search install at product b747a57 passes
+      (1 passed, 29 deselected in 334.44s) with a complete unchanged 271-file inventory and removed container.
+      Final full suite: `.venv/Scripts/python -m pytest -q -ra -p no:cacheprovider`:
+      932 passed, 1 skipped in 366.80s (`bridge2-codex-r2-suite-final.log`). The skip is the install without
+      its prerequisite variables, executed separately above. New final external probes: 5 failed,
+      9 passed in 14.35s (`bridge2-codex-r2-probes-final.log`); turn issues remain open, not waived.
