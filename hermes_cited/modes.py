@@ -74,13 +74,23 @@ def set_mode(state, mode, session_id=None) -> str:
     return key
 
 
-def mode_command(state, mode):
-    """The handler of ``/cited`` or ``/dot``: change the mode of this conversation."""
+def mode_command(state, mode, language=None):
+    """The handler of ``/cited`` or ``/dot``: change the mode of this conversation.
+
+    ``language`` is the language of the profile that registered the command: a callable read at the
+    moment of the command, or ``None`` for the standalone environment (D2, B01).
+    """
     value = _clean(mode) or "dot"
 
-    def handler(raw_args=""):
+    def handler(raw_args="", **kwargs):
         session_id = current_session_key()
         set_mode(state, value, session_id=session_id)
-        return mode_text(language_of(os.environ.get("CITED_LANGUAGE")), value)
+        try:
+            code = language() if callable(language) else language
+        except Exception:
+            code = None
+        if not code:
+            code = language_of(os.environ.get("CITED_LANGUAGE"))
+        return mode_text(code, value)
 
     return handler

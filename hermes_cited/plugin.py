@@ -22,6 +22,8 @@ other, next to the general note that says this version emits no seal.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import json
 import logging
 import os
@@ -78,9 +80,64 @@ _TURNS = {}
 _ACTIVE = {}
 _TURNS_LOCK = threading.Lock()
 
+#: The profile of the call in progress: ``(canonical home, settings)``. Every registered callback sets
+#: it before an effect and reads the URL, the token, the language and the default mode from it, so a
+#: process that hosts more than one Hermes profile never crosses them (D2, B01).
+_CALL = contextvars.ContextVar("hermes_cited_profile_call", default=None)
+
+
+@contextlib.contextmanager
+def _profile_call(registration):
+    """Validate the profile of *registration* and read its settings before any effect (D2, B01).
+
+    With a registration, ``config.settings_for`` checks that the active scope is still the same home and
+    the same mode and fails closed otherwise. Without one (a direct call of a factory by a test) the
+    documented environment of a standalone run is used, exactly as H0-H18 always did.
+    """
+    if registration is None:
+        settings = settings_from_env()
+        home = ""
+    else:
+        settings = config.settings_for(registration)
+        home = config.canonical_home(registration.home)
+    token = _CALL.set((home, settings))
+    try:
+        yield settings
+    finally:
+        _CALL.reset(token)
+
+
+def _owner(home):
+    """The profile identity a lookup is bound to, or ``""`` for the unfiltered legacy path.
+
+    Every registered callback passes the home of its registration explicitly, so the unfiltered form is
+    reachable only from a direct call of a factory by a test or from a standalone run (D2, B01).
+    """
+    return config.canonical_home(home) if home is not None else ""
+
+
+class _ProfileState:
+    """A per-profile view of ``ctx.state``: the mode of one profile never leaks into another (D2, B01)."""
+
+    def __init__(self, state, home):
+        self._state = state
+        self._prefix = "{0}\x00".format(config.canonical_home(home) or "")
+
+    def get(self, key, default=None):
+        try:
+            return self._state.get(self._prefix + str(key), default)
+        except BaseException:
+            return default
+
+    def set(self, key, value):
+        return self._state.set(self._prefix + str(key), value)
+
 
 def hermes_home() -> Path:
-    """The data root of this run. Hermes's own accessor first, then the environment."""
+    """The data root of this run: the profile of the call in progress, then Hermes, then the environment."""
+    current = _CALL.get()
+    if current is not None and current[0]:
+        return Path(current[0])
     try:
         from hermes_constants import get_hermes_home
 
@@ -101,6 +158,9 @@ def _now() -> str:
 
 
 def _secret() -> str:
+    current = _CALL.get()
+    if current is not None:
+        return str(current[1].token or "")
     try:
         return settings_from_env().token
     except Exception:
@@ -108,6 +168,9 @@ def _secret() -> str:
 
 
 def _language() -> str:
+    current = _CALL.get()
+    if current is not None:
+        return current[1].language
     try:
         return settings_from_env().language
     except Exception:
@@ -177,9 +240,10 @@ def _as_identifier(value):
 class Turn:
     """What one turn of one session knows: its question, its mode, its passages and its selections."""
 
-    def __init__(self, session_id="", turn_id=""):
+    def __init__(self, session_id="", turn_id="", home=""):
         self.session_id = str(session_id or "")
         self.turn_id = str(turn_id or "")
+        self.home = str(home or "")
         self.question = ""
         self.platform = ""
         self.user = ""
@@ -360,19 +424,26 @@ def _key(session_id, turn_id):
     return (str(session_id or ""), str(turn_id or ""))
 
 
-def _turn_of(session_id, turn_id, create=False):
+def _turn_of(session_id, turn_id, create=False, home=None):
+    """The turn of this session and execution identity, only when it belongs to the profile in hand."""
     key = _key(session_id, turn_id)
+    owner = _owner(home)
     with _TURNS_LOCK:
         turn = _TURNS.get(key)
-        if turn is None and create:
-            if len(_TURNS) >= _MAX_TURNS:
-                for stale in list(_TURNS)[: len(_TURNS) - _MAX_TURNS + 1]:
-                    _remove_locked(stale)
-            turn = Turn(session_id, turn_id)
-            _TURNS[key] = turn
-            if turn.session_id:
-                _ACTIVE.setdefault(turn.session_id, [])
-                _ACTIVE[turn.session_id].append(turn)
+        if turn is not None:
+            if owner and turn.home and turn.home != owner:
+                return None
+            return turn
+        if not create:
+            return None
+        if len(_TURNS) >= _MAX_TURNS:
+            for stale in list(_TURNS)[: len(_TURNS) - _MAX_TURNS + 1]:
+                _remove_locked(stale)
+        turn = Turn(session_id, turn_id, home=owner)
+        _TURNS[key] = turn
+        if turn.session_id:
+            _ACTIVE.setdefault(turn.session_id, [])
+            _ACTIVE[turn.session_id].append(turn)
         return turn
 
 
@@ -388,25 +459,30 @@ def _remove_locked(key):
     return turn
 
 
-def _active_turns(session_id):
-    """The turns of one session that have not returned from ``transform_llm_output`` yet."""
+def _active_turns(session_id, home=None):
+    """The turns of one session, of the profile in hand, that have not returned from the transformer."""
+    owner = _owner(home)
     with _TURNS_LOCK:
-        return list(_ACTIVE.get(str(session_id or ""), []))
+        turns = list(_ACTIVE.get(str(session_id or ""), []))
+    if not owner:
+        return turns
+    return [turn for turn in turns if not turn.home or turn.home == owner]
 
 
-def _active_turn(session_id):
+def _active_turn(session_id, home=None):
     """The only active turn of a session, or ``None`` when there is none or more than one (H14)."""
-    turns = _active_turns(session_id)
+    turns = _active_turns(session_id, home=home)
     return turns[0] if len(turns) == 1 else None
 
 
-def _resolve_active_turn(session_id, turn_id="", task_id=""):
+def _resolve_active_turn(session_id, turn_id="", task_id="", home=None):
     """Bind a selection to the turn of the execution identity, never to the latest one (H14).
 
     Returns ``(turn, error)``. With more than one active turn and no identity that picks exactly one, the
     selection is rejected instead of guessed.
     """
-    turns = _active_turns(session_id)
+    owner = _owner(home)
+    turns = _active_turns(session_id, home=owner)
     if not turns:
         return None, (
             "Cited has no turn to quote from. Call `cited_search` or `cited_ask` first in this same turn, "
@@ -419,7 +495,7 @@ def _resolve_active_turn(session_id, turn_id="", task_id=""):
             return matches[0], ""
         with _TURNS_LOCK:
             unique = _TURNS.get(_key(session_id, candidate))
-        if unique is not None:
+        if unique is not None and (not owner or not unique.home or unique.home == owner):
             return unique, ""
     if len(turns) == 1:
         return turns[0], ""
@@ -429,8 +505,12 @@ def _resolve_active_turn(session_id, turn_id="", task_id=""):
     )
 
 
-def _drop_turn(session_id, turn_id):
+def _drop_turn(session_id, turn_id, home=None):
+    owner = _owner(home)
     with _TURNS_LOCK:
+        turn = _TURNS.get(_key(session_id, turn_id))
+        if turn is not None and owner and turn.home and turn.home != owner:
+            return None
         return _remove_locked(_key(session_id, turn_id))
 
 
@@ -498,8 +578,8 @@ def _search_handler(registration):
 
 
 def _register_full(ctx, registration) -> None:
-    """The full surface of H0-H18, with every handler bound to its registration."""
-    state = ctx.state
+    """The full surface of H0-H18, with every handler bound to its registration (D2, B01)."""
+    state = _ProfileState(ctx.state, registration.home)
     ctx.register_tool(
         "cited_search",
         tools.TOOLSET,
@@ -520,21 +600,21 @@ def _register_full(ctx, registration) -> None:
         "cited_quote",
         tools.TOOLSET,
         tools.QUOTE_SCHEMA,
-        _quote_handler(state),
+        _quote_handler(state, registration),
         description=tools.QUOTE_DESCRIPTION,
         emoji="❝",
     )
-    ctx.register_hook("pre_llm_call", _pre_llm_call(state))
-    ctx.register_hook("post_tool_call", _post_tool_call())
-    ctx.register_hook("transform_llm_output", _transform_llm_output(state))
+    ctx.register_hook("pre_llm_call", _pre_llm_call(state, registration))
+    ctx.register_hook("post_tool_call", _post_tool_call(registration))
+    ctx.register_hook("transform_llm_output", _transform_llm_output(state, registration))
     ctx.register_command(
         "cited",
-        modes.mode_command(state, "cited"),
+        _profile_command(registration, modes.mode_command(state, "cited", language=_safe_language)),
         description="Cited mode: the plugin answers with the lines you choose from Cited.",
     )
     ctx.register_command(
         "dot",
-        modes.mode_command(state, "dot"),
+        _profile_command(registration, modes.mode_command(state, "dot", language=_safe_language)),
         description="Dot mode: normal answers, Cited used when it helps.",
     )
     ctx.register_skill(
@@ -543,37 +623,60 @@ def _register_full(ctx, registration) -> None:
         description=SKILL_DESCRIPTION,
         frontmatter={"name": "cited", "description": SKILL_DESCRIPTION},
     )
-    _warn_about_streaming(state)
+    _warn_about_streaming(state, registration)
 
 
-def _warn_about_streaming(state) -> None:
+def _profile_command(registration, action):
+    """A command validates the profile of its registration before it changes any state (D2, B01)."""
+
+    def handler(raw_args="", **kwargs):
+        try:
+            with _profile_call(registration):
+                return action(raw_args)
+        except config.CitedError as error:
+            return str(error)
+        except BaseException as error:
+            _report_failure("the Cited command failed", incident_code(), error)
+            return (
+                "Cited could not change the mode: the configuration of this profile could not be read."
+            )
+
+    return handler
+
+
+def _warn_about_streaming(state, registration=None) -> None:
     """A load-time diagnostic when cited mode is the default and a messaging surface withholds (D7)."""
     try:
-        if modes.resolve_mode(state, "") != "cited":
-            return
-        for platform in delivery.MESSAGING_PLATFORMS:
-            snap = delivery.snapshot(platform, home=hermes_home())
-            if not snap.seal:
-                logger.warning(
-                    "hermes-cited: cited mode is on and '%s' withholds the seal (%s).",
-                    platform,
-                    ", ".join(snap.reasons) or "unknown",
-                )
+        with _profile_call(registration) as settings:
+            if modes.resolve_mode(state, "", settings.default_mode) != "cited":
+                return
+            for platform in delivery.MESSAGING_PLATFORMS:
+                snap = delivery.snapshot(platform, home=hermes_home())
+                if not snap.seal:
+                    logger.warning(
+                        "hermes-cited: cited mode is on and '%s' withholds the seal (%s).",
+                        platform,
+                        ", ".join(snap.reasons) or "unknown",
+                    )
     except Exception:
         return
 
 
-def _pre_llm_call(state):
+def _pre_llm_call(state, registration=None):
     def pre_llm_call(session_id="", turn_id="", user_message="", platform="", sender_id="", **kwargs):
-        turn = _turn_of(session_id, turn_id, create=True)
-        turn.question = _text_of_message(user_message)
-        turn.platform = str(platform or "")
-        turn.user = str(sender_id or "")
-        turn.mode = modes.resolve_mode(state, session_id)
-        if turn.mode != "cited":
+        try:
+            with _profile_call(registration) as settings:
+                turn = _turn_of(session_id, turn_id, create=True, home=registration.home if registration else None)
+                turn.question = _text_of_message(user_message)
+                turn.platform = str(platform or "")
+                turn.user = str(sender_id or "")
+                turn.mode = modes.resolve_mode(state, session_id, settings.default_mode)
+                if turn.mode != "cited":
+                    return None
+                turn.delivery = delivery.snapshot(turn.platform, home=hermes_home())
+                return {"context": CITED_RULES}
+        except config.CitedError:
             return None
-        turn.delivery = delivery.snapshot(turn.platform, home=hermes_home())
-        return {"context": CITED_RULES}
 
     return pre_llm_call
 
@@ -594,30 +697,33 @@ def _evidence_handler(build, registration):
 
     The identifiers are assigned while the result is built and bound to the real turn of the execution, so
     the model, the render and the log use the same record and the hook never renumbers it. The settings are
-    read fresh from the profile of *registration* on every call, and a changed home or mode is refused.
+    read fresh from the profile of *registration* on every call, and a changed home or mode is refused
+    before the request, so the callback can never act for another profile (D2, B01).
     """
 
     def handler(args=None, session_id="", task_id="", turn_id="", **kwargs):
         try:
-            settings = config.settings_for(registration)
+            with _profile_call(registration) as settings:
+                result = build(args, settings=settings, **kwargs)
+                return _bind_result(
+                    result, args, session_id, turn_id, task_id, home=registration.home
+                )
         except config.CitedError as error:
             return str(error)
         except Exception:
             return "Cited could not be called: the configuration of this profile could not be read."
-        result = build(args, settings=settings, **kwargs)
-        return _bind_result(result, args, session_id, turn_id, task_id)
 
     return handler
 
 
-def _bind_result(result, args, session_id, turn_id, task_id):
+def _bind_result(result, args, session_id, turn_id, task_id, home=None):
     if not isinstance(result, str):
         return result
     try:
         envelope = tools.parse_tool_result(result)
         if envelope is None:
             return result
-        turn, _error = _resolve_active_turn(session_id, turn_id=turn_id, task_id=task_id)
+        turn, _error = _resolve_active_turn(session_id, turn_id=turn_id, task_id=task_id, home=home)
         if turn is None:
             return result
         return turn.bind_envelope(envelope, str(envelope.get("cited_tool") or ""), args)
@@ -626,42 +732,57 @@ def _bind_result(result, args, session_id, turn_id, task_id):
         return result
 
 
-def _post_tool_call():
+def _note_tool_call(tool_name, args, result, session_id, turn_id, status, home=None):
+    if tool_name not in tools.EVIDENCE_TOOLS:
+        try:
+            turn = _turn_of(session_id, turn_id, create=False, home=home)
+        except BaseException:
+            turn = None
+        if turn is not None:
+            turn.note_quote_call(args if isinstance(args, dict) else {}, status)
+        return None
+    turn = _turn_of(session_id, turn_id, create=True, home=home)
+    envelope = tools.parse_tool_result(result, tool_name)
+    if envelope is not None:
+        turn.note_call(envelope, tool_name, args, status)
+    return None
+
+
+def _post_tool_call(registration=None):
     def post_tool_call(tool_name="", args=None, result=None, session_id="", turn_id="", status="", **kwargs):
         if tool_name not in tools.TOOL_NAMES:
             return None
-        if tool_name not in tools.EVIDENCE_TOOLS:
-            try:
-                turn = _turn_of(session_id, turn_id, create=False)
-            except BaseException:
-                turn = None
-            if turn is not None:
-                turn.note_quote_call(args if isinstance(args, dict) else {}, status)
-            return None
+        home = registration.home if registration is not None else None
         try:
-            turn = _turn_of(session_id, turn_id, create=True)
-            envelope = tools.parse_tool_result(result, tool_name)
-            if envelope is not None:
-                turn.note_call(envelope, tool_name, args, status)
+            with _profile_call(registration):
+                return _note_tool_call(tool_name, args, result, session_id, turn_id, status, home=home)
+        except config.CitedError:
+            return None
         except BaseException as error:
             _report_failure("the post_tool_call hook failed", incident_code(), error)
-        return None
+            return None
 
     return post_tool_call
 
 
-def _quote_handler(state):
+def _quote_handler(state, registration=None):
     """The ``cited_quote`` handler: the model chooses numbered lines, the plugin records them."""
 
     def cited_quote(args=None, session_id="", task_id="", turn_id="", **kwargs):
         try:
-            turn, error = _resolve_active_turn(session_id, turn_id=turn_id, task_id=task_id)
-            if turn is None:
-                return error
-            texts, error = turn.add_quote(args)
-            if error:
-                return "Cited could not quote: {0}.".format(error)
-            return "\n".join(texts)
+            with _profile_call(registration):
+                home = registration.home if registration is not None else None
+                turn, error = _resolve_active_turn(
+                    session_id, turn_id=turn_id, task_id=task_id, home=home
+                )
+                if turn is None:
+                    return error
+                texts, error = turn.add_quote(args)
+                if error:
+                    return "Cited could not quote: {0}.".format(error)
+                return "\n".join(texts)
+        except config.CitedError as error:
+            return str(error)
         except BaseException as error:
             _report_failure("the cited_quote handler failed", incident_code(), error)
             return "Cited could not quote this selection."
@@ -669,12 +790,17 @@ def _quote_handler(state):
     return cited_quote
 
 
-def _recorded_mode(session_id, turn_id) -> str:
+def _recorded_mode(session_id, turn_id, home=None) -> str:
     """The mode recorded for this turn, read before the boundary opens and without a fallible step."""
     try:
         with _TURNS_LOCK:
             turn = _TURNS.get(_key(session_id, turn_id))
-            return str(turn.mode or "").strip().lower() if turn is not None else ""
+        if turn is None:
+            return ""
+        owner = _owner(home)
+        if owner and turn.home and turn.home != owner:
+            return ""
+        return str(turn.mode or "").strip().lower()
     except BaseException:
         return ""
 
@@ -719,25 +845,27 @@ def _report_failure(message, code, error) -> None:
         pass
 
 
-def _transform_llm_output(state):
+def _transform_llm_output(state, registration=None):
     def transform_llm_output(response_text="", session_id="", turn_id="", platform="", **kwargs):
-        intent = _recorded_mode(session_id, turn_id)
+        home = registration.home if registration is not None else None
+        intent = _recorded_mode(session_id, turn_id, home=home)
         mode = None
         try:
             text = response_text if isinstance(response_text, str) else str(response_text or "")
-            turn = _turn_of(session_id, turn_id, create=True)
-            if platform and not turn.platform:
-                turn.platform = str(platform)
-            recorded = str(turn.mode or "").strip().lower()
-            if recorded:
-                intent = recorded
-            mode = recorded or modes.resolve_mode(state, session_id)
-            if mode != "cited":
-                return _deliver_dot(turn, text)
-            language = _language()
-            if turn.delivery is None:
-                turn.delivery = delivery.snapshot(turn.platform or platform, home=hermes_home())
-            return _deliver_cited(turn, language)
+            with _profile_call(registration) as settings:
+                turn = _turn_of(session_id, turn_id, create=True, home=home)
+                if platform and not turn.platform:
+                    turn.platform = str(platform)
+                recorded = str(turn.mode or "").strip().lower()
+                if recorded:
+                    intent = recorded
+                mode = recorded or modes.resolve_mode(state, session_id, settings.default_mode)
+                if mode != "cited":
+                    return _deliver_dot(turn, text)
+                language = settings.language
+                if turn.delivery is None:
+                    turn.delivery = delivery.snapshot(turn.platform or platform, home=hermes_home())
+                return _deliver_cited(turn, language)
         except BaseException as error:
             code = incident_code()
             _report_failure("the cited-mode transformer failed", code, error)
@@ -749,7 +877,7 @@ def _transform_llm_output(state):
             return _operational_refusal(code)
         finally:
             try:
-                _drop_turn(session_id, turn_id)
+                _drop_turn(session_id, turn_id, home=home)
             except BaseException:
                 pass
 
