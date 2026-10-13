@@ -11,7 +11,7 @@ The correction run performs no archive, merge or push; the future implementation
 - [x] 0.1 Branch creation evidence: `reports/2026-10-12-step-0-branch.md`.
 
 ## 1. TDD and guard first
-- [x] 1.1 Write RED `tests/test_search_guard.py`: all effective URLs, sockets and redirect destinations reject
+- [ ] 1.1 Write RED `tests/test_search_guard.py`: all effective URLs, sockets and redirect destinations reject
       ports 3240/3241, localhost aliases and IPv6 equivalents; canonical paths reject the personal installation,
       symlinks/junction escapes and anything outside the registered temporary workspace. Missing overrides fail
       before file/process/network effects. Then implement the test guard and record RED/GREEN.
@@ -30,7 +30,7 @@ The correction run performs no archive, merge or push; the future implementation
       Closed in R2: authentication precedes body parsing, the envelope is closed, `null` is -32600 and an
       invalid version or id answers a null id. RED 5 failed, 11 passed; GREEN 16 passed in 10.12s;
       probe case `delivered_fake_conforms` 4 passed. Evidence: `reports/2026-10-12-step-1-wire-fake-r2.md`.
-- [x] 1.3 RED `tests/test_search_only_mode.py`, `tests/test_profile_scope.py`, `tests/test_search_wire.py` for every
+- [ ] 1.3 RED `tests/test_search_only_mode.py`, `tests/test_profile_scope.py`, `tests/test_search_wire.py` for every
       H19-H21 scenario and Mapping access spies. Record before/after including failure paths.
       Evidence: `reports/2026-10-12-step-1-red.md`, `reports/2026-10-12-step-2-implementation.md`.
       Reopened in R1: missing-scope registration and real multiplex root fallback are not covered by these tests.
@@ -38,7 +38,7 @@ The correction run performs no archive, merge or push; the future implementation
       spelling and every fixed transport diagnostic have cases. RED 11 failed, 2 passed; GREEN 107 passed in
       44.02s; the R1 probe is 27 passed, including the two real-host scope cases.
       Evidence: `reports/2026-10-12-step-2-scope-r2.md`.
-- [x] 1.4 RED `tests/test_manifest_modes.py`, `tests/test_profile_install.py`, and README/manual tests for H22;
+- [ ] 1.4 RED `tests/test_manifest_modes.py`, `tests/test_profile_install.py`, and README/manual tests for H22;
       preserve full regression cases H12-H18 and check unique IDs on a temporary synchronized spec copy.
       Evidence: `reports/2026-10-12-step-1-red.md`, `reports/2026-10-12-step-6-docs.md`.
       Reopened in R1: the installation test passes the Hermes SHA as the bridge ref and never tests the catalog/call.
@@ -60,7 +60,7 @@ The correction run performs no archive, merge or push; the future implementation
 - [x] 2.2 client.py/tools.py: search-only strict arguments, wire v1 endpoint, response validation and redaction;
       retain full behavior. Do not coerce booleans, numbers or fractional limits in search.
       Evidence: `reports/2026-10-12-step-2-implementation.md`, `tests/test_search_wire.py`.
-- [x] 2.3 plugin.py: search registration with one handler bound to its profile identity, no shared settings cache.
+- [ ] 2.3 plugin.py: search registration with one handler bound to its profile identity, no shared settings cache.
       Evidence: `reports/2026-10-12-step-2-implementation.md`, `tests/test_search_only_mode.py`.
       Reopened in R1: empty search home still registers; an unreadable full scope registers and reads root credentials.
       Closed in R2: `register` refuses every mode when the scope cannot be read, there is no environment fallback
@@ -106,7 +106,7 @@ The correction run performs no archive, merge or push; the future implementation
 - [x] 6.1 Update README.md, README.es.md and docs/technical-manual.md with modes, scope failures, conditional
       secrets, complete wire, no writes, per-profile install and canonical pin command.
       Evidence: `reports/2026-10-12-step-6-docs.md`.
-- [x] 6.2 Verify openspec/config.yaml against implementation; update schema/fixture consumers, never silently drift.
+- [ ] 6.2 Verify openspec/config.yaml against implementation; update schema/fixture consumers, never silently drift.
       Evidence: `reports/2026-10-12-step-6-docs.md` (no drift found; no edit needed).
       Reopened in R1: the claimed fail-closed scope behavior contradicts the actual full-mode fallback.
       Closed in R2: `openspec/config.yaml` states the fail-closed scope rule, the package version matches the
@@ -186,7 +186,7 @@ The correction run performs no archive, merge or push; the future implementation
 - [x] 9.3 M02 — fixed transport diagnostics. The search timeout, `URLError`, `OSError`, read failure and any
       unexpected exception return fixed sentences; no exception text reaches the model. RED 5 failed on these
       cases; GREEN with the scope suite. Evidence: `reports/2026-10-12-step-2-scope-r2.md`.
-- [x] 9.4 M03 — the isolation guard. `guard_environment({})` raises before any effect, the whole temp directory
+- [ ] 9.4 M03 — the isolation guard. `guard_environment({})` raises before any effect, the whole temp directory
       is no longer authorised, an inherited personal `HERMES_HOME` is replaced by a temporary one, and the
       host modules of one test are removed afterwards. RED 2 failed, 1 passed; GREEN `tests/test_search_guard.py`
       27 passed in 5.99s. Evidence: `reports/2026-10-12-step-1-guard-r2.md`.
@@ -194,7 +194,7 @@ The correction run performs no archive, merge or push; the future implementation
       unknown properties and a missing version, `null` is -32600 and an invalid version or id answers a null id.
       RED 5 failed, 11 passed; GREEN 16 passed in 10.12s; probe case `delivered_fake_conforms` 4 passed.
       Evidence: `reports/2026-10-12-step-1-wire-fake-r2.md`.
-- [x] 9.6 M01 — the profile installation runner. Separate host pin and bridge ref, ref validation, search
+- [ ] 9.6 M01 — the profile installation runner. Separate host pin and bridge ref, ref validation, search
       configuration written before discovery, digest, manifest, catalog and scoped handler call. RED 7 failed;
       GREEN 14 passed, 1 skipped. The isolated E2E of 5.3 remains BLOCKED without the disposable VM.
       Evidence: `reports/2026-10-12-step-1-install-r2.md`.
@@ -203,7 +203,7 @@ The correction run performs no archive, merge or push; the future implementation
       the unit suite keeps running outside Hermes. `tests/test_host.py tests/test_plugin.py
       tests/test_adversarial.py tests/regressions`: 511 passed, 3 skipped in 227.55s.
       Evidence: `reports/2026-10-12-step-2-scope-r2.md`.
-- [x] 9.8 6.2 — the living context against the corrected implementation; the package version drift (0.1.0 vs the
+- [ ] 9.8 6.2 — the living context against the corrected implementation; the package version drift (0.1.0 vs the
       0.2.0 manifest) is corrected and config.yaml states the fail-closed scope rule.
       Evidence: `reports/2026-10-12-step-6-config-r2.md`.
 
@@ -247,3 +247,17 @@ The correction run performs no archive, merge or push; the future implementation
       GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py
       -k new_closed_wire`: 5 passed, 14 deselected in 4.63s; `tests/test_chassis_fake.py`:
       16 passed in 8.40s. External evidence: `bridge-r2-fix-wire.log`, `bridge-r2-wire-regression.log`.
+- [x] 10.7 Reopen unsupported completion claims without erasing historical reports.
+      RED: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py
+      -k checked_tasks`: 1 failed, 20 deselected in 3.08s (`bridge-r2-tasks-red.log`).
+      Independent R2 evidence supersedes the earlier "Closed in R2" statements above:
+      1.1/9.4: a real HTTP call makes the fake write a log outside the only registered workspace,
+      even though guard_path rejects the same path (`bridge-r2-guard-red.log`).
+      1.3/2.3/6.2/9.8: the full callbacks use root defaults, quote another profile's passage and
+      prepare an audit write after a scope switch. The pinned real secret_scope reproduces all three
+      (`bridge-r2-real-scope.log`). Registration safety alone does not prove every callback safe.
+      1.4/9.6: the import-path defect is fixed, but the runner still uses FakeContext rather than the
+      host catalog and does not verify the host pin or canonical archive digest. Task 5.3 remains unrun.
+      Documentation must state that these gates are open; the approved D2/D4/H19/H22 requirements remain intact.
+      GREEN: the same `-k checked_tasks` command returned 1 passed, 20 deselected in 2.05s
+      (`bridge-r2-tasks-green.log`); `openspec validate --all --strict`: 2 passed, 0 failed.
