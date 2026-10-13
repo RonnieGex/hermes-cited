@@ -11,7 +11,7 @@ The correction run performs no archive, merge or push; the future implementation
 - [x] 0.1 Branch creation evidence: `reports/2026-10-12-step-0-branch.md`.
 
 ## 1. TDD and guard first
-- [ ] 1.1 Write RED `tests/test_search_guard.py`: all effective URLs, sockets and redirect destinations reject
+- [x] 1.1 Write RED `tests/test_search_guard.py`: all effective URLs, sockets and redirect destinations reject
       ports 3240/3241, localhost aliases and IPv6 equivalents; canonical paths reject the personal installation,
       symlinks/junction escapes and anything outside the registered temporary workspace. Missing overrides fail
       before file/process/network effects. Then implement the test guard and record RED/GREEN.
@@ -44,7 +44,7 @@ The correction run performs no archive, merge or push; the future implementation
       Reclosed in R3: B01 — the full callbacks and their turn state are bound to the registering profile; the
       new cases are `tests/test_profile_callbacks.py` and the R2 probe is 21 passed; see 11.1/11.2/11.5 and
       `reports/2026-10-12-step-11-callbacks-r3.md`.
-- [ ] 1.4 RED `tests/test_manifest_modes.py`, `tests/test_profile_install.py`, and README/manual tests for H22;
+- [x] 1.4 RED `tests/test_manifest_modes.py`, `tests/test_profile_install.py`, and README/manual tests for H22;
       preserve full regression cases H12-H18 and check unique IDs on a temporary synchronized spec copy.
       Evidence: `reports/2026-10-12-step-1-red.md`, `reports/2026-10-12-step-6-docs.md`.
       Reopened in R1: the installation test passes the Hermes SHA as the bridge ref and never tests the catalog/call.
@@ -215,7 +215,7 @@ The correction run performs no archive, merge or push; the future implementation
 - [x] 9.3 M02 — fixed transport diagnostics. The search timeout, `URLError`, `OSError`, read failure and any
       unexpected exception return fixed sentences; no exception text reaches the model. RED 5 failed on these
       cases; GREEN with the scope suite. Evidence: `reports/2026-10-12-step-2-scope-r2.md`.
-- [ ] 9.4 M03 — the isolation guard. `guard_environment({})` raises before any effect, the whole temp directory
+- [x] 9.4 M03 — the isolation guard. `guard_environment({})` raises before any effect, the whole temp directory
       is no longer authorised, an inherited personal `HERMES_HOME` is replaced by a temporary one, and the
       host modules of one test are removed afterwards. RED 2 failed, 1 passed; GREEN `tests/test_search_guard.py`
       27 passed in 5.99s. Evidence: `reports/2026-10-12-step-1-guard-r2.md`.
@@ -225,7 +225,7 @@ The correction run performs no archive, merge or push; the future implementation
       unknown properties and a missing version, `null` is -32600 and an invalid version or id answers a null id.
       RED 5 failed, 11 passed; GREEN 16 passed in 10.12s; probe case `delivered_fake_conforms` 4 passed.
       Evidence: `reports/2026-10-12-step-1-wire-fake-r2.md`.
-- [ ] 9.6 M01 — the profile installation runner. Separate host pin and bridge ref, ref validation, search
+- [x] 9.6 M01 — the profile installation runner. Separate host pin and bridge ref, ref validation, search
       configuration written before discovery, digest, manifest, catalog and scoped handler call. RED 7 failed;
       GREEN 14 passed, 1 skipped. The isolated E2E of 5.3 remains BLOCKED without the disposable VM.
       Evidence: `reports/2026-10-12-step-1-install-r2.md`.
@@ -298,7 +298,7 @@ The correction run performs no archive, merge or push; the future implementation
       (`bridge-r2-tasks-green.log`); `openspec validate --all --strict`: 2 passed, 0 failed.
 
 ## 11. Round 3 review corrections
-- [x] 11.1 B01 — bind every full callback and its turn state to the registering profile (D2/H19/H20/H21).
+- [ ] 11.1 B01 — bind every full callback and its turn state to the registering profile (D2/H19/H20/H21).
       `plugin._profile_call` validates the scope and reads its settings before an effect; `hermes_home`,
       `_secret` and `_language` resolve through the call in progress; `_ProfileState` scopes `ctx.state` per
       profile; `Turn.home` plus the explicit home of each callback keeps a turn visible only to its profile.
@@ -344,7 +344,7 @@ The correction run performs no archive, merge or push; the future implementation
       tests/test_plugin.py tests/test_modes.py tests/test_host.py tests/test_adversarial.py
       tests/test_profile_scope.py tests/test_search_only_mode.py`: 173 passed in 84.29s.
       Evidence: `reports/2026-10-12-step-11-callbacks-r3.md`.
-- [x] 11.6 6.2 — the living context and the documents state the per-callback binding with no drift.
+- [ ] 11.6 6.2 — the living context and the documents state the per-callback binding with no drift.
       `openspec/config.yaml` carries the rule; `docs/technical-manual.md`, `README.md` and `README.es.md` state
       it. `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_docs_bridge.py
       tests/test_manifest_modes.py`: 16 passed; `openspec validate --all --strict`: 2 passed, 0 failed.
@@ -444,7 +444,7 @@ The correction run performs no archive, merge or push; the future implementation
       post-tool and quote callbacks hand it over. GREEN:
       `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_profile_callbacks.py` 9 passed in 0.74s.
       Evidence: `reports/2026-10-13-step-13-r4-core.md`.
-- [x] 13.2 D6 (M01-R3): turn table keyed by (home, session, turn); refusal before any turn access; cleanup only of
+- [ ] 13.2 D6 (M01-R3): turn table keyed by (home, session, turn); refusal before any turn access; cleanup only of
       the owned turn; eviction and migration on the same key. GREEN for both H19 scenarios plus the H14 regressions.
       `_find_turn_locked`/`_turn_of`/`_drop_turn` use the composite key and `_transform_llm_output` validates before
       any turn access and drops only when the call passed validation. GREEN: 286 passed in 140.99s (callbacks and
@@ -467,7 +467,7 @@ The correction run performs no archive, merge or push; the future implementation
       `hooks: 0`, `commands: 0`, scoped dispatch answered, and the full profile inventory identical after setup.
       `1 passed, 29 deselected in 264.38s`; container exit 0, 301.95s, removed. Evidence:
       `reports/2026-10-13-step-13-install-r4.md`.
-- [x] 13.5 Close 11.1, 11.4 and 11.6 only with the evidence of 13.1-13.4; update the living context and the manuals
+- [ ] 13.5 Close 11.1, 11.4 and 11.6 only with the evidence of 13.1-13.4; update the living context and the manuals
       where D6-D9 changed behaviour; `openspec validate --all --strict` green.
       11.1 closed with 13.1/13.2; 11.4 with 13.4; 11.6 with the context/manual updates below. `openspec/config.yaml`,
       `docs/technical-manual.md`, `README.md` and `README.es.md` state the `(home, session, turn)` key, the plain
@@ -509,3 +509,26 @@ The correction run performs no archive, merge or push; the future implementation
       to escape the pre-hook. External evidence: `bridge2-codex-r1-prehook-regression-red.log`.
       GREEN: the same pytest command without `-k`, running the whole file: 10 passed in 5.60s;
       external `bridge2-codex-r1-prehook-regression-green.log`.
+- [x] 14.5 Reconcile completion flags with the new independent turn counterexamples and the measured
+      HTTP/install evidence. Preserve historical reports, reopen unsupported D6/H14 closure and close
+      stale guard/install flags only with executions. The new external evidence consistency probe is RED:
+      `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge2_codex_r1_evidence.py`
+      gives 1 failed in 1.28s (`bridge2-codex-r1-evidence-red.log`).
+      Bridge2 R1 reopens 11.1, 11.6, 13.2 and 13.5: a validated foreign profile opening 64 turns evicts
+      the owner's live evidence, and an explicit unmatched turn identifier selects the sole different
+      live turn. These supersede the R4 statements of complete D6/H14 implementation; the earlier
+      specific collision, refusal and persisted-state executions remain historical evidence.
+      `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r1.py`:
+      2 failed, 10 passed in 7.22s. External `bridge2-codex-r1-probes-final.log` contains both counterexamples.
+      Independent integration: `reports/2026-10-13-step-14-integration-codex.md`. Eight new curl cases pass,
+      with the owned server terminated and its port verified closed. The real offline install at product
+      commit 9a5066a passes (1 passed, 29 deselected in 291.99s), with the full 266-file profile inventory
+      unchanged after setup and the container removed. This refreshes 5.1/5.3 and closes 1.4/9.6.
+      `pytest -q -p no:cacheprovider tests/test_chassis_fake.py tests/test_search_guard.py
+      tests/test_manifest_modes.py tests/test_docs_bridge.py`: 63 passed in 13.37s; closes 1.1/9.4 using
+      their historical RED reports plus the current guard execution. `bridge2-codex-r1-sdd.py` confirms
+      17 valid modified requirements, 4 additions, unique merged H0-H22, identical counterpart wire bytes
+      and no normative drift from Fable's f59ab76. The remaining old closure notes do not override the
+      reopened turn tasks above.
+      GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge2_codex_r1_evidence.py`:
+      1 passed in 1.18s; external `bridge2-codex-r1-evidence-green.log`.
