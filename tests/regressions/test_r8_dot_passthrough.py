@@ -59,11 +59,25 @@ def test_d12_the_plugin_no_longer_reads_or_removes_the_mark(host):
 
 
 @pytest.mark.parametrize("case_id,draft", DRAFTS, ids=DRAFT_IDS)
-def test_d12_dot_mode_delivers_the_model_text_intact(host, monkeypatch, case_id, draft):
-    """D12.1: dot mode returns the text unchanged and the row records exactly what is delivered."""
-    monkeypatch.setenv("CITED_DEFAULT_MODE", "dot")
-    session, turn = begin(host)
-    final, transformed, _pre = apply(host, turn, draft)
+def test_d12_dot_mode_delivers_the_model_text_intact(host, case_id, draft):
+    """D12.1: dot mode returns the text unchanged and the row records exactly what is delivered.
+
+    Round 3 (D2): the default mode is read from the active profile scope, not from the process
+    environment, so the turn is opened under a profile scope that says ``dot``.
+    """
+    from agent import secret_scope
+
+    values = {
+        "CITED_URL": "http://127.0.0.1:1",
+        "CITED_MCP_TOKEN": "synthetic-host-token",
+        "CITED_DEFAULT_MODE": "dot",
+    }
+    scope_token = secret_scope.set_secret_scope(values, profile_home=str(host["home"]))
+    try:
+        session, turn = begin(host)
+        final, transformed, _pre = apply(host, turn, draft)
+    finally:
+        secret_scope.reset_secret_scope(scope_token)
     assert final == draft, case_id
     assert transformed is False, case_id
     entry = rows(host)[-1]
