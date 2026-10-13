@@ -109,12 +109,17 @@ The correction run performs no archive, merge or push; the future implementation
 - [x] 5.2 `pytest -q tests/test_search_only_mode.py -k handler_wire -s` must call the registered handler, compare
       its actual wire with the same fixture, capture output and prove no home writes. Create that named case in 1.3.
       Evidence: `reports/2026-10-12-step-5-http.md` (1 passed; request body equals the fixture; inventory identical).
-- [BLOCKED] 5.3 Run `pytest -q tests/test_profile_install.py -s` in the disposable VM using D4's CLI, pinned Hermes,
+- [ ] 5.3 Run `pytest -q tests/test_profile_install.py -s` in the disposable VM using D4's CLI, pinned Hermes,
       local mirror and isolated homes; no personal executable or service. Test real scoped registration and catalog.
       Network is blocked after provisioning. Record CLI argv, digest and profile inventory.
-      BLOCKED: the disposable VM does not exist in this run (no pinned Hermes CLI and no local read-only mirror);
-      `test_a_fresh_real_profile_installs_the_search_bridge` is skipped with that explicit reason. Evidence:
-      `reports/2026-10-12-step-5-http.md`.
+      Executed by Codex in an isolated Linux container with the actual pinned CLI, a read-only mirror,
+      verified canonical archive and blocked network. The CLI clones the bridge but exits 1 because the
+      managed Python 3.14.7 runtime is not pre-provisioned and its downloads fail offline. The selected
+      integration test reports 1 failed, 29 deselected in 37.10s. Installation, catalog-after-install and
+      complete profile before/after evidence remain open. This supersedes the previous absent-CLI/mirror
+      blocker; the original skip remains in the ordinary suite without the four prerequisite variables.
+      Evidence: `reports/2026-10-12-step-12-install-codex-r3.md` and external
+      `bridge-codex-r3-linux-native9.log`. The container terminated and was removed; no personal service ran.
 - [x] 5.4 Playwright: not applicable, this change has no frontend.
       Evidence: `reports/2026-10-12-step-5-http.md`.
 
@@ -287,7 +292,7 @@ The correction run performs no archive, merge or push; the future implementation
       (`bridge-r2-tasks-green.log`); `openspec validate --all --strict`: 2 passed, 0 failed.
 
 ## 11. Round 3 review corrections
-- [x] 11.1 B01 — bind every full callback and its turn state to the registering profile (D2/H19/H20/H21).
+- [ ] 11.1 B01 — bind every full callback and its turn state to the registering profile (D2/H19/H20/H21).
       `plugin._profile_call` validates the scope and reads its settings before an effect; `hermes_home`,
       `_secret` and `_language` resolve through the call in progress; `_ProfileState` scopes `ctx.state` per
       profile; `Turn.home` plus the explicit home of each callback keeps a turn visible only to its profile.
@@ -310,7 +315,7 @@ The correction run performs no archive, merge or push; the future implementation
       passed in 3.24s. The 5.1 curl probe still runs the fake as a subprocess: 6 cases correct, port closed,
       home inventory identical (`tasks/bridge-r3-curl.log`). Evidence:
       `reports/2026-10-12-step-11-guard-r3.md`.
-- [x] 11.4 M01 — complete the D4/H22 runner. `_check_host_pin` proves the CLI is the pinned host checkout,
+- [ ] 11.4 M01 — complete the D4/H22 runner. `_check_host_pin` proves the CLI is the pinned host checkout,
       `_read_bridge_lock`/`_canonical_archive`/`_verify_bridge_lock` compare the SHA-256 and byte size of
       `git archive --format=tar` with the lock under D5's isolated Git configuration, and `_effective_catalog`
       asks the real host loader and the real registry for the effective catalog and a scoped dispatch. RED:
@@ -324,7 +329,7 @@ The correction run performs no archive, merge or push; the future implementation
       tests/test_plugin.py tests/test_modes.py tests/test_host.py tests/test_adversarial.py
       tests/test_profile_scope.py tests/test_search_only_mode.py`: 173 passed in 84.29s.
       Evidence: `reports/2026-10-12-step-11-callbacks-r3.md`.
-- [x] 11.6 6.2 — the living context and the documents state the per-callback binding with no drift.
+- [ ] 11.6 6.2 — the living context and the documents state the per-callback binding with no drift.
       `openspec/config.yaml` carries the rule; `docs/technical-manual.md`, `README.md` and `README.es.md` state
       it. `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_docs_bridge.py
       tests/test_manifest_modes.py`: 16 passed; `openspec validate --all --strict`: 2 passed, 0 failed.
@@ -379,3 +384,27 @@ The correction run performs no archive, merge or push; the future implementation
       GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-curl-green
       .venv/Scripts/python.exe ../tasks/bridge-codex-r3-curl.py`: exit 0, eight cases passed in 3.11s.
       Evidence for 5.1 and this correction: `reports/2026-10-12-step-12-curl-codex-r3.md`.
+- [x] 12.7 Reopen completion statements contradicted by independent round 3 executions.
+      RED: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-tasks-red
+      .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
+      -k tasks_do_not`: 1 failed, 15 deselected in 4.31s.
+      11.1/11.6 remain open: the new real-secret-scope probes reproduce a colliding live turn,
+      deletion of the owner's turn by a refused foreign transformer and profile-token disclosure in
+      command/transformer exception diagnostics. The real PluginState rejects the home/NUL key prefix,
+      so /cited does not change the mode; legacy persisted mode keys are also ignored. See external
+      `bridge-codex-r3-real-red.log`, `bridge-codex-r3-state-red.log` and the independent review.
+      11.4 remains open: its original catalog never ran and discovered the wrong home when executed.
+      The small helper repairs are measured in 12.1-12.4; they do not by themselves close installation.
+      The earlier Reclosed in R3 and no-drift statements are historical and superseded by this entry.
+      The approved specifications remain unchanged. Product changes across these scope/state/failure
+      boundaries belong to the next implementation round; Codex's small corrections require Fable review.
+      GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-tasks-green
+      .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
+      -k tasks_do_not`: 1 passed, 15 deselected in 15.05s. The complete independent probe then reports
+      6 failed, 10 passed in 11.30s; failures are open product defects, not waived assertions.
+      Task 5.3 now records its actual Linux CLI failure instead of claiming missing prerequisites.
+      Command: `/opt/chassis/.venv/bin/python -m pytest -vv -s --showlocals -p no:cacheprovider
+      tests/test_profile_install.py -k a_fresh_real_profile_installs`: 1 failed, 29 deselected in 37.10s.
+      External supervisor `bridge-codex-r3-run.py bridge-codex-r3-linux-native9 docker run ...`
+      records exit 1, 92.38s, unchanged outer home and process_stopped=true. The exact argv and
+      independent integration evidence are in `reports/2026-10-12-step-12-install-codex-r3.md`.
