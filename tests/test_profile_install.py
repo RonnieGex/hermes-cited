@@ -117,7 +117,7 @@ def _load_installed_plugin(installed: Path):
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
-    return importlib.import_module(name + ".plugin")
+    return importlib.import_module(name + ".hermes_cited.plugin")
 
 
 def _activate_profile_scope(agent_secret_scope, values, profile_home: Path):

@@ -228,3 +228,10 @@ The correction run performs no archive, merge or push; the future implementation
       GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py
       -k scope_getter`: 1 passed, 18 deselected in 0.58s; `tests/test_profile_scope.py`: 26 passed in 4.35s.
       External evidence: `bridge-r2-fix-getter.log`, `bridge-r2-getter-regression.log`.
+- [x] 10.4 H22: import the installed package's real nested plugin module.
+      RED: external R2 `test_installed_layout_import_uses_the_actual_package` raises
+      ModuleNotFoundError for hermes_cited_installed.plugin on an isolated copy of the actual layout.
+      GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py
+      -k installed_layout`: 1 passed, 18 deselected in 0.87s; `tests/test_profile_install.py`:
+      14 passed, 1 skipped in 0.27s. This import repair does not complete the VM/catalog/digest gate.
+      External evidence: `bridge-r2-fix-layout.log`, `bridge-r2-layout-regression.log`.
