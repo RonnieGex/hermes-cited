@@ -120,3 +120,8 @@ The correction run performs no archive, merge or push; the future implementation
       GREEN: the same command returned 1 passed, 17 deselected in 0.48s;
       `.venv/Scripts/python -m pytest -q tests/test_search_wire.py -k 'reflected or bad_response'`:
       12 passed, 52 deselected in 6.32s.
+- [x] 8.6 Align the manual's mode table with H19 and the literal mode correction.
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k manual_does`:
+      RED: 1 failed, 21 deselected; the manual explicitly allowed whitespace-only mode values.
+      GREEN: the same command returned 1 passed, 21 deselected in 0.50s;
+      `.venv/Scripts/python -m pytest -q tests/test_docs_bridge.py`: 7 passed in 0.11s.

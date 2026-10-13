@@ -11,7 +11,7 @@ wire and the pinned per-profile installation. It describes the implementation of
 
 | Value | Result |
 |---|---|
-| absent, empty or whitespace | `full` |
+| absent or empty | `full` |
 | `full` | `full` |
 | `search` | `search` |
 | anything else | registration is refused and **nothing** is registered |
