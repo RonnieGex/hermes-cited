@@ -54,8 +54,14 @@ def test_the_manifest_is_valid_and_names_the_plugin():
         assert tool in lists["provides_tools"]
     for hook in ("pre_llm_call", "post_tool_call", "transform_llm_output"):
         assert hook in lists["provides_hooks"]
-    for variable in ("CITED_URL", "CITED_MCP_TOKEN"):
-        assert variable in lists["requires_env"]
+    # D4 of search-only-bridge: only the origin is unconditionally required; each token is a conditional
+    # secret of its own mode, so CITED_MCP_TOKEN moved from requires_env to optional_env.
+    assert "CITED_URL" in lists["requires_env"]
+    assert "CITED_MCP_TOKEN" not in lists["requires_env"]
+    assert "CITED_MCP_TOKEN" in lists["optional_env"]
+    assert "CITED_SEARCH_TOKEN" in lists["optional_env"]
+    assert "CITED_BRIDGE_TOOLS" in lists["optional_env"]
+    assert top["version"] == "0.2.0"
 
 
 def test_the_manifest_documents_the_new_optional_variables():

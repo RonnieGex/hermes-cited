@@ -31,7 +31,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import audit, delivery, messages, modes, render, tools, verifier
+from . import audit, config, delivery, messages, modes, render, tools, verifier
 from .config import settings_from_env
 
 logger = logging.getLogger(__name__)
@@ -435,13 +435,90 @@ def _drop_turn(session_id, turn_id):
 
 
 def register(ctx) -> None:
-    """Register the three tools, the hooks, the two mode commands and the packaged skill."""
+    """Register the surface of the configured mode: full keeps H0-H18; search registers one tool (H19).
+
+    The mode and the canonical home identity of the active profile are captured once, here. An unknown
+    mode, a missing scope or an unreadable accessor registers nothing and leaves a redacted sentence,
+    before any callback is installed.
+    """
+    try:
+        scope = config.active_scope()
+    except config.CitedError as scope_error:
+        _register_without_scope(ctx, scope_error)
+        return
+    try:
+        mode = config.bridge_mode_of(scope.get(config.BRIDGE_TOOLS_ENV))
+    except config.CitedError as error:
+        _refuse_registration(error)
+        return
+    registration = config.Registration(
+        mode=mode, home=str(scope.home or ""), explicit=scope.source == "explicit"
+    )
+    if mode == config.BRIDGE_SEARCH:
+        _register_search(ctx, registration)
+        return
+    _register_full(ctx, registration)
+
+
+def _register_without_scope(ctx, scope_error) -> None:
+    """No readable profile scope: full keeps its H0-H18 environment path, search registers nothing.
+
+    The legacy full surface read the process environment, so a run outside a profile scope must keep
+    behaving exactly as before; only the search bridge, which exists to be profile-scoped, is refused.
+    """
+    try:
+        mode = config.bridge_mode_of(os.environ.get(config.BRIDGE_TOOLS_ENV, ""))
+    except config.CitedError as error:
+        _refuse_registration(error)
+        return
+    if mode == config.BRIDGE_SEARCH:
+        _refuse_registration(scope_error)
+        return
+    _register_full(ctx, config.Registration(mode=config.BRIDGE_FULL, home="", explicit=False))
+
+
+def _refuse_registration(error) -> None:
+    """Register nothing and say so, redacted: no token, URL or profile name is part of this sentence."""
+    message = "hermes-cited: registration refused: {0}".format(error)
+    try:
+        logger.error("%s", message)
+    except BaseException:
+        pass
+    try:
+        print(message, file=sys.stderr)
+    except BaseException:
+        pass
+
+
+def _register_search(ctx, registration) -> None:
+    """Search registers exactly one native tool and no command, hook, skill or log writer (H20)."""
+    ctx.register_tool(
+        "cited_search",
+        tools.TOOLSET,
+        tools.SEARCH_WIRE_SCHEMA,
+        _search_handler(registration),
+        description=tools.SEARCH_ONLY_DESCRIPTION,
+        emoji="🔎",
+    )
+
+
+def _search_handler(registration):
+    """The one search handler, bound to the registration's own profile identity for every call."""
+
+    def cited_search(args=None, **kwargs):
+        return tools.search_only(args, registration)
+
+    return cited_search
+
+
+def _register_full(ctx, registration) -> None:
+    """The full surface of H0-H18, with every handler bound to its registration."""
     state = ctx.state
     ctx.register_tool(
         "cited_search",
         tools.TOOLSET,
         tools.SEARCH_SCHEMA,
-        _evidence_handler(tools.search),
+        _evidence_handler(tools.search, registration),
         description=tools.SEARCH_DESCRIPTION,
         emoji="🔎",
     )
@@ -449,7 +526,7 @@ def register(ctx) -> None:
         "cited_ask",
         tools.TOOLSET,
         tools.ASK_SCHEMA,
-        _evidence_handler(tools.ask),
+        _evidence_handler(tools.ask, registration),
         description=tools.ASK_DESCRIPTION,
         emoji="📎",
     )
@@ -526,15 +603,22 @@ def _text_of_message(user_message) -> str:
     return ""
 
 
-def _evidence_handler(build):
+def _evidence_handler(build, registration):
     """The registered ``cited_search``/``cited_ask`` handler: the result carries the ``pid`` (M-R4-3).
 
     The identifiers are assigned while the result is built and bound to the real turn of the execution, so
-    the model, the render and the log use the same record and the hook never renumbers it.
+    the model, the render and the log use the same record and the hook never renumbers it. The settings are
+    read fresh from the profile of *registration* on every call, and a changed home or mode is refused.
     """
 
     def handler(args=None, session_id="", task_id="", turn_id="", **kwargs):
-        result = build(args, **kwargs)
+        try:
+            settings = config.settings_for(registration)
+        except config.CitedError as error:
+            return str(error)
+        except Exception:
+            return "Cited could not be called: the configuration of this profile could not be read."
+        result = build(args, settings=settings, **kwargs)
         return _bind_result(result, args, session_id, turn_id, task_id)
 
     return handler
