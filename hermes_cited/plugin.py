@@ -437,6 +437,20 @@ def _find_turn_locked(session_id, turn_id, owner):
     return matches[0] if len(matches) == 1 else None
 
 
+def _evict_oldest_locked(owner):
+    """Drop the oldest turns of *one owner* so the cap never evicts another profile's turn (D6).
+
+    The capacity of the turn table belongs to the ``(home, session, turn)`` key space: a busy profile
+    that opens its whole capacity must never remove the pending evidence of a different validated
+    registration. The oldest key of the calling owner is the one that goes, never the first key of the
+    whole table.
+    """
+    owned = [key for key in _TURNS if key[0] == owner]
+    excess = len(owned) - _MAX_TURNS + 1
+    for stale in owned[:excess] if excess > 0 else ():
+        _remove_locked(stale)
+
+
 def _turn_of(session_id, turn_id, create=False, home=None):
     """The turn of ``(home, session, turn)``; two profiles with equal identifiers are two turns (D6)."""
     owner = _owner(home)
@@ -452,9 +466,7 @@ def _turn_of(session_id, turn_id, create=False, home=None):
             # creating a colliding second turn the caller cannot address.
             return None
         key = (owner, sid, tid)
-        if len(_TURNS) >= _MAX_TURNS:
-            for stale in list(_TURNS)[: len(_TURNS) - _MAX_TURNS + 1]:
-                _remove_locked(stale)
+        _evict_oldest_locked(owner)
         turn = Turn(session_id, turn_id, home=owner)
         _TURNS[key] = turn
         if turn.session_id:
@@ -494,8 +506,11 @@ def _active_turn(session_id, home=None):
 def _resolve_active_turn(session_id, turn_id="", task_id="", home=None):
     """Bind a selection to the turn of the execution identity, never to the latest one (H14).
 
-    Returns ``(turn, error)``. With more than one active turn and no identity that picks exactly one, the
-    selection is rejected instead of guessed.
+    Returns ``(turn, error)``. The resolution distinguishes three cases: no identity at all, where the
+    only open turn of the session is used and more than one is refused; an explicit identity (``turn_id``
+    or ``task_id``) that resolves to exactly one turn; and an explicit identity that resolves to no open
+    turn, which is refused instead of being treated as an absent identity. A contradictory identifier
+    never quotes a different live turn.
     """
     owner = _owner(home)
     turns = _active_turns(session_id, home=owner)
@@ -505,6 +520,13 @@ def _resolve_active_turn(session_id, turn_id="", task_id="", home=None):
             "then `cited_quote`."
         )
     candidates = [str(value or "").strip() for value in (turn_id, task_id) if str(value or "").strip()]
+    if not candidates:
+        if len(turns) == 1:
+            return turns[0], ""
+        return None, (
+            "Cited cannot tell which of the {0} open turns of this session this quote belongs to: pass no "
+            "passage, or ask again in a single turn".format(len(turns))
+        )
     for candidate in candidates:
         matches = [turn for turn in turns if turn.turn_id == candidate]
         if len(matches) == 1:
@@ -513,11 +535,10 @@ def _resolve_active_turn(session_id, turn_id="", task_id="", home=None):
             unique = _find_turn_locked(session_id, candidate, owner)
         if unique is not None:
             return unique, ""
-    if len(turns) == 1:
-        return turns[0], ""
     return None, (
-        "Cited cannot tell which of the {0} open turns of this session this quote belongs to: pass no "
-        "passage, or ask again in a single turn".format(len(turns))
+        "Cited cannot bind this selection to the execution identity it names: no open turn of this "
+        "session has that identifier. Call `cited_search` or `cited_ask` in this same turn, then "
+        "`cited_quote`."
     )
 
 
