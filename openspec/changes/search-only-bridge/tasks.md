@@ -11,58 +11,86 @@ The correction run performs no archive, merge or push; the future implementation
 - [x] 0.1 Branch creation evidence: `reports/2026-10-12-step-0-branch.md`.
 
 ## 1. TDD and guard first
-- [ ] 1.1 Write RED `tests/test_search_guard.py`: all effective URLs, sockets and redirect destinations reject
+- [x] 1.1 Write RED `tests/test_search_guard.py`: all effective URLs, sockets and redirect destinations reject
       ports 3240/3241, localhost aliases and IPv6 equivalents; canonical paths reject the personal installation,
       symlinks/junction escapes and anything outside the registered temporary workspace. Missing overrides fail
       before file/process/network effects. Then implement the test guard and record RED/GREEN.
-- [ ] 1.2 Write `tests/fakes/chassis_surface.py` for wire v1 on a guarded free loopback port, including tools/list,
+      Evidence: `reports/2026-10-12-step-1-guard.md`, `tests/search_guard.py`, `tests/test_search_guard.py`.
+- [x] 1.2 Write `tests/fakes/chassis_surface.py` for wire v1 on a guarded free loopback port, including tools/list,
       every error and both redirect classes. No real provider is used. Add a script entry accepting --port and
       --record in this test file for the curl checks below.
-- [ ] 1.3 RED `tests/test_search_only_mode.py`, `tests/test_profile_scope.py`, `tests/test_search_wire.py` for every
+      Evidence: `reports/2026-10-12-step-1-red.md`, `reports/2026-10-12-step-5-http.md`.
+- [x] 1.3 RED `tests/test_search_only_mode.py`, `tests/test_profile_scope.py`, `tests/test_search_wire.py` for every
       H19-H21 scenario and Mapping access spies. Record before/after including failure paths.
-- [ ] 1.4 RED `tests/test_manifest_modes.py`, `tests/test_profile_install.py`, and README/manual tests for H22;
+      Evidence: `reports/2026-10-12-step-1-red.md`, `reports/2026-10-12-step-2-implementation.md`.
+- [x] 1.4 RED `tests/test_manifest_modes.py`, `tests/test_profile_install.py`, and README/manual tests for H22;
       preserve full regression cases H12-H18 and check unique IDs on a temporary synchronized spec copy.
-- [ ] 1.5 `pytest -q tests/test_search_guard.py tests/test_search_only_mode.py tests/test_profile_scope.py
+      Evidence: `reports/2026-10-12-step-1-red.md`, `reports/2026-10-12-step-6-docs.md`.
+- [x] 1.5 `pytest -q tests/test_search_guard.py tests/test_search_only_mode.py tests/test_profile_scope.py
       tests/test_search_wire.py tests/test_manifest_modes.py` before implementation; record intended failures.
+      Evidence: `reports/2026-10-12-step-1-red.md` (104 failed, 34 passed, 1 skipped).
 
 ## 2. Small implementation steps
-- [ ] 2.1 config.py: scoped accessor, immutable registration mode, selected credential and timeout validation.
-- [ ] 2.2 client.py/tools.py: search-only strict arguments, wire v1 endpoint, response validation and redaction;
+- [x] 2.1 config.py: scoped accessor, immutable registration mode, selected credential and timeout validation.
+      Evidence: `reports/2026-10-12-step-2-implementation.md`.
+- [x] 2.2 client.py/tools.py: search-only strict arguments, wire v1 endpoint, response validation and redaction;
       retain full behavior. Do not coerce booleans, numbers or fractional limits in search.
-- [ ] 2.3 plugin.py: search registration with one handler bound to its profile identity, no shared settings cache.
-- [ ] 2.4 plugin.yaml: implement fixtures/plugin-search.yaml semantics and version 0.2.0.
+      Evidence: `reports/2026-10-12-step-2-implementation.md`, `tests/test_search_wire.py`.
+- [x] 2.3 plugin.py: search registration with one handler bound to its profile identity, no shared settings cache.
+      Evidence: `reports/2026-10-12-step-2-implementation.md`, `tests/test_search_only_mode.py`.
+- [x] 2.4 plugin.yaml: implement fixtures/plugin-search.yaml semantics and version 0.2.0.
+      Evidence: `reports/2026-10-12-step-2-implementation.md`, `tests/test_manifest_modes.py`.
 
 ## 3. Review existing tests
-- [ ] 3.1 Run full-mode H0-H18 regression suite, list every existing test updated and why; preserve delivery policy.
+- [x] 3.1 Run full-mode H0-H18 regression suite, list every existing test updated and why; preserve delivery policy.
+      Evidence: `reports/2026-10-12-step-3-regression.md` (502 passed, 3 skipped; only the manifest test updated).
 
 ## 4. Unit verification and state
-- [ ] 4.1 `pytest -q` with counts/runtime and complete before/after home inventory. No database test is invented.
-- [ ] 4.2 `openspec validate --all --strict`; compare both wire copies by SHA-256; run existing CI commands from
+- [x] 4.1 `pytest -q` with counts/runtime and complete before/after home inventory. No database test is invented.
+      Evidence: `reports/2026-10-12-step-4-suite.md` (830 passed, 4 skipped in 365.60s; inventory identical).
+- [x] 4.2 `openspec validate --all --strict`; compare both wire copies by SHA-256; run existing CI commands from
       .github/workflows without claiming remote CI has run. Record the actual workflow SHA/result when available.
+      Evidence: `reports/2026-10-12-step-4-suite.md` (2 passed, 0 failed; both wire copies byte-identical; remote
+      CI not run, no push authorized).
 
 ## 5. Agent-executed HTTP and profile integration
-- [ ] 5.1 Set PYTHONDONTWRITEBYTECODE=1 for isolated handler/profile tests. Start `python tests/fakes/chassis_surface.py --port <guarded-free-port> --record <temporary-log>`;
+- [x] 5.1 Set PYTHONDONTWRITEBYTECODE=1 for isolated handler/profile tests. Start `python tests/fakes/chassis_surface.py --port <guarded-free-port> --record <temporary-log>`;
       from Windows run `curl.exe --max-time 30 --request POST http://127.0.0.1:<port>/api/chassis/mcp
       --header "Content-Type: application/json" --header @<synthetic-header.txt>
       --data-binary @<fixture-request.json>` (fixture's request object only). The temporary header file holds the synthetic search bearer; remove it after
       the run and never include it in reports. Repeat tools/list, wrong token,
       wrong tool and invalid limits. Paste redacted requests/results, stop only the owned fake.
-- [ ] 5.2 `pytest -q tests/test_search_only_mode.py -k handler_wire -s` must call the registered handler, compare
+      Evidence: `reports/2026-10-12-step-5-http.md`.
+- [x] 5.2 `pytest -q tests/test_search_only_mode.py -k handler_wire -s` must call the registered handler, compare
       its actual wire with the same fixture, capture output and prove no home writes. Create that named case in 1.3.
-- [ ] 5.3 Run `pytest -q tests/test_profile_install.py -s` in the disposable VM using D4's CLI, pinned Hermes,
+      Evidence: `reports/2026-10-12-step-5-http.md` (1 passed; request body equals the fixture; inventory identical).
+- [BLOCKED] 5.3 Run `pytest -q tests/test_profile_install.py -s` in the disposable VM using D4's CLI, pinned Hermes,
       local mirror and isolated homes; no personal executable or service. Test real scoped registration and catalog.
       Network is blocked after provisioning. Record CLI argv, digest and profile inventory.
-- [ ] 5.4 Playwright: not applicable, this change has no frontend.
+      BLOCKED: the disposable VM does not exist in this run (no pinned Hermes CLI and no local read-only mirror);
+      `test_a_fresh_real_profile_installs_the_search_bridge` is skipped with that explicit reason. Evidence:
+      `reports/2026-10-12-step-5-http.md`.
+- [x] 5.4 Playwright: not applicable, this change has no frontend.
+      Evidence: `reports/2026-10-12-step-5-http.md`.
 
 ## 6. Documentation
-- [ ] 6.1 Update README.md, README.es.md and docs/technical-manual.md with modes, scope failures, conditional
+- [x] 6.1 Update README.md, README.es.md and docs/technical-manual.md with modes, scope failures, conditional
       secrets, complete wire, no writes, per-profile install and canonical pin command.
-- [ ] 6.2 Verify openspec/config.yaml against implementation; update schema/fixture consumers, never silently drift.
+      Evidence: `reports/2026-10-12-step-6-docs.md`.
+- [x] 6.2 Verify openspec/config.yaml against implementation; update schema/fixture consumers, never silently drift.
+      Evidence: `reports/2026-10-12-step-6-docs.md` (no drift found; no edit needed).
 
 ## 7. Implementation closing (not executed by this contract correction)
 - [ ] 7.1 `/verify`, then independent `/adversarial-review`; resolve Blockers/Majors and re-verify corrections.
+      Not executed: no other agent review was requested or available in this round.
 - [ ] 7.2 Automated tests and CI green for the delivering SHA; `gitleaks protect --staged` before every commit.
+      Partially covered: the suite is green and gitleaks ran before each commit of this round; remote CI has not
+      run because no push is authorized (see `reports/2026-10-12-step-4-suite.md`).
 - [ ] 7.3 `/archive` with explicit owner approval, then `/commit`; merge/push require a separate authorization.
+      Not executed: archive and push are forbidden in this round.
 - [ ] 7.4 After the authorized merge, record full merge SHA, SHA-256 and byte size of
       `git archive --format=tar <sha>` without prefix/gzip for A's bridge.lock. Never use this spec commit as a
       completed bridge pin. Update the consuming lock in a later commit.
+      Not executed: it depends on the forbidden merge.
+
+(End of file - total 86 lines)
