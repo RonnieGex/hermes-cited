@@ -19,16 +19,15 @@ retrieval only, with a token that cannot reach anything else, delivered and arch
 
 - A new environment variable `CITED_BRIDGE_TOOLS` with the closed values `full` (default) and `search`.
 - In `search` mode the plugin registers exactly one tool, `cited_search`, that calls
-  `POST <CITED_URL>/api/chassis/mcp` with `Authorization: Bearer <CITED_SEARCH_TOKEN>`, the same JSON-RPC `tools/call`
-  shape and the same result envelope as today's `cited_search`; it registers no other tool, no command, no hook and no
+  `POST <CITED_URL>/api/chassis/mcp` with `Authorization: Bearer <CITED_SEARCH_TOKEN>`, the versioned wire and model envelope in `wire-contract.md`; it registers no other tool, no command, no hook and no
   skill, and writes no audit record.
 - `CITED_SEARCH_TOKEN` is required in `search` mode; `CITED_MCP_TOKEN` is ignored in that mode and never read.
-- The token travels only to `<CITED_URL>/api/chassis/mcp`, with the same redirect and host rules as today.
+- The token travels only to `<CITED_URL>/api/chassis/mcp`, with the explicit all-redirect refusal and origin rules in wire-contract.md.
 - Documentation of the mode in `README.md` and `README.es.md`, and the install command pinned by commit for Harness.
 
 ## What does not change
 
-- The `full` mode: tools, commands, modes, verifier, delivery policy, audit log and skill stay as specified by H0 to H11.
+- The `full` mode: tools, commands, modes, verifier, delivery policy, audit log and skill stay as specified by H0 to H18.
 - The plugin remains read-only against Cited and never calls a language model.
 
 ## Depends on
@@ -44,3 +43,10 @@ surface and is archived before `harness-foundation` is approved.
   behaviour of `search`).
 - Tests: `tests/test_search_only_mode.py`.
 - Docs: `README.md`, `README.es.md`, `openspec/config.yaml` (the mode joins the context).
+
+## Contract correction status
+
+H19-H22 and MODIFIED full-mode deltas close SB-M01 through SB-M05. Wire v1 and the target manifest are delivered
+as fixtures. No product code is changed here. The runtime bridge, independent implementation review, archive and
+merge are still future tasks. Its distribution pin uses exactly `git archive --format=tar <sha>` without prefix
+or gzip, recording full SHA, SHA-256 and size. This correction authorizes no merge, push or archive.
