@@ -502,3 +502,10 @@ The correction run performs no archive, merge or push; the future implementation
       case; JSON objects cannot carry integer keys. Command/output: `bridge2-codex-r1-probes-validated-red.log`.
       GREEN: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r1.py
       -k mixed_nonstring`: 1 passed, 11 deselected in 0.93s; external `bridge2-codex-r1-fix-keys.log`.
+- [x] 14.4 Update the existing mode-resolution regression for D8's contained pre-hook failure.
+      Keep every transformer assertion: operational refusal, nonempty result, no model prose and no seal.
+      RED: `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/regressions/test_r4_transformer.py
+      -k mode_resolution_failure`: 1 failed, 9 deselected in 0.70s, because it expects the unsafe exception
+      to escape the pre-hook. External evidence: `bridge2-codex-r1-prehook-regression-red.log`.
+      GREEN: the same pytest command without `-k`, running the whole file: 10 passed in 5.60s;
+      external `bridge2-codex-r1-prehook-regression-green.log`.

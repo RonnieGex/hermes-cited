@@ -137,8 +137,7 @@ def test_b_r4_1_a_mode_resolution_failure_never_returns_none(monkeypatch, hermes
         raise OSError("synthetic mode state read failure")
 
     monkeypatch.setattr(plugin.modes, "resolve_mode", broken)
-    with pytest.raises(OSError):
-        pre(context)
+    assert pre(context) is None
     actual = transform(context)
     assert isinstance(actual, str) and actual.strip()
     assert "MODEL_LEAK_999" not in actual
