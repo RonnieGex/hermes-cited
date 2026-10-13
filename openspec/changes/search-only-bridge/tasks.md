@@ -235,3 +235,9 @@ The correction run performs no archive, merge or push; the future implementation
       -k installed_layout`: 1 passed, 18 deselected in 0.87s; `tests/test_profile_install.py`:
       14 passed, 1 skipped in 0.27s. This import repair does not complete the VM/catalog/digest gate.
       External evidence: `bridge-r2-fix-layout.log`, `bridge-r2-layout-regression.log`.
+- [x] 10.5 H21: reject embedded URL control characters before urlsplit can remove them.
+      RED: two external R2 `control_characters` cases reached the transport with a silently changed host.
+      GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py
+      -k control_characters`: 2 passed, 17 deselected in 0.57s; `tests/test_search_wire.py
+      -k 'url or origin'`: 10 passed, 59 deselected in 5.38s.
+      External evidence: `bridge-r2-fix-origin.log`, `bridge-r2-origin-regression.log`.

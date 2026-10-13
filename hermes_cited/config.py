@@ -277,6 +277,8 @@ def endpoint_of(url: str) -> str:
 def chassis_endpoint_of(url) -> str:
     """The strict search-mode origin: explicit http/https, no userinfo, path, query or fragment."""
     value = (url or "").strip()
+    if any(ord(char) <= 32 or ord(char) == 127 for char in value):
+        raise CitedConfigError("Cited is not configured: CITED_URL must carry no control characters or spaces.")
     if not value:
         raise CitedConfigError(
             "Cited is not configured: set CITED_URL to the origin of the Cited installation, "
