@@ -17,10 +17,12 @@ The correction run performs no archive, merge or push; the future implementation
       before file/process/network effects. Then implement the test guard and record RED/GREEN.
       Evidence: `reports/2026-10-12-step-1-guard.md`, `tests/search_guard.py`, `tests/test_search_guard.py`.
       Reopened in R1: guard_environment({}) succeeds; conftest does not enforce required overrides or paths.
-- [x] 1.2 Write `tests/fakes/chassis_surface.py` for wire v1 on a guarded free loopback port, including tools/list,
+- [ ] 1.2 Write `tests/fakes/chassis_surface.py` for wire v1 on a guarded free loopback port, including tools/list,
       every error and both redirect classes. No real provider is used. Add a script entry accepting --port and
       --record in this test file for the curl checks below.
       Evidence: `reports/2026-10-12-step-1-red.md`, `reports/2026-10-12-step-5-http.md`.
+      Reopened in R1: unauthenticated oversized input returns 413, extra envelope fields are accepted,
+      JSON null is reported as a parse error, and an invalid version echoes a non-null id.
 - [ ] 1.3 RED `tests/test_search_only_mode.py`, `tests/test_profile_scope.py`, `tests/test_search_wire.py` for every
       H19-H21 scenario and Mapping access spies. Record before/after including failure paths.
       Evidence: `reports/2026-10-12-step-1-red.md`, `reports/2026-10-12-step-2-implementation.md`.
@@ -140,3 +142,8 @@ The correction run performs no archive, merge or push; the future implementation
       RED: the full suite returned 1 failed, 833 passed, 1 skipped in 272.51s;
       `test_absent_empty_and_full_register_the_full_surface[ FULL ]` still asserted the undocumented behavior.
       GREEN: `.venv/Scripts/python -m pytest -q tests/test_search_only_mode.py`: 11 passed in 5.54s.
+- [x] 8.9 Reopen wire fake completion after independent HTTP counterexamples.
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k tasks_do_not`:
+      RED: 1 failed, 26 deselected; task 1.2 still claims closed-wire completion.
+      GREEN: the same command returned 1 passed, 26 deselected in 0.53s;
+      `openspec validate --all --strict`: 2 passed, 0 failed.
