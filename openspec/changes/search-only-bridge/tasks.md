@@ -496,3 +496,9 @@ The correction run performs no archive, merge or push; the future implementation
       `C:/Users/Franc/Documents/katalis-dev/tasks/bridge2-codex-r1-probes-validated-red.log`.
       GREEN: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r1.py
       -k pre_hook_exception`: 1 passed, 11 deselected in 1.45s; external `bridge2-codex-r1-fix-prehook.log`.
+- [x] 14.3 H21: reject non-string argument keys before sorting unknown search properties.
+      RED: the external probe `test_search_mixed_nonstring_unknown_keys_return_sentence` raises TypeError
+      for mixed string/integer keys before the transport boundary. This is a native Python handler edge
+      case; JSON objects cannot carry integer keys. Command/output: `bridge2-codex-r1-probes-validated-red.log`.
+      GREEN: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r1.py
+      -k mixed_nonstring`: 1 passed, 11 deselected in 0.93s; external `bridge2-codex-r1-fix-keys.log`.

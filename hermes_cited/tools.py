@@ -192,6 +192,8 @@ def validate_search_arguments(args):
         arguments = args
     else:
         return None, "Cited could not search: the arguments must be an object that carries a `query`."
+    if any(not isinstance(key, str) for key in arguments):
+        return None, "Cited could not search: argument names must be strings."
     unknown = sorted(set(arguments) - {"query", "limit"})
     if unknown:
         return None, "Cited could not search: `{0}` is not an argument of the search-only contract.".format(
