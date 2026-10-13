@@ -410,18 +410,33 @@ The correction run performs no archive, merge or push; the future implementation
       independent integration evidence are in `reports/2026-10-12-step-12-install-codex-r3.md`.
 
 ## 13. Round 4 implementation (contract amendment D6-D10 by Fable, 2026-10-12)
-- [ ] 13.0 Read the third review and design D6-D10 before any code. Port the six failing external probes of the
+- [x] 13.0 Read the third review and design D6-D10 before any code. Port the six failing external probes of the
       third review (owner collision, refused foreign callback, real PluginState keys, persisted mode, command and
       transformer diagnostics) into `tests/` as RED regression cases that use the real `agent.secret_scope` and the
       real `PluginState` of the pinned host; record the red run in a report.
-- [ ] 13.1 D8 (B01-R3): diagnostics redacted with the failing profile's set. `tests/test_profile_callbacks.py`
+      `tests/test_round4_amendments.py` ports the six probes plus the D7 invalid-key case with the real host of
+      pin `dce1e9b37581dd62e480a9064dc04a709c2940d3`. RED:
+      `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_round4_amendments.py` 7 failed in 3.88s.
+      Evidence: `reports/2026-10-13-step-13-r4-core.md`.
+- [x] 13.1 D8 (B01-R3): diagnostics redacted with the failing profile's set. `tests/test_profile_callbacks.py`
       captures every log record and asserts that no synthetic profile secret appears in messages or tracebacks.
       GREEN with counts.
-- [ ] 13.2 D6 (M01-R3): turn table keyed by (home, session, turn); refusal before any turn access; cleanup only of
+      `_report_failure`/`_sanitized_diagnostic` accept the explicit profile secret and the command, transformer,
+      post-tool and quote callbacks hand it over. GREEN:
+      `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_profile_callbacks.py` 9 passed in 0.74s.
+      Evidence: `reports/2026-10-13-step-13-r4-core.md`.
+- [x] 13.2 D6 (M01-R3): turn table keyed by (home, session, turn); refusal before any turn access; cleanup only of
       the owned turn; eviction and migration on the same key. GREEN for both H19 scenarios plus the H14 regressions.
-- [ ] 13.3 D7 (M02-R3): plain `mode.profile` key through the real PluginState; no path or NUL prefix; `get` never
+      `_find_turn_locked`/`_turn_of`/`_drop_turn` use the composite key and `_transform_llm_output` validates before
+      any turn access and drops only when the call passed validation. GREEN: 286 passed in 140.99s (callbacks and
+      regressions) and 92 passed, 1 skipped in 73.36s (host, scope, search and install). Evidence:
+      `reports/2026-10-13-step-13-r4-core.md`.
+- [x] 13.3 D7 (M02-R3): plain `mode.profile` key through the real PluginState; no path or NUL prefix; `get` never
       hides a host validation error; the legacy value is honoured after the upgrade; `/cited` and `/dot` persist.
       GREEN with the real host state.
+      `_ProfileState` delegates the plain key and no longer swallows a key error. GREEN:
+      `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_round4_amendments.py` 7 passed in 2.52s.
+      Evidence: `reports/2026-10-13-step-13-r4-core.md`.
 - [ ] 13.4 D9 (M03-R3): offline provisioning of the host's required runtimes in the Linux runner (versions and
       digests recorded), network closed, install completes, catalog and scoped dispatch verified, full profile
       inventory compared with the post-setup baseline (`tests/test_profile_install.py` compares the whole profile,

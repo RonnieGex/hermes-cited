@@ -117,20 +117,23 @@ def _owner(home):
 
 
 class _ProfileState:
-    """A per-profile view of ``ctx.state``: the mode of one profile never leaks into another (D2, B01)."""
+    """The mode state of one profile, under the host's own per-profile partition (D7).
 
-    def __init__(self, state, home):
+    The pinned host's ``PluginState`` already partitions its state per profile home, so the plugin
+    writes the plain ``mode.profile`` key of the version before this change: the stored value survives
+    an upgrade with no migration and every key satisfies the host pattern ``^[A-Za-z0-9_.:-]{1,128}$``.
+    A host validation error is a defect, never the default, and a shared state object is not a host
+    configuration: isolation comes from the host partition, not from a path or NUL prefix here.
+    """
+
+    def __init__(self, state, home=""):
         self._state = state
-        self._prefix = "{0}\x00".format(config.canonical_home(home) or "")
 
     def get(self, key, default=None):
-        try:
-            return self._state.get(self._prefix + str(key), default)
-        except BaseException:
-            return default
+        return self._state.get(str(key), default)
 
     def set(self, key, value):
-        return self._state.set(self._prefix + str(key), value)
+        return self._state.set(str(key), value)
 
 
 def hermes_home() -> Path:
@@ -420,22 +423,35 @@ class Turn:
         return recorded, ""
 
 
-def _key(session_id, turn_id):
-    return (str(session_id or ""), str(turn_id or ""))
+def _find_turn_locked(session_id, turn_id, owner):
+    """The live turn under one owner key, or the unique match for the legacy unfiltered path (D6).
+
+    ``owner`` is the canonical home of the registering profile. The unfiltered form is reachable only
+    from a direct call of a factory outside Hermes; with more than one owner holding the same
+    identifiers it answers ``None`` instead of guessing which profile the caller means.
+    """
+    sid, tid = str(session_id or ""), str(turn_id or "")
+    if owner:
+        return _TURNS.get((owner, sid, tid))
+    matches = [turn for key, turn in _TURNS.items() if key[1] == sid and key[2] == tid]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _turn_of(session_id, turn_id, create=False, home=None):
-    """The turn of this session and execution identity, only when it belongs to the profile in hand."""
-    key = _key(session_id, turn_id)
+    """The turn of ``(home, session, turn)``; two profiles with equal identifiers are two turns (D6)."""
     owner = _owner(home)
+    sid, tid = str(session_id or ""), str(turn_id or "")
     with _TURNS_LOCK:
-        turn = _TURNS.get(key)
+        turn = _find_turn_locked(sid, tid, owner)
         if turn is not None:
-            if owner and turn.home and turn.home != owner:
-                return None
             return turn
         if not create:
             return None
+        if not owner and any(key[1] == sid and key[2] == tid for key in _TURNS):
+            # Another profile holds these identifiers and no owner was named: refuse instead of
+            # creating a colliding second turn the caller cannot address.
+            return None
+        key = (owner, sid, tid)
         if len(_TURNS) >= _MAX_TURNS:
             for stale in list(_TURNS)[: len(_TURNS) - _MAX_TURNS + 1]:
                 _remove_locked(stale)
@@ -494,8 +510,8 @@ def _resolve_active_turn(session_id, turn_id="", task_id="", home=None):
         if len(matches) == 1:
             return matches[0], ""
         with _TURNS_LOCK:
-            unique = _TURNS.get(_key(session_id, candidate))
-        if unique is not None and (not owner or not unique.home or unique.home == owner):
+            unique = _find_turn_locked(session_id, candidate, owner)
+        if unique is not None:
             return unique, ""
     if len(turns) == 1:
         return turns[0], ""
@@ -506,12 +522,19 @@ def _resolve_active_turn(session_id, turn_id="", task_id="", home=None):
 
 
 def _drop_turn(session_id, turn_id, home=None):
+    """Drop only the turn this callback owns, resolved through its ``(home, session, turn)`` key (D6)."""
     owner = _owner(home)
+    sid, tid = str(session_id or ""), str(turn_id or "")
     with _TURNS_LOCK:
-        turn = _TURNS.get(_key(session_id, turn_id))
-        if turn is not None and owner and turn.home and turn.home != owner:
+        if owner:
+            key = (owner, sid, tid)
+            if key not in _TURNS:
+                return None
+            return _remove_locked(key)
+        matches = [key for key in _TURNS if key[1] == sid and key[2] == tid]
+        if len(matches) != 1:
             return None
-        return _remove_locked(_key(session_id, turn_id))
+        return _remove_locked(matches[0])
 
 
 def register(ctx) -> None:
@@ -630,13 +653,15 @@ def _profile_command(registration, action):
     """A command validates the profile of its registration before it changes any state (D2, B01)."""
 
     def handler(raw_args="", **kwargs):
+        secret = ""
         try:
-            with _profile_call(registration):
+            with _profile_call(registration) as settings:
+                secret = settings.token
                 return action(raw_args)
         except config.CitedError as error:
             return str(error)
         except BaseException as error:
-            _report_failure("the Cited command failed", incident_code(), error)
+            _report_failure("the Cited command failed", incident_code(), error, secret=secret)
             return (
                 "Cited could not change the mode: the configuration of this profile could not be read."
             )
@@ -753,13 +778,15 @@ def _post_tool_call(registration=None):
         if tool_name not in tools.TOOL_NAMES:
             return None
         home = registration.home if registration is not None else None
+        secret = ""
         try:
-            with _profile_call(registration):
+            with _profile_call(registration) as settings:
+                secret = settings.token
                 return _note_tool_call(tool_name, args, result, session_id, turn_id, status, home=home)
         except config.CitedError:
             return None
         except BaseException as error:
-            _report_failure("the post_tool_call hook failed", incident_code(), error)
+            _report_failure("the post_tool_call hook failed", incident_code(), error, secret=secret)
             return None
 
     return post_tool_call
@@ -769,8 +796,10 @@ def _quote_handler(state, registration=None):
     """The ``cited_quote`` handler: the model chooses numbered lines, the plugin records them."""
 
     def cited_quote(args=None, session_id="", task_id="", turn_id="", **kwargs):
+        secret = ""
         try:
-            with _profile_call(registration):
+            with _profile_call(registration) as settings:
+                secret = settings.token
                 home = registration.home if registration is not None else None
                 turn, error = _resolve_active_turn(
                     session_id, turn_id=turn_id, task_id=task_id, home=home
@@ -784,21 +813,18 @@ def _quote_handler(state, registration=None):
         except config.CitedError as error:
             return str(error)
         except BaseException as error:
-            _report_failure("the cited_quote handler failed", incident_code(), error)
+            _report_failure("the cited_quote handler failed", incident_code(), error, secret=secret)
             return "Cited could not quote this selection."
 
     return cited_quote
 
 
 def _recorded_mode(session_id, turn_id, home=None) -> str:
-    """The mode recorded for this turn, read before the boundary opens and without a fallible step."""
+    """The mode recorded for this turn, read only under its own ``(home, session, turn)`` key (D6)."""
     try:
         with _TURNS_LOCK:
-            turn = _TURNS.get(_key(session_id, turn_id))
+            turn = _find_turn_locked(session_id, turn_id, _owner(home))
         if turn is None:
-            return ""
-        owner = _owner(home)
-        if owner and turn.home and turn.home != owner:
             return ""
         return str(turn.mode or "").strip().lower()
     except BaseException:
@@ -821,19 +847,23 @@ def _operational_refusal(code) -> str:
         return "CITED incident {0}: the answer could not be delivered as verified.".format(code)
 
 
-def _sanitized_diagnostic(message, code, error) -> str:
-    """One diagnostic with the bearer redacted from the whole formatted traceback (M-R4-5)."""
+def _sanitized_diagnostic(message, code, error, secret=None) -> str:
+    """One diagnostic with the bearer redacted from the whole formatted traceback (M-R4-5, D8).
+
+    ``secret`` is the redaction set of the profile whose callback failed; when the caller does not yet
+    know it (a failure before its settings were read) the call context is consulted.
+    """
     import traceback
 
     body = "".join(traceback.format_exception(type(error), error, error.__traceback__))
     text = "hermes-cited: {0} (incident {1})\n{2}".format(message, code, body)
-    return audit.redact(text, _secret())
+    return audit.redact(text, _secret() if secret is None else secret)
 
 
-def _report_failure(message, code, error) -> None:
-    """Emit only the sanitized diagnostic; never hand a raw traceback to a logger (M-R4-5)."""
+def _report_failure(message, code, error, secret=None) -> None:
+    """Emit only the sanitized diagnostic; never hand a raw traceback to a logger (M-R4-5, D8)."""
     try:
-        logger.error("%s", _sanitized_diagnostic(message, code, error))
+        logger.error("%s", _sanitized_diagnostic(message, code, error, secret))
     except BaseException:
         pass
     try:
@@ -848,11 +878,19 @@ def _report_failure(message, code, error) -> None:
 def _transform_llm_output(state, registration=None):
     def transform_llm_output(response_text="", session_id="", turn_id="", platform="", **kwargs):
         home = registration.home if registration is not None else None
-        intent = _recorded_mode(session_id, turn_id, home=home)
+        intent = ""
         mode = None
+        secret = ""
+        owned = False
         try:
             text = response_text if isinstance(response_text, str) else str(response_text or "")
             with _profile_call(registration) as settings:
+                # D6: the registration is validated before any turn is read, created or dropped. A
+                # callback whose scope resolves to another home or mode never reaches this point, so the
+                # refusal performs no cleanup and never destroys the owner's live turn.
+                owned = True
+                secret = settings.token
+                intent = _recorded_mode(session_id, turn_id, home=home)
                 turn = _turn_of(session_id, turn_id, create=True, home=home)
                 if platform and not turn.platform:
                     turn.platform = str(platform)
@@ -868,7 +906,7 @@ def _transform_llm_output(state, registration=None):
                 return _deliver_cited(turn, language)
         except BaseException as error:
             code = incident_code()
-            _report_failure("the cited-mode transformer failed", code, error)
+            _report_failure("the cited-mode transformer failed", code, error, secret=secret if owned else "")
             if mode == "dot" or (mode is None and intent == "dot"):
                 # D12: dot mode delivers the model's text untouched, so a failure of the pass-through
                 # returns ``None`` and leaves the text in place. The mode was resolved affirmatively, so
@@ -876,10 +914,11 @@ def _transform_llm_output(state, registration=None):
                 return None
             return _operational_refusal(code)
         finally:
-            try:
-                _drop_turn(session_id, turn_id, home=home)
-            except BaseException:
-                pass
+            if owned:
+                try:
+                    _drop_turn(session_id, turn_id, home=home)
+                except BaseException:
+                    pass
 
     return transform_llm_output
 

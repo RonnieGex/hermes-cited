@@ -101,7 +101,8 @@ def envelope(excerpt=GROUNDED, document="cafe-la-horquilla.md", heading="Precios
 
 def turn_of(session="s1", turn="t1"):
     with plugin._TURNS_LOCK:
-        return plugin._TURNS.get((session, turn))
+        matches = [value for key, value in plugin._TURNS.items() if key[1] == session and key[2] == turn]
+    return matches[0] if len(matches) == 1 else None
 
 
 def test_b_r4_1_a_turn_lookup_failure_never_returns_none(monkeypatch, hermes_home, cited_env):

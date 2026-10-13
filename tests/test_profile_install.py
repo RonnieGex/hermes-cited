@@ -338,6 +338,29 @@ def _write_profile_env(profile_home: Path, url: str, token: str) -> None:
     )
 
 
+def _provisioned_runtime(runtime: Path, host_root: Path) -> dict:
+    """D9: the disposable runner pre-provisions the host's managed runtimes before the network closes.
+
+    A missing or unrecorded runtime is a failure, never a skip. The recorded archive digests must be the
+    ones the pinned host's own ``pm/lock.json`` declares for this target, so the run proves that the bytes
+    the host would have downloaded are the bytes already on disk.
+    """
+    assert str(runtime) not in ("", ".") and runtime.is_dir(), (
+        "the disposable runner must provision the host runtime offline (D9)"
+    )
+    assert str(os.environ.get("HERMES_RUNTIME_DIR") or "").strip(), (
+        "HERMES_RUNTIME_DIR must point the pinned host at the provisioned store"
+    )
+    record = json.loads((runtime / "provision.json").read_text(encoding="utf-8"))
+    pinned = json.loads((Path(host_root) / "pm" / "lock.json").read_text(encoding="utf-8"))["packages"]
+    for name in ("python", "uv"):
+        fact = record["packages"][name]
+        expected = pinned[name]
+        assert fact["version"] == expected["version"], name
+        assert fact["sha256"] == expected["artifacts"]["linux-x64"]["sha256"], name
+    return record
+
+
 def _load_installed_plugin(installed: Path):
     """Import the installed copy under its own name so the running checkout is never loaded twice."""
     import importlib
@@ -570,9 +593,10 @@ def test_a_fresh_real_profile_installs_the_search_bridge(tmp_path):
 
     Without the disposable VM this body never runs; the skip reason above is the recorded blocker. When
     the harness provides the four variables the run verifies the pinned **host** checkout, the canonical
-    archive against ``bridge.lock``, installs the pinned **bridge** commit into a new profile, writes the
-    search configuration before discovery, asks the real loader for the effective catalog and dispatches
-    the tool in that profile's secret scope.
+    archive against ``bridge.lock``, the pre-provisioned managed runtimes of D9, installs the pinned
+    **bridge** commit into a new profile, writes the search configuration before discovery, asks the real
+    loader for the effective catalog, dispatches the tool in that profile's secret scope and compares the
+    complete profile inventory after setup against its baseline (D5).
     """
     sys.path.insert(0, str(REPO / "tests"))
     import bridge_support
@@ -592,6 +616,11 @@ def test_a_fresh_real_profile_installs_the_search_bridge(tmp_path):
     assert str(os.environ.get("HERMES_TEST_NETWORK_BLOCKED") or "") == "1", "the network must be blocked"
     verified = _verify_bridge_lock(git_dir, lock, tmp_path / "lock-work")
 
+    # D9: the runtimes the pinned host would download are already in the store, and their digests are the
+    # ones its own lock declares. A missing runtime fails here instead of skipping.
+    runtime = Path(str(os.environ.get("HERMES_TEST_RUNTIME_DIR") or "")).resolve()
+    provision = _provisioned_runtime(runtime, host_root)
+
     root = tmp_path / "hermes-root"
     profile_home = root / "profiles" / _PROFILE
     profile_home.mkdir(parents=True)
@@ -607,6 +636,7 @@ def test_a_fresh_real_profile_installs_the_search_bridge(tmp_path):
             timeout=600,
         )
         assert completed.returncode == 0, completed.stderr
+        assert "download failed" not in completed.stdout, "the network is closed: no download is attempted"
 
         installed = profile_home / "plugins" / "hermes-cited"
         assert installed.is_dir()
@@ -617,12 +647,20 @@ def test_a_fresh_real_profile_installs_the_search_bridge(tmp_path):
         assert str(manifest["version"]) == "0.2.0"
         assert "cited_search" in manifest["provides_tools"]
 
+        facts = json.loads((runtime / "facts.json").read_text(encoding="utf-8"))["packages"]
+        assert facts["python"]["version"] == provision["packages"]["python"]["version"]
+        assert facts["python"]["target"] == "linux-x64"
+        assert (runtime / facts["python"]["entry"]).is_dir()
+
+        baseline = bridge_support.inventory(profile_home)
         catalog = _effective_catalog(python, profile_home)
         _assert_search_catalog(catalog)
         request = running.fake.last_call()
         assert request["path"] == "/api/chassis/mcp"
         assert request["headers"]["authorization"] == "Bearer {0}".format(running.token)
 
+        after = bridge_support.inventory(profile_home)
+        assert after == baseline, "search must write nothing under the profile home after setup (D5)"
         assert not (profile_home / "cited").exists(), "search must write nothing under the profile home"
         print(
             json.dumps(
@@ -630,7 +668,8 @@ def test_a_fresh_real_profile_installs_the_search_bridge(tmp_path):
                     "host_pin": HOST_PIN,
                     "bridge_ref": bridge_ref,
                     "archive": verified,
-                    "profile_inventory": bridge_support.inventory(profile_home),
+                    "runtime": provision,
+                    "profile_inventory": baseline,
                     "catalog": catalog,
                 },
                 indent=2,

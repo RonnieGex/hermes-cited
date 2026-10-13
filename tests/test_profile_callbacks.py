@@ -10,7 +10,11 @@ explícito, nunca la instalación personal.
 from __future__ import annotations
 
 import json
+import logging
+import re
 from pathlib import Path
+
+import pytest
 
 import bridge_support as support
 from hermes_cited import config, messages, plugin
@@ -153,18 +157,51 @@ def test_a_full_transform_writes_under_the_registration_home_not_the_root(tmp_pa
     assert config.canonical_home(writes[0]) == config.canonical_home(Path(home) / "cited" / "audit.jsonl")
 
 
-def test_the_mode_state_of_one_profile_never_leaks_into_another(tmp_path, monkeypatch):
-    """B01: con un ``ctx.state`` compartido, ``/cited`` del perfil A no cambia el modo del perfil B."""
+def test_the_mode_state_uses_the_plain_host_valid_profile_key(tmp_path, monkeypatch):
+    """D7: the previous version's plain ``mode.profile`` key is written, with no path or NUL prefix.
+
+    The pinned host partitions its ``PluginState`` per profile home, so isolation comes from the host
+    partition and not from prefixes the host rejects. The single key must satisfy the host pattern.
+    """
     monkeypatch.delenv("CITED_DEFAULT_MODE", raising=False)
-    shared = support.DictState()
-    first = support.FakeContext()
-    first.state = shared
     with support.bound_scope(full_values(), home=tmp_path / "profile-a"):
-        plugin.register(first)
-        first.commands["cited"]("")
-    second = support.FakeContext()
-    second.state = shared
-    with support.bound_scope(full_values(), home=tmp_path / "profile-b"):
-        plugin.register(second)
-        response = hook(second, "pre_llm_call", session_id="r3-leak", turn_id="r3-leak", user_message="r3")
-    assert response is None, "profile B must keep its own default dot, not the /cited of profile A"
+        context = support.FakeContext()
+        plugin.register(context)
+        context.commands["cited"]("")
+    assert context.state.data == {"mode.profile": "cited"}
+    key = next(iter(context.state.data))
+    assert re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", key) and ".." not in key
+
+
+@pytest.mark.parametrize("callback", ["command", "transform"])
+def test_failure_diagnostics_use_the_profile_redaction_set(
+    tmp_path, monkeypatch, caplog, callback
+):
+    """D8: no message or log record, tracebacks included, carries the failing profile's secret."""
+    secret = "synthetic-profile-cred-a"  # synthetic
+    root_secret = "synthetic-root-cred-b"  # synthetic
+    monkeypatch.setenv("CITED_MCP_TOKEN", root_secret)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("synthetic fault carries " + secret)
+
+    with support.bound_scope(
+        full_values(CITED_MCP_TOKEN=secret, CITED_DEFAULT_MODE="cited"), home=tmp_path / "profile-a"
+    ):
+        context = support.FakeContext()
+        plugin.register(context)
+        with caplog.at_level(logging.ERROR, logger=plugin.__name__):
+            if callback == "command":
+                monkeypatch.setattr(context.state, "set", fail)
+                result = context.commands["dot"]("")
+            else:
+                monkeypatch.setattr(plugin.delivery, "snapshot", fail)
+                result = hook(
+                    context,
+                    "transform_llm_output",
+                    response_text="draft",
+                    session_id="failure",
+                    turn_id="failure",
+                )
+    assert secret not in result
+    assert secret not in caplog.text
