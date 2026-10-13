@@ -15,6 +15,7 @@ read-only copy of the pinned host is not present, so the ordinary suite stays ru
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
 import sys
@@ -144,6 +145,75 @@ def test_refused_foreign_callback_does_not_destroy_owners_live_turn(tmp_path, ho
         )
     with scope(owner):
         assert plugin._turn_of("pending", "pending", home=str(owner)) is not None
+
+
+def _independent_evidence(context, session="review-session", turn="live"):
+    """One search bound to the turn, so its owner holds a quotable passage (review probe)."""
+    context.hooks["pre_llm_call"][0](session_id=session, turn_id=turn, user_message="review")
+    context.hooks["post_tool_call"][0](
+        tool_name="cited_search",
+        args={"query": "review"},
+        result=json.dumps(
+            {
+                "cited_tool": "cited_search",
+                "query": "review",
+                "text": "",
+                "passages": [
+                    {
+                        "n": 1,
+                        "document": "review.txt",
+                        "heading": None,
+                        "position": 0,
+                        "excerpt": "Independent review evidence.",
+                        "lines": [{"line": 1, "text": "Independent review evidence."}],
+                    }
+                ],
+            }
+        ),
+        session_id=session,
+        turn_id=turn,
+        status="ok",
+    )
+
+
+def test_busy_foreign_profile_does_not_evict_owners_pending_turn(tmp_path, host_paths):
+    """D6/M01-B2R1: the turn cap evicts only the calling profile's oldest turns.
+
+    The bridge2 round 1 review opened the full ``_MAX_TURNS`` capacity under a second validated profile
+    and the owner's live turn disappeared: the eviction took the first keys of the whole table instead of
+    the first keys of the calling owner. The owner's later lookup must still return its live turn.
+    """
+    owner = tmp_path / "patient"
+    with scope(owner):
+        context = Context()
+        plugin.register(context)
+        _independent_evidence(context)
+    with scope(tmp_path / "busy"):
+        busy = Context()
+        plugin.register(busy)
+        for index in range(plugin._MAX_TURNS):
+            busy.hooks["pre_llm_call"][0](session_id="other-session", turn_id=str(index))
+    with scope(owner):
+        result = context.tools["cited_quote"](
+            {"passage": "P1", "lines": [1]}, session_id="review-session", turn_id="live"
+        )
+    assert result == "Independent review evidence."
+
+
+def test_explicit_stale_turn_cannot_quote_the_only_different_live_turn(tmp_path, host_paths):
+    """H14/M02-B2R1: an explicit identity that resolves to no open turn is refused, never guessed.
+
+    With one live turn and ``turn_id=already-finished`` the resolver used the single active turn as a
+    fallback, so a contradictory identity quoted the life of a different execution.
+    """
+    with scope(tmp_path / "stale"):
+        context = Context()
+        plugin.register(context)
+        _independent_evidence(context)
+        result = context.tools["cited_quote"](
+            {"passage": "P1", "lines": [1]}, session_id="review-session", turn_id="already-finished"
+        )
+    assert "Independent review evidence." not in result
 
 
 def test_full_mode_commands_accept_real_host_plugin_state_keys(tmp_path, monkeypatch, host_paths):
