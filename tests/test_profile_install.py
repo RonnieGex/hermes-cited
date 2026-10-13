@@ -164,6 +164,12 @@ def _read_bridge_lock(path) -> BridgeLock:
 def _canonical_archive(git_dir, sha: str, out) -> tuple:
     """``git archive --format=tar <sha>`` with D5's isolated Git configuration (M01)."""
     destination = Path(out)
+    permissions = subprocess.run(
+        ["git", "-C", str(git_dir), "config", "--get", "tar.umask"],
+        capture_output=True, text=True, timeout=120, env=_isolated_git_env(destination.parent),
+    )
+    if permissions.returncode != 1:
+        raise ValueError("the canonical archive requires no tar.umask override")
     destination.parent.mkdir(parents=True, exist_ok=True)
     override = _info_attributes(Path(git_dir))
     if override.exists():

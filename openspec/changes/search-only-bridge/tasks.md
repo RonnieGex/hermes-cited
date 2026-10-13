@@ -351,3 +351,10 @@ The correction run performs no archive, merge or push; the future implementation
       GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-fix-host
       .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
       -k host_pin_rejects_modified`: 1 passed, 12 deselected in 1.87s.
+- [x] 12.3 D5: reject an effective tar.umask override before creating a canonical archive.
+      RED: external `test_bridge_codex_r3.py -k archive_digest` computes different SHA-256 values
+      for the same commit after `git config tar.umask 0077`; both archives have 10240 bytes.
+      Evidence: `bridge-codex-r3-real-red.log`. The contract explicitly forbids this override.
+      GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-fix-archive
+      .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
+      -k archive_digest`: 1 passed, 12 deselected in 3.37s.
