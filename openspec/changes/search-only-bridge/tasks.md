@@ -114,3 +114,9 @@ The correction run performs no archive, merge or push; the future implementation
       RED: 4 failed. Update the existing mode test that incorrectly admits undocumented spellings.
       GREEN: the same command returned 4 passed, 14 deselected in 0.59s;
       `.venv/Scripts/python -m pytest -q tests/test_profile_scope.py -k mode`: 11 passed, 8 deselected in 1.19s.
+- [x] 8.5 Enforce H21 recursive bearer-reflection rejection before JSON-RPC error rendering.
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k error_response_reflection`:
+      RED: 1 failed; a reflected error body was rendered after replacing only the bearer substring.
+      GREEN: the same command returned 1 passed, 17 deselected in 0.48s;
+      `.venv/Scripts/python -m pytest -q tests/test_search_wire.py -k 'reflected or bad_response'`:
+      12 passed, 52 deselected in 6.32s.

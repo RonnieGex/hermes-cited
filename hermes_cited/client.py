@@ -373,17 +373,17 @@ def call_tool_search(settings, arguments, request_id: int = 1) -> SearchResult:
         raise _fail("Cited answered without the JSON-RPC 2.0 version.", token)
     if isinstance(envelope.get("id"), bool) or envelope.get("id") != request_id:
         raise _fail("Cited answered with a response id that does not match the request id.", token)
-    if envelope.get("error") is not None:
-        error = envelope["error"]
-        code = error.get("code") if isinstance(error, dict) else "?"
-        message = error.get("message") if isinstance(error, dict) else str(error)
-        raise _fail("Cited refused the search with the JSON-RPC error {0}: {1}".format(code, message), token)
     if reflects_secret(envelope, token):
         raise _fail(
             "Cited answered with a body that reflects the search bearer. The answer was discarded and "
             "nothing of it is shown.",
             token,
         )
+    if envelope.get("error") is not None:
+        error = envelope["error"]
+        code = error.get("code") if isinstance(error, dict) else "?"
+        message = error.get("message") if isinstance(error, dict) else str(error)
+        raise _fail("Cited refused the search with the JSON-RPC error {0}: {1}".format(code, message), token)
     result = envelope.get("result")
     if set(envelope) != {"jsonrpc", "id", "result"}:
         raise _fail("Cited answered the search with a malformed response envelope.", token)
