@@ -490,3 +490,9 @@ The correction run performs no archive, merge or push; the future implementation
       `C:/Users/Franc/Documents/katalis-dev/tasks/bridge2-codex-r1-probes-validated-red.log`.
       GREEN: the same pytest command with `-k invalid_quote_line`: 1 passed, 11 deselected in 7.35s;
       `bridge2-codex-r1-fix-quote.log` records the redacted sentence and an unchanged temporary home.
+- [x] 14.2 D8/H6: contain and redact unexpected pre-hook exceptions before the real host dispatcher logs them.
+      RED: the external probe `test_pre_hook_exception_is_sanitized_before_host_dispatch_logs_it` runs the
+      pinned host dispatcher and finds the synthetic profile credential in its warning. Command and output:
+      `C:/Users/Franc/Documents/katalis-dev/tasks/bridge2-codex-r1-probes-validated-red.log`.
+      GREEN: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r1.py
+      -k pre_hook_exception`: 1 passed, 11 deselected in 1.45s; external `bridge2-codex-r1-fix-prehook.log`.

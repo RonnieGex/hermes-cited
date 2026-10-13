@@ -689,8 +689,10 @@ def _warn_about_streaming(state, registration=None) -> None:
 
 def _pre_llm_call(state, registration=None):
     def pre_llm_call(session_id="", turn_id="", user_message="", platform="", sender_id="", **kwargs):
+        secret = ""
         try:
             with _profile_call(registration) as settings:
+                secret = settings.token
                 turn = _turn_of(session_id, turn_id, create=True, home=registration.home if registration else None)
                 turn.question = _text_of_message(user_message)
                 turn.platform = str(platform or "")
@@ -701,6 +703,9 @@ def _pre_llm_call(state, registration=None):
                 turn.delivery = delivery.snapshot(turn.platform, home=hermes_home())
                 return {"context": CITED_RULES}
         except config.CitedError:
+            return None
+        except BaseException as error:
+            _report_failure("the pre_llm_call hook failed", incident_code(), error, secret=secret)
             return None
 
     return pre_llm_call
