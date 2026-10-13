@@ -658,3 +658,16 @@ The correction run performs no archive, merge or push; the future implementation
       932 passed, 1 skipped in 366.80s (`bridge2-codex-r2-suite-final.log`). The skip is the install without
       its prerequisite variables, executed separately above. New final external probes: 5 failed,
       9 passed in 14.35s (`bridge2-codex-r2-probes-final.log`); turn issues remain open, not waived.
+
+## 16. Bridge2 round 3 independent review corrections
+- [x] 16.1 D6/H14: preserve complete session and task identifiers when matching the pinned host's composed
+      turn identifier. New external probes use the real `_bind_turn_identity` and `_execute_tool` functions:
+      `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r3.py`.
+      RED: 4 failed, 8 passed in 11.86s. Three embedded-delimiter cases lose the passage identifier;
+      a dispatch carrying task `job` incorrectly quotes a turn created for task `job:child`.
+      Evidence: external `bridge2-codex-r3-probes-red.log`. Planned local correction: compare the complete
+      session/task prefix after separating only the final host-generated suffix; retain authoritative
+      explicit turn identifiers and ambiguity rejection. No normative requirement changes.
+      Implemented as a two-line comparator correction. GREEN: the same command returns 12 passed in
+      16.49s (`bridge2-codex-r3-probes-green.log`). The three complete identities now return P1 and their
+      literal selected line; the short task is refused and leaves zero selections in the owner's turn.

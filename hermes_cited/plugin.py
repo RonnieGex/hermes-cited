@@ -534,8 +534,8 @@ def _turn_has_identity(turn, session_id, kind, value) -> bool:
         return turn_value == value
     if turn_value == value:
         return True
-    parts = turn_value.split(":", 2)
-    return len(parts) == 3 and parts[0] == str(session_id or "") and parts[1] == value
+    prefix, separator, suffix = turn_value.rpartition(":")
+    return bool(separator and suffix) and prefix == "{0}:{1}".format(session_id or "", value)
 
 
 def _resolve_active_turn(session_id, turn_id="", task_id="", home=None):
