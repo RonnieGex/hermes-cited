@@ -101,7 +101,8 @@ def envelope(excerpt=GROUNDED, document="cafe-la-horquilla.md", heading="Precios
 
 def turn_of(session="s1", turn="t1"):
     with plugin._TURNS_LOCK:
-        return plugin._TURNS.get((session, turn))
+        matches = [value for key, value in plugin._TURNS.items() if key[1] == session and key[2] == turn]
+    return matches[0] if len(matches) == 1 else None
 
 
 def test_b_r4_1_a_turn_lookup_failure_never_returns_none(monkeypatch, hermes_home, cited_env):
@@ -136,8 +137,7 @@ def test_b_r4_1_a_mode_resolution_failure_never_returns_none(monkeypatch, hermes
         raise OSError("synthetic mode state read failure")
 
     monkeypatch.setattr(plugin.modes, "resolve_mode", broken)
-    with pytest.raises(OSError):
-        pre(context)
+    assert pre(context) is None
     actual = transform(context)
     assert isinstance(actual, str) and actual.strip()
     assert "MODEL_LEAK_999" not in actual

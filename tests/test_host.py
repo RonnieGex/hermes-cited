@@ -86,19 +86,33 @@ def host(tmp_path, monkeypatch):
         monkeypatch.syspath_prepend(str(HOST_SITE_PACKAGES))
     monkeypatch.syspath_prepend(str(HOST_COPY))
 
-    from hermes_cli.plugins import discover_plugins, get_plugin_manager, iter_hook_callbacks
+    # D2/B01: with the real host imported, the plugin reads its configuration from the active profile
+    # scope and refuses to register without one. The fixture installs the scope of this temporary profile
+    # before discovery, exactly as a running Hermes does.
+    from agent import secret_scope
 
-    discover_plugins()
-    callbacks = iter_hook_callbacks("transform_llm_output")
-    assert callbacks, "the real loader did not register the transform hook"
-    module = sys.modules[callbacks[0].__module__]
-    return {
-        "home": home,
-        "plugins": plugins,
-        "module": module,
-        "manager": get_plugin_manager(),
-        "callbacks": callbacks,
+    scope_values = {
+        "CITED_URL": "http://127.0.0.1:1",
+        "CITED_MCP_TOKEN": "synthetic-host-token",
+        "CITED_DEFAULT_MODE": "cited",
     }
+    scope_token = secret_scope.set_secret_scope(scope_values, profile_home=str(home))
+    try:
+        from hermes_cli.plugins import discover_plugins, get_plugin_manager, iter_hook_callbacks
+
+        discover_plugins()
+        callbacks = iter_hook_callbacks("transform_llm_output")
+        assert callbacks, "the real loader did not register the transform hook"
+        module = sys.modules[callbacks[0].__module__]
+        yield {
+            "home": home,
+            "plugins": plugins,
+            "module": module,
+            "manager": get_plugin_manager(),
+            "callbacks": callbacks,
+        }
+    finally:
+        secret_scope.reset_secret_scope(scope_token)
 
 
 def plugin_module(host, name):

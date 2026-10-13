@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "cited_search",
+      "arguments": {
+        "query": "hours",
+        "limit": 3
+      }
+    }
+  },
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "[1] sample.md\nHours\nOpen Monday to Friday."
+        }
+      ],
+      "structuredContent": {
+        "passages": [
+          {
+            "n": 1,
+            "document": "sample.md",
+            "heading": "Hours",
+            "position": 0,
+            "excerpt": "Open Monday to Friday."
+          }
+        ]
+      }
+    }
+  }
+}

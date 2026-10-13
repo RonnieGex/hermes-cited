@@ -50,14 +50,88 @@ that runs the plugin):
 
 | Variable | Required | What it does |
 |---|---|---|
-| `CITED_URL` | yes | The address of the installation, like `https://cited.example.com`. The plugin calls `<CITED_URL>/api/mcp`. A URL already ending in `/api/mcp` is used as it is. |
-| `CITED_MCP_TOKEN` | yes | The bearer token of that installation. It travels only in the `Authorization` header of a request to `CITED_URL`. |
-| `CITED_TIMEOUT_MS` | no | How long one call to Cited may take, in milliseconds. `30000` by default. |
+| `CITED_URL` | yes | The origin of the installation, like `https://cited.example.com`. Full calls `<CITED_URL>/api/mcp`; search calls `<CITED_URL>/api/chassis/mcp` and requires an origin with no path. |
+| `CITED_BRIDGE_TOOLS` | no | `full` or `search`. `full` when absent or empty. Any other value refuses registration. |
+| `CITED_MCP_TOKEN` | in `full` | The bearer of the MCP surface. It travels only in the `Authorization` header of a request to `<CITED_URL>/api/mcp`, and it is never read in `search` mode. |
+| `CITED_SEARCH_TOKEN` | in `search` | The search-only bearer. It travels only to `<CITED_URL>/api/chassis/mcp`. |
+| `CITED_TIMEOUT_MS` | no | How long one call to Cited may take, in milliseconds. `30000` by default; search accepts an integer from 1 through 120000. |
 | `CITED_DEFAULT_MODE` | no | The mode a conversation starts in, `dot` or `cited`. `dot` by default. |
 | `CITED_LANGUAGE` | no | The language of the cited-mode render, `es` or `en`. `es` by default. The quoted lines are always the document's own bytes. |
 
-Without `CITED_URL` or `CITED_MCP_TOKEN` the search tools answer a sentence that names the missing variable.
-They never raise into Hermes, and Hermes keeps working.
+Without `CITED_URL` or the token of the selected mode the tools answer a sentence that names the missing
+variable. They never raise into Hermes, and Hermes keeps working.
+
+## The mode switch: `full` and `search`
+
+`CITED_BRIDGE_TOOLS` selects the surface this plugin registers. It is a **closed** switch: absent or empty
+selects `full`, the value `search` selects the search-only bridge, and any other value refuses registration
+before a single callback is installed. The mode is immutable for that registration.
+
+| Value | Registered surface | Endpoint | Bearer |
+|---|---|---|---|
+| `full` (default) | `cited_search`, `cited_ask`, `cited_quote`, the `/cited` and `/dot` commands, the three hooks and the `cited` skill | `POST <CITED_URL>/api/mcp` | `CITED_MCP_TOKEN` |
+| `search` | exactly one tool, `cited_search`, and no command, hook, skill or audit writer | `POST <CITED_URL>/api/chassis/mcp` | `CITED_SEARCH_TOKEN` |
+
+In `search` mode the plugin reads the configuration from the active Hermes profile through
+`agent.secret_scope`, requires the mapping and the home of that profile at registration and at every call,
+and takes the documented default when a key is absent: it never falls back to the process environment. A
+missing, changed-home or unreadable scope answers a redacted sentence and sends zero requests, and the mode
+of a registration cannot change without registering that profile again. The search path never requests
+`CITED_MCP_TOKEN`, not even to check or to redact it.
+
+The same boundary applies to `full`: every registered callback and its turn state belong to the profile that
+registered them, and the default mode, the language, the selected token and the audit path of a turn come from
+that profile, never from the process root. A call in another home or with a changed mode is refused before any
+effect, so no evidence, mode or log of one profile is served from another. Live turns are keyed by that
+profile's home together with the session and turn identifiers, so two profiles that receive the same
+identifiers keep two independent turns and a refused foreign callback cleans up nothing. The turn table's
+capacity is per profile, so a busy profile never evicts another profile's pending turn, and an explicit
+execution identifier that resolves to no open turn is refused instead of quoting a different live turn. The
+pinned host composes its turn identifier from the session, the task and a suffix and its tool dispatch carries
+the task, so the same execution resolves through either spelling; a present `turn_id` is authoritative, and a
+turn that already returned is never revived. The
+persisted conversation mode uses the host's own plain `mode.profile` key, which the host partitions per profile home, so
+a mode written by an older version is honoured without migration. A failure diagnostic is redacted with the
+secret of the profile whose callback failed, never with the root environment's.
+
+### The search wire, version 1
+
+The search tool speaks the closed wire v1 of `openspec/changes/archive/2026-10-13-search-only-bridge/wire-contract.md`: only
+`POST /api/chassis/mcp` with `Content-Type: application/json` and `Authorization: Bearer
+<CITED_SEARCH_TOKEN>`, a 16 KiB body limit, an authenticated `tools/list` and `tools/call`. `CITED_URL` must
+be an explicit http/https origin with no userinfo, path (not even a trailing slash), query or fragment.
+Every 3xx is refused without a second request, so the bearer never travels to another destination. The
+response id must match the request id, the passages must follow the pinned schema (sequential `n`,
+`document`, `heading`, `position`, `excerpt`) and the content block must recompose from them; anything else
+is a redacted sentence, never a raw body, an exception, a header or a credential. The tool returns the JSON
+**string** `{"cited_tool":"cited_search","query":…,"text":…,"passages":[… with lines …]}`, never the RPC
+wrapper and never a `pid`.
+
+Search mode **writes nothing** under `HERMES_HOME`: no audit entry, no lock file, no cache, no Python byte
+cache. An isolated test snapshots the sorted inventory and the SHA-256 of every regular file of the home
+before registration and after a successful call and a failed call, and both snapshots are identical.
+
+### Install the pinned bridge into one profile
+
+At the Hermes pin `dce1e9b37581dd62e480a9064dc04a709c2940d3` the per-profile command is:
+
+```bash
+env HERMES_HOME=<root> <chassis>/.venv/bin/hermes --profile <name> \
+  plugins install file://<release>/hermes-cited.git --ref <full-sha> --enable --yes-deps
+```
+
+The profile already exists at `<root>/profiles/<name>`, and `--profile default` selects the root. A public
+install names the repository URL and passes the commit in a separate `--ref`, never as `repo@sha`, and the
+local mirror is read-only to the chassis. The release artifact is exactly the bytes of
+`git archive --format=tar <full-archived-merge-sha>` with no prefix or gzip; on Windows capture the bytes
+with Git's binary `--output` option, not with a text redirection. The lock records the full SHA, the SHA-256
+and the byte size, and it is written in a later consumer commit, never with a self-referential hash.
+
+The disposable Linux installer provisions the managed runtimes the pinned host's `plugins install` needs
+(that pin: CPython `3.14.7+20260901` and uv `0.12.3`, with their SHA-256 recorded) **before** the network is
+closed. During the run the network stays closed, a download attempt fails the test instead of skipping it,
+and the complete inventory of the profile home after setup is compared with its baseline, not only the
+absence of `cited/`.
 
 ## The three native tools
 

@@ -9,9 +9,10 @@ a second channel. A failure is a sentence, never an exception: Hermes keeps work
 from __future__ import annotations
 
 import json
+import re
 
-from . import render
-from .client import CitedError, call_tool_full, redact
+from . import config, render
+from .client import CitedError, call_tool_full, call_tool_search, redact
 from .config import settings_from_env
 
 TOOLSET = "cited"
@@ -20,8 +21,34 @@ TOOL_NAMES = ("cited_search", "cited_ask", "cited_quote")
 #: a selection and never a source of new evidence (B-R4-2).
 EVIDENCE_TOOLS = ("cited_search", "cited_ask")
 
-DEFAULT_SEARCH_LIMIT = 5
-MAX_SEARCH_LIMIT = 8
+DEFAULT_SEARCH_LIMIT = config.DEFAULT_SEARCH_LIMIT
+MAX_SEARCH_LIMIT = config.MAX_SEARCH_LIMIT
+MIN_SEARCH_LIMIT = config.MIN_SEARCH_LIMIT
+MAX_SEARCH_QUERY = config.MAX_QUERY_LENGTH
+_QUERY_PATTERN = re.compile(r"\S")
+
+#: The wire v1 arguments of the search-only bridge: exactly ``$defs.arguments`` of the pinned schema.
+SEARCH_WIRE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "minLength": config.MIN_QUERY_LENGTH,
+            "maxLength": MAX_SEARCH_QUERY,
+            "pattern": "\\S",
+        },
+        "limit": {
+            "type": "integer",
+            "minimum": MIN_SEARCH_LIMIT,
+            "maximum": MAX_SEARCH_LIMIT,
+            "default": DEFAULT_SEARCH_LIMIT,
+        },
+    },
+    "required": ["query"],
+    "additionalProperties": False,
+}
+
+SEARCH_ONLY_DESCRIPTION = "Search unsealed document passages."
 
 SEARCH_SCHEMA = {
     "type": "object",
@@ -95,7 +122,7 @@ QUOTE_DESCRIPTION = (
 )
 
 
-def search(args, **kwargs) -> str:
+def search(args, settings=None, **kwargs) -> str:
     """The ``cited_search`` handler: the passages of the documents that match a query."""
     arguments = dict(args or {})
     query = str(arguments.get("query") or "").strip()
@@ -115,10 +142,10 @@ def search(args, **kwargs) -> str:
                 MAX_SEARCH_LIMIT
             )
         call_arguments["limit"] = limit
-    return _call("cited_search", call_arguments, _search_envelope)
+    return _call("cited_search", call_arguments, _search_envelope, settings=settings)
 
 
-def ask(args, **kwargs) -> str:
+def ask(args, settings=None, **kwargs) -> str:
     """The ``cited_ask`` handler: an answer from the documents, with its citations."""
     arguments = dict(args or {})
     question = str(arguments.get("question") or "").strip()
@@ -128,13 +155,13 @@ def ask(args, **kwargs) -> str:
     session_id = arguments.get("sessionId")
     if session_id is not None and str(session_id).strip():
         call_arguments["sessionId"] = str(session_id)
-    return _call("cited_ask", call_arguments, _ask_envelope)
+    return _call("cited_ask", call_arguments, _ask_envelope, settings=settings)
 
 
-def _call(name, arguments, build) -> str:
+def _call(name, arguments, build, settings=None) -> str:
     token = ""
     try:
-        settings = settings_from_env()
+        settings = settings if settings is not None else settings_from_env()
         token = settings.token
         result = call_tool_full(name, arguments, settings)
     except CitedError as error:
@@ -150,6 +177,106 @@ def _call(name, arguments, build) -> str:
             "and nothing of it is shown or recorded."
         )
     return built
+
+
+def validate_search_arguments(args):
+    """The strict wire v1 arguments of search mode: no coercion, no trimming, no unknown property.
+
+    Returns ``(arguments, error)``. A boolean, a float, a string limit, an out-of-range limit, a
+    non-string query, an over-long query and a whitespace-only query are all refused here, before any
+    request, because the schema and the handler must agree without coercing anything (H21).
+    """
+    if args is None:
+        arguments = {}
+    elif isinstance(args, dict):
+        arguments = args
+    else:
+        return None, "Cited could not search: the arguments must be an object that carries a `query`."
+    if any(not isinstance(key, str) for key in arguments):
+        return None, "Cited could not search: argument names must be strings."
+    unknown = sorted(set(arguments) - {"query", "limit"})
+    if unknown:
+        return None, "Cited could not search: `{0}` is not an argument of the search-only contract.".format(
+            unknown[0]
+        )
+    if "query" not in arguments:
+        return None, _QUERY_SENTENCE
+    query = arguments["query"]
+    if (
+        not isinstance(query, str)
+        or not config.MIN_QUERY_LENGTH <= len(query) <= MAX_SEARCH_QUERY
+        or not _QUERY_PATTERN.search(query)
+    ):
+        return None, _QUERY_SENTENCE
+    validated = {"query": query}
+    if "limit" in arguments:
+        limit = arguments["limit"]
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not MIN_SEARCH_LIMIT <= limit <= MAX_SEARCH_LIMIT
+        ):
+            return None, _LIMIT_SENTENCE
+        validated["limit"] = limit
+    return validated, ""
+
+
+_QUERY_SENTENCE = (
+    "Cited could not search: the `query` argument must be a string of 1 to {0} characters with at least "
+    "one non-whitespace character.".format(MAX_SEARCH_QUERY)
+)
+_LIMIT_SENTENCE = "Cited could not search: the `limit` argument must be an integer between 1 and {0}.".format(
+    MAX_SEARCH_LIMIT
+)
+
+
+def search_model_envelope(result, arguments) -> str:
+    """The model-visible envelope of search mode: the JSON *string*, never the RPC wrapper (H21).
+
+    It carries the unchanged query, the text block and every passage with its ``lines``, and it
+    introduces no ``pid``, no seal and no audit field: the full-mode composition does not exist here.
+    """
+    passages = []
+    for passage in result.passages:
+        item = dict(passage)
+        item["lines"] = render.numbered_lines(item.get("excerpt") or "")
+        passages.append(item)
+    envelope = {
+        "cited_tool": "cited_search",
+        "query": arguments.get("query", ""),
+        "text": result.text,
+        "passages": passages,
+    }
+    return json.dumps(envelope, ensure_ascii=False)
+
+
+def search_only(args, registration) -> str:
+    """The registered search handler: settings from its own profile, wire v1 and a redacted sentence.
+
+    It never touches the audit log, the skill, the commands, the hooks or any file under the home, and it
+    never requests ``CITED_MCP_TOKEN``.
+    """
+    try:
+        settings = config.search_settings_for(registration)
+    except config.CitedError as error:
+        return str(error)
+    except Exception:
+        return "Cited could not search: the configuration of this profile could not be read."
+    arguments, error = validate_search_arguments(args)
+    if error:
+        return redact(error, settings.token)
+    try:
+        result = call_tool_search(settings, arguments)
+    except CitedError as error:
+        return redact(str(error), settings.token)
+    except Exception:
+        # The transport categories are fixed sentences in the client; anything outside them is a fixed
+        # sentence here too, so an exception's own text never reaches the model (M02, H21).
+        return redact(
+            "Cited could not be called: the search transport failed before an answer was read.",
+            settings.token,
+        )
+    return redact(search_model_envelope(result, arguments), settings.token)
 
 
 def _search_envelope(result, arguments) -> str:

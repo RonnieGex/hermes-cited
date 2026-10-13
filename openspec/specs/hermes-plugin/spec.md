@@ -3,9 +3,7 @@
 ## Purpose
 
 The native Hermes Agent plugin that connects a Cited installation: the `cited_search`, `cited_ask` and `cited_quote` tools, the dot and cited modes, the plugin's composition of a cited answer from verbatim lines of the documents, the local consistency record, and the limits of the host that are declared instead of promised (no seal is emitted with Hermes v0.21.x). Consolidated on 2026-10-10 from the changes hermes-plugin, hermes-plugin-r2, hermes-plugin-r3 and hermes-plugin-r4, taking the latest version of each requirement.
-
 ## Requirements
-
 ### Requirement: H0 — Facts verified in the Hermes source
 
 The repository SHALL record, in `reports/hermes-facts.md`, every Hermes fact the plugin depends on with the file and line where it was read: the plugin hook names and the payload each one receives; whether a hook can replace the final answer before it leaves; whether plugin slash commands run on the CLI and on the gateway; how a plugin is installed from a local path; and whether `requires_toolsets` is satisfied by a plugin toolset.
@@ -16,6 +14,8 @@ The repository SHALL record, in `reports/hermes-facts.md`, every Hermes fact the
 - **AND** it SHALL state that H4 is implementable rather than blocked
 
 ### Requirement: H1 — The MCP route works with no installation
+
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
 
 The repository SHALL document and verify the MCP-configuration route in a temporary `HERMES_HOME`: the `mcp_servers.cited` fragment of `config.yaml`, the equivalent `hermes mcp add` command, a green `hermes mcp test cited`, and one natural question that makes the model call `mcp__cited__cited_search` or `mcp__cited__cited_ask` and answer with the citation.
 
@@ -29,6 +29,8 @@ The repository SHALL document and verify the MCP-configuration route in a tempor
 
 ### Requirement: H2 — One-step native plugin
 
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
+
 The plugin SHALL register `cited_search` and `cited_ask` as native tools with the same parameters as the Cited MCP tools, calling the endpoint with `Authorization: Bearer <CITED_MCP_TOKEN>`. The timeout SHALL be configurable and 30 seconds by default. Without configuration each tool SHALL answer an error that names the missing setting and SHALL NOT raise into Hermes.
 
 #### Scenario: configuration is missing
@@ -41,6 +43,8 @@ The plugin SHALL register `cited_search` and `cited_ask` as native tools with th
 
 ### Requirement: H3 — The cited skill ships inside the plugin
 
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
+
 The plugin SHALL register a skill named `cited` from a `SKILL.md` packaged in the repository, describing when to use each tool, that the answer and its citations are transmitted without changing a datum, that a refusal of Cited is passed on, and that in cited mode the model never completes from its own knowledge.
 
 #### Scenario: the skill is registered
@@ -48,6 +52,8 @@ The plugin SHALL register a skill named `cited` from a `SKILL.md` packaged in th
 - **THEN** the skill `cited` SHALL be registered through `ctx.register_skill` and its file SHALL exist
 
 ### Requirement: H4 — Two modes: the model chooses and the plugin writes the cited answer
+
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
 
 The plugin SHALL register `/cited` and `/dot`, changing the mode of the conversation, and SHALL read the
 initial mode from `CITED_DEFAULT_MODE`, defaulting to `dot`. In cited mode the plugin SHALL inject through
@@ -105,6 +111,8 @@ body. The plugin SHALL NOT raise into Hermes from any of its handlers (H11).
 - **THEN** the delivered text SHALL be the model's text unchanged, the log SHALL record that same text, and no note SHALL replace any part of it (D12)
 
 ### Requirement: H5 — Local consistency record of delivered answers
+
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
 
 The plugin SHALL append one entry per **plugin composition whose append succeeds** to
 `$HERMES_HOME/cited/audit.jsonl` with: UTC
@@ -178,7 +186,9 @@ The plugin SHALL send the token only in the `Authorization` header of a request 
 
 ### Requirement: H7 — Documentation
 
-The repository SHALL document, in English (`README.md`) and Spanish (`README.es.md`), the one-step installation, the configuration, the two modes, the delivery policy of cited mode per surface, the audit log with its checkpoint and the key outside `HERMES_HOME`, and what was actually tested with its date. It SHALL state the exact scope of the custody: a change made without the key is detected; remote custody arrives with Cited Ledger. It SHALL identify the plugin repository explicitly as `RonnieGex/hermes-cited`. In the Cited worktree the change SHALL add an "Hermes Agent" section to `docs/mcp.md` describing both routes, and SHALL add the Hermes Agent row to the "Works with your agent" table of `README.md` and `README.es.md`, stating only what was verified and linking durable evidence.
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
+
+The repository SHALL document, in English (`README.md`) and Spanish (`README.es.md`), the one-step installation, the configuration, the two modes, the delivery policy of cited mode per surface, the local consistency log without a custody key or checkpoint, and what was actually tested with its date. It SHALL state that the log proves only internal consistency, not custody or terminal delivery; H16-H18 define the current no-seal policy. It SHALL identify the plugin repository explicitly as `RonnieGex/hermes-cited`. In the Cited worktree the change SHALL add an "Hermes Agent" section to `docs/mcp.md` describing both routes, and SHALL add the Hermes Agent row to the "Works with your agent" table of `README.md` and `README.es.md`, stating only what was verified and linking durable evidence.
 
 #### Scenario: the Cited README names Hermes
 - **WHEN** the two READMEs are read after the change
@@ -186,14 +196,18 @@ The repository SHALL document, in English (`README.md`) and Spanish (`README.es.
 
 ### Requirement: H8 — Tests and evidence
 
-The repository SHALL prove the contract with: unit tests under pytest against a local fake HTTP server that imitates `/api/mcp`, including one adversarial test per finding B1 to B3 and M1 to M7; verifier and hash-chain cases that must fail; a load of the plugin using the installed Hermes venv; and an end-to-end run in a temporary `HERMES_HOME` with the DeepSeek model and a local Cited built from `origin/main` of the Cited repository in its own temporary worktree and served on port 3246, covering the price question, the English guarantee question, an unanswered question that must be refused, dot mode, and a cited-mode log whose chain and checkpoint verify from the installed plugin. Evidence SHALL live inside the change (`openspec/changes/hermes-plugin-r2/reports/`), SHALL be redacted before it is written, and SHALL NOT contain the token. `scripts/gate.py` SHALL affirm the named property of every claim, and SHALL reject a claim with an adversarial fixture rather than with a substring.
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
+
+The repository SHALL prove the contract with: unit tests under pytest against a local fake HTTP server that imitates `/api/mcp`, including one adversarial test per finding B1 to B3 and M1 to M7; verifier and hash-chain cases that must fail; a load of the plugin using an isolated pinned Hermes venv; and an end-to-end run in a temporary HERMES_HOME with a synthetic provider and a pinned local Cited in its own temporary worktree on a guarded free port, covering the price question, the English guarantee question, an unanswered question that must be refused, dot mode, and a cited-mode log whose internal chain verifies from the installed plugin. New evidence SHALL live inside search-only-bridge/reports; historical hermes-plugin-r2 reports remain historical, SHALL be redacted before it is written, and SHALL NOT contain the token. `scripts/gate.py` SHALL affirm the named property of every claim, and SHALL reject a claim with an adversarial fixture rather than with a substring.
 
 #### Scenario: the gate is green
-- **WHEN** `python scripts/gate.py` runs with the Python of the Hermes venv
+- **WHEN** `python scripts/gate.py` runs with the Python of the isolated pinned Hermes venv
 - **THEN** it SHALL affirm the properties and print `GATE: GREEN`
 - **AND** on any failure it SHALL print `GATE: RED` naming the failed claim
 
 ### Requirement: H9 — The delivery policy is a snapshot of the surfaces that can be seen
+
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
 
 The plugin SHALL decide the seal from a snapshot of the effective delivery configuration taken at the **start**
 of the cited turn, not from a re-read of the configuration at the end, and SHALL record that snapshot, its
@@ -252,6 +266,8 @@ message.
 
 ### Requirement: H10 — A failure never yields a sealed answer, and the plugin's composition is one of three
 
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
+
 For every cited turn that reaches `transform_llm_output`, the plugin's composition SHALL be exactly one of: the render
 of H12, the fixed refusal of H12 in the configured language, or a fixed operational refusal in the configured
 language that carries an incident code and interpolates no error detail. This requirement bounds that
@@ -291,6 +307,8 @@ as covered.
 
 ### Requirement: H11 — `cited_quote`: the model chooses numbered lines
 
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
+
 The plugin SHALL register the tool `cited_quote` with the arguments `{passage: <number of a passage or citation of this turn>, lines: [<line numbers>]}`. Each passage or citation an envelope of the turn returned SHALL be split into lines deterministically by line breaks, where a paragraph with no line break is one line, and SHALL be numbered from 1 within its passage; the numbering SHALL travel to the model with the tool result. The handler SHALL validate that the passage exists in the turn and that every line number exists, SHALL return to the model the exact text it chose, and SHALL record the selection, in order and without duplicates, on the turn. An invalid selection SHALL return a sentence and SHALL record nothing. The handler SHALL never raise into Hermes.
 
 #### Scenario: the model chooses a line
@@ -307,7 +325,9 @@ The plugin SHALL register the tool `cited_quote` with the arguments `{passage: <
 
 ### Requirement: H12 — The plugin writes the cited answer
 
-In cited mode the plugin SHALL build the delivered answer itself and SHALL NOT include any text produced by the model. The render SHALL be: a literal entry template in the language of `CITED_LANGUAGE` (`es` by default, `en` when configured); then, for every chosen line, the line copied byte for byte from the excerpt of the turn, its `[n]` mark and its source (`document` and section) generated by the plugin; then, when the delivery policy allows, the seal `Verified by Cited`. When there is nothing to show the render SHALL be exactly the fixed refusal `No está en los documentos.` (Spanish) or `It is not in the documents.` (English). The verifier SHALL assert that every rendered block is identical to a full line of a turn excerpt.
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
+
+In cited mode the plugin SHALL build the delivered answer itself and SHALL NOT include any text produced by the model. The render SHALL be: a literal entry template in the language of `CITED_LANGUAGE` (`es` by default, `en` when configured); then, for every chosen line, the line copied byte for byte from the excerpt of the turn, its `[n]` mark and its source (`document` and section) generated by the plugin; then the withheld note required by H16-H18; this host emits no seal. When there is nothing to show the render SHALL be exactly the fixed refusal `No está en los documentos.` (Spanish) or `It is not in the documents.` (English). The verifier SHALL assert that every rendered block is identical to a full line of a turn excerpt.
 
 #### Scenario: a real render carries line, source and mark
 - **WHEN** the model selects a line of a passage
@@ -323,6 +343,8 @@ In cited mode the plugin SHALL build the delivered answer itself and SHALL NOT i
 
 ### Requirement: H13 — A Cited refusal blocks every selection of the turn
 
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
+
 The turn SHALL record every refusal a `cited_ask` result carries through `post_tool_call`. When the turn holds
 at least one refusal, `transform_llm_output` SHALL deliver the fixed refusal of the configured language with no
 seal, and SHALL NOT render any line, whether the selection was recorded before or after the refusal. This
@@ -337,6 +359,8 @@ SHALL hold in the full path (`pre_llm_call` → tool calls → `cited_quote` →
 - **THEN** the answer SHALL be the fixed refusal and SHALL NOT carry the seal
 
 ### Requirement: H14 — One identifier per passage, bound to the turn of the execution
+
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
 
 Each passage a cited tool returns in a turn SHALL receive a unique identifier inside that turn, and the turn
 SHALL keep the mapping of that identifier to the call, the original number `n` of the Cited result, the
@@ -379,6 +403,8 @@ selection and SHALL NEVER be reparsed as evidence.
 
 ### Requirement: H15 — The host incompatibilities are declared with their integration evidence
 
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
+
 The plugin SHALL carry an integration test that runs the real host finalizer
 (`agent.turn_finalizer.apply_llm_output_transform`) and the real hook dispatcher with a temporary `HERMES_HOME`,
 and SHALL record in the evidence: the empty response never reaches the hook; an exception of the transformer
@@ -403,6 +429,8 @@ delivery. The plugin SHALL NOT open a pull request or an issue in the upstream r
 - **THEN** the integration test SHALL record that the persisted row is the plugin's composition without the footer and without a seal, that the final message carries the footer, and that this limit is declared instead of covered by C1
 
 ### Requirement: H16 — The seal waits for an accreditable host (D11 of the round 6 mission)
+
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
 
 The mark `Verified by Cited` SHALL NOT be emitted on any route while the host does not expose an accreditable
 delivery contract: a per-turn policy of the effective receivers (voice, commentary, streaming and the SSE route)
@@ -435,6 +463,8 @@ amends C1 to C4 of the round 4 contract as recorded in the round 6 mission and i
 
 ### Requirement: H17 — The installed skill and the public documents state the implemented policy (M-R6-2)
 
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
+
 The skill the plugin registers with `ctx.register_skill` SHALL state that this version **does not emit** the seal
 `Verified by Cited`, SHALL show a real render that carries the fixed retention note instead of a render that ends
 in the mark, and SHALL describe the plugin's composition, the drafts the host may show while the answer is
@@ -459,6 +489,8 @@ only assertion.
 - **THEN** no document SHALL contain one, and each SHALL carry the replacement wording and the three pending contracts by name
 
 ### Requirement: H18 — The reserved mark is not protected while the seal does not exist (D12)
+
+This requirement and its scenarios SHALL apply only to `full` mode. Search is governed by H19-H22; H6 applies to both.
 
 The plugin SHALL NOT protect the reserved mark while the seal does not exist: with D11 it emits no seal on any
 route, so no authentic seal exists that anyone could forge. The protection of the reserved mark SHALL therefore be
@@ -492,3 +524,87 @@ reserved mark of C1 (M-R3-3 of the round 4 contract); the traceability is D12 of
 #### Scenario: the activation protects the mark again
 - **WHEN** the activation section of `docs/upstream-proposal.md` and the design are read
 - **THEN** they SHALL require, as part of turning the seal on, protecting the reserved mark again with the render semantics of the host checked against its consumer
+
+### Requirement: H19 - Closed mode and profile-scoped configuration
+
+The plugin SHALL select full for absent/empty CITED_BRIDGE_TOOLS and search for search, reject every other value
+before registration, and read configuration from the active profile as design D2 specifies without cross-profile
+fallback. Registration mode SHALL be immutable until registration is repeated.
+
+#### Scenario: Defaults and unknown mode
+- **WHEN** registration runs with absent, empty, full, search and all values in separate scoped mappings
+- **THEN** the first three register full, search registers only search, and all registers nothing with a redacted error
+
+#### Scenario: Concurrent scopes and missing scope
+- **WHEN** profiles A/B register and call concurrently with different tokens, URLs and modes and a contradictory root environment
+- **THEN** each uses only its own values and a missing, changed-home or failing scope sends zero requests
+
+#### Scenario: Identical execution identifiers in two profiles are two turns
+- **WHEN** two full registrations with different homes open turns with the same session and turn identifiers through the real secret scope
+- **THEN** each pre-hook SHALL return its own profile's rules, nothing SHALL raise, and dropping one turn SHALL leave the other intact
+
+#### Scenario: A refused foreign callback leaves the owner's turn intact
+- **WHEN** an owner opens a turn and a callback with the same identifiers runs under another profile's scope
+- **THEN** the call SHALL be refused before any turn is read or dropped, and the owner's later lookup SHALL return its live turn
+
+#### Scenario: Failure diagnostics keep the profile redaction
+- **WHEN** a command or transformer callback fails with an exception that includes the profile's synthetic secret while the root environment holds a different synthetic secret
+- **THEN** no returned message, log record or traceback SHALL contain the profile's secret, and the profile's identity and configuration SHALL remain valid for its next call
+
+### Requirement: H20 - Search registers one tool and writes nothing
+
+Search SHALL register only cited_search with wire v1 arguments and no command, hook, skill or audit writer.
+The instrumented mapping SHALL reject any access to CITED_MCP_TOKEN in search, including membership/get calls.
+
+#### Scenario: Exact registration and before-after state
+- **WHEN** search registers and the handler executes successfully and with an error in an isolated profile
+- **THEN** one tool and zero other callbacks are recorded, the MCP-token spy was never accessed, and the complete
+  home/cited inventory and hashes remain identical before and after
+
+### Requirement: H21 - Versioned wire and dedicated bearer
+
+Search SHALL conform to wire-contract.md and the hash-pinned search-wire-v1 schema, use only its profile's search
+token and origin, refuse redirects, and validate requests and responses before exposing unsealed passages.
+
+#### Scenario: Exact request, response and model envelope
+- **WHEN** the handler runs the delivered fixture with limit 3 and with limit omitted
+- **THEN** the server receives the v1 JSON-RPC body at /api/chassis/mcp, the omitted limit means 5, and the handler
+  returns the defined model envelope with n/document/heading/position/excerpt/lines, not the JSON-RPC wrapper
+
+#### Scenario: Boundaries and malformed values
+- **WHEN** query is empty, whitespace, non-string, 1000 or 1001 code points and limit is 0, 1, 8, 9, true or 1.5
+- **THEN** only valid combinations connect; the schema and handler agree without coercion
+
+#### Scenario: Missing configuration and unsafe URLs
+- **WHEN** URL or search token is absent, timeout is invalid, or URL includes userinfo, path, query or fragment
+- **THEN** a redacted sentence names the setting and no network request occurs
+
+#### Scenario: Bad responses and all redirects
+- **WHEN** the fake returns invalid JSON, mismatched id, malformed passage, JSON-RPC error, reflected token,
+  401/403/404, timeout, network failure, or 301/302/303/307/308 to the same and another origin
+- **THEN** each yields its redacted diagnostic and no redirect target receives a request or token
+
+### Requirement: H22 - Manifest, compatibility and pinned profile installation
+
+The plugin SHALL implement the two-mode manifest in fixtures/plugin-search.yaml, document it in both READMEs and
+the technical manual, and use design D4's real per-profile CLI flags and D5's canonical distribution pin.
+Full SHALL retain H0-H18, and spec synchronization SHALL find no duplicate requirement IDs.
+
+#### Scenario: Manifest and full compatibility
+- **WHEN** the manifest test and full regression suite run
+- **THEN** only URL is universally required, both tokens are conditional, search needs no MCP token, and H12-H18
+  composition, refusal, identifiers, host limitations and no-seal policy still pass in full
+
+#### Scenario: Fresh real profile
+- **WHEN** the agent installs the pinned bridge in a new disposable profile using the D4 command after writing search configuration
+- **THEN** the profile home holds that commit/digest, the catalog has cited_search only, a scoped call succeeds,
+  full hooks are absent, and root values cannot change its mode
+
+#### Scenario: Persisted mode survives the upgrade with host-valid keys
+- **WHEN** `mode.profile=cited` was stored through the pinned host's real PluginState before registration, the registration runs with default `dot`, `/cited` and `/dot` are executed and the next turn opens
+- **THEN** every key SHALL satisfy the host pattern, the stored mode SHALL be honoured, the commands SHALL persist through that real state, and the pre-hook SHALL return the rules of the persisted mode
+
+#### Scenario: Offline provisioning reaches the catalog comparison
+- **WHEN** the disposable runner provisions the host's required runtimes before closing the network and installs the pinned bridge
+- **THEN** no download SHALL be attempted, the install SHALL complete, the catalog SHALL hold `cited_search` only, a scoped dispatch SHALL succeed, and the full profile inventory after setup SHALL equal its baseline
+

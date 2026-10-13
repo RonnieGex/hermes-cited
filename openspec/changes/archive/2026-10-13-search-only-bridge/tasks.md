@@ -1,0 +1,702 @@
+# Tasks: search-only-bridge
+
+Branch: feature/search-only-bridge. No implementation is authorized by a specification-only correction commit.
+Each section writes `reports/YYYY-MM-DD-step-N-<name>.md` with exact commands/output, SHA, agent, counts,
+runtime and verdict. Check a task only after execution. No plugin database exists: before/after means a sorted
+inventory and SHA-256 of all regular files in the isolated HERMES_HOME and cited/ before registration and after
+calls, without excluding any plugin-created file. Production client data and personal services are never test inputs.
+The correction run performs no archive, merge or push; the future implementation closure below remains required.
+
+## 0. Branch
+- [x] 0.1 Branch creation evidence: `reports/2026-10-12-step-0-branch.md`.
+
+## 1. TDD and guard first
+- [x] 1.1 Write RED `tests/test_search_guard.py`: all effective URLs, sockets and redirect destinations reject
+      ports 3240/3241, localhost aliases and IPv6 equivalents; canonical paths reject the personal installation,
+      symlinks/junction escapes and anything outside the registered temporary workspace. Missing overrides fail
+      before file/process/network effects. Then implement the test guard and record RED/GREEN.
+      Evidence: `reports/2026-10-12-step-1-guard.md`, `tests/search_guard.py`, `tests/test_search_guard.py`.
+      Reopened in R1: guard_environment({}) succeeds; conftest does not enforce required overrides or paths.
+      Closed in R2: `guard_environment` requires HERMES_HOME and CITED_URL before any effect, the blanket
+      tempdir registration is removed, conftest isolates an inherited personal HERMES_HOME and the host
+      imports, and `bound_scope` guards the profile home. RED 2 failed, 1 passed; GREEN 27 passed in 5.99s.
+      Evidence: `reports/2026-10-12-step-1-guard-r2.md`.
+      Reclosed in R3: M02 — the fake and its CLI now apply `guard_path` to the `--record` destination before
+      the server exists, so the guard precedes every file and process effect; see 11.3 and
+      `reports/2026-10-12-step-11-guard-r3.md`.
+- [x] 1.2 Write `tests/fakes/chassis_surface.py` for wire v1 on a guarded free loopback port, including tools/list,
+      every error and both redirect classes. No real provider is used. Add a script entry accepting --port and
+      --record in this test file for the curl checks below.
+      Evidence: `reports/2026-10-12-step-1-red.md`, `reports/2026-10-12-step-5-http.md`.
+      Reopened in R1: unauthenticated oversized input returns 413, extra envelope fields are accepted,
+      JSON null is reported as a parse error, and an invalid version echoes a non-null id.
+      Closed in R2: authentication precedes body parsing, the envelope is closed, `null` is -32600 and an
+      invalid version or id answers a null id. RED 5 failed, 11 passed; GREEN 16 passed in 10.12s;
+      probe case `delivered_fake_conforms` 4 passed. Evidence: `reports/2026-10-12-step-1-wire-fake-r2.md`.
+- [x] 1.3 RED `tests/test_search_only_mode.py`, `tests/test_profile_scope.py`, `tests/test_search_wire.py` for every
+      H19-H21 scenario and Mapping access spies. Record before/after including failure paths.
+      Evidence: `reports/2026-10-12-step-1-red.md`, `reports/2026-10-12-step-2-implementation.md`.
+      Reopened in R1: missing-scope registration and real multiplex root fallback are not covered by these tests.
+      Closed in R2: missing/non-mapping/blank/failing scopes, the broken host dependency, the equivalent home
+      spelling and every fixed transport diagnostic have cases. RED 11 failed, 2 passed; GREEN 107 passed in
+      44.02s; the R1 probe is 27 passed, including the two real-host scope cases.
+      Evidence: `reports/2026-10-12-step-2-scope-r2.md`.
+      Reclosed in R3: B01 — the full callbacks and their turn state are bound to the registering profile; the
+      new cases are `tests/test_profile_callbacks.py` and the R2 probe is 21 passed; see 11.1/11.2/11.5 and
+      `reports/2026-10-12-step-11-callbacks-r3.md`.
+      Flag reconciled by independent bridge2 R3 execution: full suite 937 passed, 1 skipped; 12 new probes
+      passed. Historical RED evidence above is retained. See `reports/2026-10-13-step-18-integration-codex-r3.md`.
+- [x] 1.4 RED `tests/test_manifest_modes.py`, `tests/test_profile_install.py`, and README/manual tests for H22;
+      preserve full regression cases H12-H18 and check unique IDs on a temporary synchronized spec copy.
+      Evidence: `reports/2026-10-12-step-1-red.md`, `reports/2026-10-12-step-6-docs.md`.
+      Reopened in R1: the installation test passes the Hermes SHA as the bridge ref and never tests the catalog/call.
+      Closed in R2: the host pin and the bridge ref are separate, the runner writes the search configuration
+      before discovery and verifies digest, manifest, catalog and a scoped handler call. RED 7 failed;
+      GREEN 14 passed, 1 skipped. Evidence: `reports/2026-10-12-step-1-install-r2.md`.
+      Reclosed in R3: M01 — the runner verifies the host pin against the checkout, the canonical archive
+      SHA-256/size against `bridge.lock`, and the effective catalog through the real host loader and registry;
+      the VM E2E of 5.3 remains BLOCKED. GREEN `tests/test_profile_install.py`: 29 passed, 1 skipped; see 11.4
+      and `reports/2026-10-12-step-11-install-r3.md`.
+- [x] 1.5 `pytest -q tests/test_search_guard.py tests/test_search_only_mode.py tests/test_profile_scope.py
+      tests/test_search_wire.py tests/test_manifest_modes.py` before implementation; record intended failures.
+      Evidence: `reports/2026-10-12-step-1-red.md` (104 failed, 34 passed, 1 skipped).
+
+## 2. Small implementation steps
+- [x] 2.1 config.py: scoped accessor, immutable registration mode, selected credential and timeout validation.
+      Evidence: `reports/2026-10-12-step-2-implementation.md`.
+      Reopened in R1: a host dependency import failure becomes an environment fallback; home identity is not canonical.
+      Closed in R2: `host_is_present` separates an absent host from a broken dependency, `active_scope` requires
+      a Mapping and a non-empty home, `canonical_home` normalizes the identity, and `settings_for` fails closed
+      on an empty home while the host is present. GREEN 107 passed in 44.02s.
+      Evidence: `reports/2026-10-12-step-2-scope-r2.md`.
+- [x] 2.2 client.py/tools.py: search-only strict arguments, wire v1 endpoint, response validation and redaction;
+      retain full behavior. Do not coerce booleans, numbers or fractional limits in search.
+      Evidence: `reports/2026-10-12-step-2-implementation.md`, `tests/test_search_wire.py`.
+- [x] 2.3 plugin.py: search registration with one handler bound to its profile identity, no shared settings cache.
+      Evidence: `reports/2026-10-12-step-2-implementation.md`, `tests/test_search_only_mode.py`.
+      Reopened in R1: empty search home still registers; an unreadable full scope registers and reads root credentials.
+      Closed in R2: `register` refuses every mode when the scope cannot be read, there is no environment fallback
+      while the host is present, and a search scope without a home registers nothing. The real-host probe case
+      `test_real_hermes_multiplex_missing_scope_never_uses_root` passes. Evidence:
+      `reports/2026-10-12-step-2-scope-r2.md`.
+      Reclosed in R3: B01 — every full callback validates its registration before an effect and reads its own
+      settings, so no callback serves the root or another profile; see 11.1/11.2.
+      Flag reconciled after independent full-suite, new scoped identity/rotation probes and real offline
+      install: `reports/2026-10-13-step-18-integration-codex-r3.md`. The new comparator defect is fixed in 16.1.
+- [x] 2.4 plugin.yaml: implement fixtures/plugin-search.yaml semantics and version 0.2.0.
+      Evidence: `reports/2026-10-12-step-2-implementation.md`, `tests/test_manifest_modes.py`.
+
+## 3. Review existing tests
+- [x] 3.1 Run full-mode H0-H18 regression suite, list every existing test updated and why; preserve delivery policy.
+      Evidence: `reports/2026-10-12-step-3-regression.md` (502 passed, 3 skipped; only the manifest test updated).
+      Round 3 adds one more updated test: `tests/regressions/test_r8_dot_passthrough.py` selected the default
+      mode with `monkeypatch.setenv("CITED_DEFAULT_MODE", "dot")`, which D2 no longer honours while a profile
+      scope is active (the mode now comes from that profile). Its setup rebinds the profile scope to `dot` and
+      the assertions are unchanged. See 11.1 and `reports/2026-10-12-step-11-suite-r3.md`.
+
+## 4. Unit verification and state
+- [x] 4.1 `pytest -q` with counts/runtime and complete before/after home inventory. No database test is invented.
+      Evidence: `reports/2026-10-12-step-4-suite.md` (830 passed, 4 skipped in 365.60s; inventory identical).
+- [x] 4.2 `openspec validate --all --strict`; compare both wire copies by SHA-256; run existing CI commands from
+      .github/workflows without claiming remote CI has run. Record the actual workflow SHA/result when available.
+      Evidence: `reports/2026-10-12-step-4-suite.md` (2 passed, 0 failed; both wire copies byte-identical; remote
+      CI not run, no push authorized).
+
+## 5. Agent-executed HTTP and profile integration
+- [x] 5.1 Set PYTHONDONTWRITEBYTECODE=1 for isolated handler/profile tests. Start `python tests/fakes/chassis_surface.py --port <guarded-free-port> --record <temporary-log>`;
+      from Windows run `curl.exe --max-time 30 --request POST http://127.0.0.1:<port>/api/chassis/mcp
+      --header "Content-Type: application/json" --header @<synthetic-header.txt>
+      --data-binary @<fixture-request.json>` (fixture's request object only). The temporary header file holds the synthetic search bearer; remove it after
+      the run and never include it in reports. Repeat tools/list, wrong token,
+      wrong tool and invalid limits. Paste redacted requests/results, stop only the owned fake.
+      Evidence: `reports/2026-10-12-step-5-http.md`.
+- [x] 5.2 `pytest -q tests/test_search_only_mode.py -k handler_wire -s` must call the registered handler, compare
+      its actual wire with the same fixture, capture output and prove no home writes. Create that named case in 1.3.
+      Evidence: `reports/2026-10-12-step-5-http.md` (1 passed; request body equals the fixture; inventory identical).
+- [x] 5.3 Run `pytest -q tests/test_profile_install.py -s` in the disposable VM using D4's CLI, pinned Hermes,
+      local mirror and isolated homes; no personal executable or service. Test real scoped registration and catalog.
+      Network is blocked after provisioning. Record CLI argv, digest and profile inventory.
+      Executed by Codex in an isolated Linux container with the actual pinned CLI, a read-only mirror,
+      verified canonical archive and blocked network. The CLI clones the bridge but exits 1 because the
+      managed Python 3.14.7 runtime is not pre-provisioned and its downloads fail offline. The selected
+      integration test reports 1 failed, 29 deselected in 37.10s. Installation, catalog-after-install and
+      complete profile before/after evidence remain open. This supersedes the previous absent-CLI/mirror
+      blocker; the original skip remains in the ordinary suite without the four prerequisite variables.
+      Evidence: `reports/2026-10-12-step-12-install-codex-r3.md` and external
+      `bridge-codex-r3-linux-native9.log`. The container terminated and was removed; no personal service ran.
+      Closed in R4: the same runner pre-provisions the managed CPython 3.14.7 and uv 0.12.3 (digests recorded),
+      a warm uv cache and the build-backend wheelhouse before the network closes; the real
+      `plugins install file:///release/hermes-cited.git --ref 22a44d6... --enable --yes-deps` completes with
+      the external network refused, the catalog holds `cited_search` only, a scoped dispatch answers and the
+      complete profile inventory after setup is unchanged. `1 passed, 29 deselected in 264.38s`.
+      Evidence: `reports/2026-10-13-step-13-install-r4.md`.
+- [x] 5.4 Playwright: not applicable, this change has no frontend.
+      Evidence: `reports/2026-10-12-step-5-http.md`.
+
+## 6. Documentation
+- [x] 6.1 Update README.md, README.es.md and docs/technical-manual.md with modes, scope failures, conditional
+      secrets, complete wire, no writes, per-profile install and canonical pin command.
+      Evidence: `reports/2026-10-12-step-6-docs.md`.
+- [x] 6.2 Verify openspec/config.yaml against implementation; update schema/fixture consumers, never silently drift.
+      Evidence: `reports/2026-10-12-step-6-docs.md` (no drift found; no edit needed).
+      Reopened in R1: the claimed fail-closed scope behavior contradicts the actual full-mode fallback.
+      Closed in R2: `openspec/config.yaml` states the fail-closed scope rule, the package version matches the
+      0.2.0 manifest, and `openspec validate --all --strict` is 2 passed, 0 failed.
+      Evidence: `reports/2026-10-12-step-6-config-r2.md`.
+      Reclosed in R3: the living context and the documents state the per-callback binding of `full`; see 11.6
+      and `reports/2026-10-12-step-11-config-r3.md`.
+      Flag reconciled after independent documentation/configuration diff inspection, full-suite documentation
+      checks, identical consumer wire bytes and strict validation (2 passed, 0 failed); see step 18 below.
+
+## 7. Implementation closing (not executed by this contract correction)
+- [x] 7.1 `/verify`, then independent `/adversarial-review`; resolve Blockers/Majors and re-verify corrections.
+      Independent bridge2 R3 review (Codex, 2026-10-13, verdict PUBLICABLE) and local re-verification are
+      executed. Fable reviewed Codex's two round-3 corrections (`2ebf7c5` delimiter-preserving execution
+      identities, `9710d84` closure reconciliation) and accepted the delivery at `9710d84` after an independent
+      clean-clone gate: fresh venv on CPython 3.11.15, `gitleaks detect` clean, `python -m pytest -q
+      -p no:cacheprovider` 937 passed, 1 skipped (the disposable-VM install) in 376.94 s, `openspec validate
+      --all --strict` 2 passed. Evidence: `reports/2026-10-13-step-18-integration-codex-r3.md`.
+- [x] 7.2 Automated tests and CI green for the delivering SHA; `gitleaks protect --staged` before every commit.
+      The local gate above is the pre-merge CI run of `9710d84`; gitleaks ran before each commit of every round.
+      The remote `tests` workflow runs on the push of `main` after the merge and is recorded in 7.4.
+- [x] 7.3 `/archive` with explicit owner approval, then `/commit`; merge/push require a separate authorization.
+      Archived on 2026-10-13 under the owner's standing written delegation of 2026-10-12 («decide tú la mejor
+      opción siempre»), recorded with its reasons in `katalis-dev/tasks/aceptaciones.md`; the same entry
+      authorizes the merge into `main` and the push, because the Harness contract (task 1.1 of
+      `harness-foundation`) is blocked on exactly that merge.
+- [ ] 7.4 After the authorized merge, record full merge SHA, SHA-256 and byte size of
+      `git archive --format=tar <sha>` without prefix/gzip for A's bridge.lock. Never use this spec commit as a
+      completed bridge pin. Update the consuming lock in a later commit.
+      Not executed: it depends on the forbidden merge.
+
+## 8. Round 1 review corrections
+- [x] 8.1 Enforce H6/H21 redaction on invalid search arguments. External new probe:
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k unknown_argument`.
+      RED: 1 failed on the delivered implementation; the argument key reflected the active search bearer.
+      GREEN: 1 passed, 17 deselected; `.venv/Scripts/python -m pytest -q tests/test_search_wire.py`:
+      64 passed in 34.99s. Review probes and detailed evidence remain outside the repository as requested.
+- [x] 8.2 Enforce H21 wire v1 response additionalProperties=false before exposing passages.
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k response_rejects`:
+      RED: 3 failed; unexpected, error=null and method envelope fields were accepted.
+      GREEN: the same command returned 3 passed, 15 deselected in 0.77s.
+- [x] 8.3 Enforce H21 origins without even empty userinfo, query or fragment components.
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k origin_rejects`:
+      RED: 3 failed; empty @, ? and # components were accepted.
+      GREEN: the same command returned 3 passed, 15 deselected in 4.43s;
+      `.venv/Scripts/python -m pytest -q tests/test_search_wire.py -k 'url or origin'`:
+      9 passed, 55 deselected in 5.73s.
+- [x] 8.4 Enforce the literal closed values required by H19 without case folding or whitespace trimming.
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k closed_mode`:
+      RED: 4 failed. Update the existing mode test that incorrectly admits undocumented spellings.
+      GREEN: the same command returned 4 passed, 14 deselected in 0.59s;
+      `.venv/Scripts/python -m pytest -q tests/test_profile_scope.py -k mode`: 11 passed, 8 deselected in 1.19s.
+- [x] 8.5 Enforce H21 recursive bearer-reflection rejection before JSON-RPC error rendering.
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k error_response_reflection`:
+      RED: 1 failed; a reflected error body was rendered after replacing only the bearer substring.
+      GREEN: the same command returned 1 passed, 17 deselected in 0.48s;
+      `.venv/Scripts/python -m pytest -q tests/test_search_wire.py -k 'reflected or bad_response'`:
+      12 passed, 52 deselected in 6.32s.
+- [x] 8.6 Align the manual's mode table with H19 and the literal mode correction.
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k manual_does`:
+      RED: 1 failed, 21 deselected; the manual explicitly allowed whitespace-only mode values.
+      GREEN: the same command returned 1 passed, 21 deselected in 0.50s;
+      `.venv/Scripts/python -m pytest -q tests/test_docs_bridge.py`: 7 passed in 0.11s.
+- [x] 8.7 Reopen checked criteria contradicted by executed independent probes and source inspection.
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k tasks_do_not`:
+      RED: 1 failed, 22 deselected. Preserve the original reports as historical evidence.
+      GREEN: the same command returned 1 passed, 22 deselected in 1.28s;
+      `openspec validate --all --strict`: 2 passed, 0 failed.
+- [x] 8.8 Update the remaining registration regression to reject padded uppercase mode values under H19.
+      RED: the full suite returned 1 failed, 833 passed, 1 skipped in 272.51s;
+      `test_absent_empty_and_full_register_the_full_surface[ FULL ]` still asserted the undocumented behavior.
+      GREEN: `.venv/Scripts/python -m pytest -q tests/test_search_only_mode.py`: 11 passed in 5.54s.
+- [x] 8.9 Reopen wire fake completion after independent HTTP counterexamples.
+      `.venv/Scripts/python -m pytest -q ../tasks/test_bridge_r1_adversarial.py -k tasks_do_not`:
+      RED: 1 failed, 26 deselected; task 1.2 still claims closed-wire completion.
+      GREEN: the same command returned 1 passed, 26 deselected in 0.53s;
+      `openspec validate --all --strict`: 2 passed, 0 failed.
+
+## 9. Round 2 review corrections
+- [x] 9.1 B01 — fail closed on the profile scope and never fall back to root credentials. `active_scope`
+      requires a `Mapping` and a non-empty home, a broken host dependency is not an absent host, `register`
+      refuses every mode when the scope is unreadable, a search scope without a home registers nothing, and
+      `settings_for` fails closed while the host is present. RED 11 failed, 2 passed; GREEN 107 passed in
+      44.02s; the R1 probe, including both real-host cases, is 27 passed in 5.19s.
+      Evidence: `reports/2026-10-12-step-2-scope-r2.md`.
+- [x] 9.2 m01 — canonical home identity. `canonical_home` normalizes `home/child/..` to the same profile while
+      two different homes stay refused. Covered by the same GREEN.
+      Evidence: `reports/2026-10-12-step-2-scope-r2.md`.
+- [x] 9.3 M02 — fixed transport diagnostics. The search timeout, `URLError`, `OSError`, read failure and any
+      unexpected exception return fixed sentences; no exception text reaches the model. RED 5 failed on these
+      cases; GREEN with the scope suite. Evidence: `reports/2026-10-12-step-2-scope-r2.md`.
+- [x] 9.4 M03 — the isolation guard. `guard_environment({})` raises before any effect, the whole temp directory
+      is no longer authorised, an inherited personal `HERMES_HOME` is replaced by a temporary one, and the
+      host modules of one test are removed afterwards. RED 2 failed, 1 passed; GREEN `tests/test_search_guard.py`
+      27 passed in 5.99s. Evidence: `reports/2026-10-12-step-1-guard-r2.md`.
+      Reclosed in R3: M02 — the guard is connected to the fake and its CLI before any effect; GREEN
+      `tests/test_search_guard.py` 31 passed; see 11.3.
+- [x] 9.5 M04 — the fake conforms to the closed wire. Authentication precedes body parsing, the envelope rejects
+      unknown properties and a missing version, `null` is -32600 and an invalid version or id answers a null id.
+      RED 5 failed, 11 passed; GREEN 16 passed in 10.12s; probe case `delivered_fake_conforms` 4 passed.
+      Evidence: `reports/2026-10-12-step-1-wire-fake-r2.md`.
+- [x] 9.6 M01 — the profile installation runner. Separate host pin and bridge ref, ref validation, search
+      configuration written before discovery, digest, manifest, catalog and scoped handler call. RED 7 failed;
+      GREEN 14 passed, 1 skipped. The isolated E2E of 5.3 remains BLOCKED without the disposable VM.
+      Evidence: `reports/2026-10-12-step-1-install-r2.md`.
+      Reclosed in R3: M01 — the runner proves the host pin, the canonical archive digest/size and the real
+      loader catalog offline; GREEN `tests/test_profile_install.py` 29 passed, 1 skipped; see 11.4.
+- [x] 9.7 Legacy H0-H18 compatibility — the real-host integration tests install the profile scope their
+      temporary profile needs before discovery, and the host imports one test added are removed afterwards so
+      the unit suite keeps running outside Hermes. `tests/test_host.py tests/test_plugin.py
+      tests/test_adversarial.py tests/regressions`: 511 passed, 3 skipped in 227.55s.
+      Evidence: `reports/2026-10-12-step-2-scope-r2.md`.
+- [x] 9.8 6.2 — the living context against the corrected implementation; the package version drift (0.1.0 vs the
+      0.2.0 manifest) is corrected and config.yaml states the fail-closed scope rule.
+      Evidence: `reports/2026-10-12-step-6-config-r2.md`.
+      Reclosed in R3: `openspec/config.yaml` states the per-callback binding and the manual and both READMEs
+      carry it; see 11.6 and `reports/2026-10-12-step-11-config-r3.md`.
+
+## 10. Independent round 2 corrections
+- [x] 10.1 D2/H19: treat a missing internal agent submodule as a broken host, not an absent host.
+      RED: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py`
+      produced two failing `broken_agent_submodule` cases; both registered search from the root environment.
+      GREEN: the same probe with `-k broken_agent_submodule`: 2 passed, 17 deselected in 0.57s;
+      `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_profile_scope.py`: 26 passed in 5.98s.
+      Logs are external by the owner's instruction: `bridge-r2-adversarial-before.log`,
+      `bridge-r2-fix-host.log`, `bridge-r2-host-regression.log`. Independent approval remains pending.
+- [x] 10.2 H21: discard remote HTTP error text in search diagnostics.
+      RED: external R2 probe `test_http_failure_does_not_publish_remote_error_text` failed for HTTP
+      400, 429, 500 and 503; each copied the server's private error message into the model response.
+      GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py
+      -k http_failure`: 4 passed, 15 deselected in 0.69s; `tests/test_search_wire.py
+      -k 'bad_response or exception or reflected'`: 14 passed, 55 deselected in 7.41s.
+      External evidence: `bridge-r2-fix-http.log`, `bridge-r2-http-regression.log`.
+- [x] 10.3 D2: contain membership and getter failures while reading a profile setting.
+      RED: external R2 `test_registration_contains_scope_getter_failure` raises the raw getter exception
+      out of registration instead of refusing with the fixed scope sentence.
+      GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py
+      -k scope_getter`: 1 passed, 18 deselected in 0.58s; `tests/test_profile_scope.py`: 26 passed in 4.35s.
+      External evidence: `bridge-r2-fix-getter.log`, `bridge-r2-getter-regression.log`.
+- [x] 10.4 H22: import the installed package's real nested plugin module.
+      RED: external R2 `test_installed_layout_import_uses_the_actual_package` raises
+      ModuleNotFoundError for hermes_cited_installed.plugin on an isolated copy of the actual layout.
+      GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py
+      -k installed_layout`: 1 passed, 18 deselected in 0.87s; `tests/test_profile_install.py`:
+      14 passed, 1 skipped in 0.27s. This import repair does not complete the VM/catalog/digest gate.
+      External evidence: `bridge-r2-fix-layout.log`, `bridge-r2-layout-regression.log`.
+- [x] 10.5 H21: reject embedded URL control characters before urlsplit can remove them.
+      RED: two external R2 `control_characters` cases reached the transport with a silently changed host.
+      GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py
+      -k control_characters`: 2 passed, 17 deselected in 0.57s; `tests/test_search_wire.py
+      -k 'url or origin'`: 10 passed, 59 deselected in 5.38s.
+      External evidence: `bridge-r2-fix-origin.log`, `bridge-r2-origin-regression.log`.
+- [x] 10.6 Wire v1: validate method types and close the fake's tools/call params object.
+      RED: five external R2 `new_closed_wire` cases accepted extra params or returned -32601 with
+      a non-null id for a null, number, array or object method instead of HTTP 400/-32600/id null.
+      GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py
+      -k new_closed_wire`: 5 passed, 14 deselected in 4.63s; `tests/test_chassis_fake.py`:
+      16 passed in 8.40s. External evidence: `bridge-r2-fix-wire.log`, `bridge-r2-wire-regression.log`.
+- [x] 10.7 Reopen unsupported completion claims without erasing historical reports.
+      RED: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py
+      -k checked_tasks`: 1 failed, 20 deselected in 3.08s (`bridge-r2-tasks-red.log`).
+      Independent R2 evidence supersedes the earlier "Closed in R2" statements above:
+      1.1/9.4: a real HTTP call makes the fake write a log outside the only registered workspace,
+      even though guard_path rejects the same path (`bridge-r2-guard-red.log`).
+      1.3/2.3/6.2/9.8: the full callbacks use root defaults, quote another profile's passage and
+      prepare an audit write after a scope switch. The pinned real secret_scope reproduces all three
+      (`bridge-r2-real-scope.log`). Registration safety alone does not prove every callback safe.
+      1.4/9.6: the import-path defect is fixed, but the runner still uses FakeContext rather than the
+      host catalog and does not verify the host pin or canonical archive digest. Task 5.3 remains unrun.
+      Documentation must state that these gates are open; the approved D2/D4/H19/H22 requirements remain intact.
+      GREEN: the same `-k checked_tasks` command returned 1 passed, 20 deselected in 2.05s
+      (`bridge-r2-tasks-green.log`); `openspec validate --all --strict`: 2 passed, 0 failed.
+
+## 11. Round 3 review corrections
+- [x] 11.1 B01 — bind every full callback and its turn state to the registering profile (D2/H19/H20/H21).
+      `plugin._profile_call` validates the scope and reads its settings before an effect; `hermes_home`,
+      `_secret` and `_language` resolve through the call in progress; `_ProfileState` scopes `ctx.state` per
+      profile; `Turn.home` plus the explicit home of each callback keeps a turn visible only to its profile.
+      RED: `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_profile_callbacks.py` 7 failed
+      (root default mode, root language, command language, cross-profile quote, transform after a switch,
+      root audit path, shared mode state); the run is in `tasks/bridge-r3-red.log`. GREEN: the same command
+      7 passed in 0.26s.
+      Evidence: `reports/2026-10-12-step-11-callbacks-r3.md`.
+      Reclosed in R4: the third review's independent probes are ported as
+      `tests/test_round4_amendments.py`; the colliding turn opens per home, the refused foreign callback
+      performs no cleanup and the command/transformer diagnostics keep the profile redaction set. RED 7 failed
+      → GREEN 7 passed in 2.52s; `tests/test_profile_callbacks.py` 9 passed in 0.74s. Evidence:
+      `reports/2026-10-13-step-13-r4-core.md`.
+      Reclosed in bridge2 R2: the D6/H14 closure was reopened by the bridge2 round 1 counterexamples. The
+      turn cap is now per owner and an explicit unmatched execution identity is refused. RED 2 failed in
+      1.45s → GREEN `tests/test_round4_amendments.py` 9 passed in 2.49s; the ported probes are 156 passed,
+      1 deselected in 71.92s, the external `test_bridge2_codex_r1.py` is 12 passed, and the D6/H14
+      regression subsets are 286 passed in 133.64s and 101 passed, 1 skipped in 59.08s. Evidence:
+      `reports/2026-10-13-step-15-turn-identity-b2r1.md`.
+      Reclosed in bridge2 R3: the bridge2 round 2 independent probes found five open identity defects (the
+      real dispatcher carries the task but not the turn, the unmatched `turn_id` fell through to the task
+      turn, the whitespace spelling selected another turn, the task-only observer fabricated a turn and a
+      late observer revived a completed turn). The five probes are ported into
+      `tests/test_bridge2_amendments.py`; RED 5 failed in 11.91s → GREEN 5 passed in 17.19s, the external
+      `test_bridge2_codex_r2.py` is 14 passed in 20.24s and the D6-D8 files are 43 passed in 25.63s.
+      Evidence: `reports/2026-10-13-step-17-r4-core.md`.
+- [x] 11.2 B01 — reproduce the three paths over the real pinned `agent.secret_scope`.
+      `.venv/Scripts/python ../tasks/bridge-r2-real-scope.py`: the pre-hook takes `cited` from profile A, one
+      request reaches A's URL, the quote after the switch to B answers the redacted scope sentence, and the
+      captured audit writes are `[]` (before: root default, profile A's passage, one prepared write).
+      Evidence: `reports/2026-10-12-step-11-callbacks-r3.md`.
+- [x] 11.3 M02 — apply the isolation guard before every effect of the fake and its CLI.
+      `start_chassis` guards `--port` and `--record`, `ChassisFake.__init__` guards the record path and the
+      script's `main` runs `prepare_cli_guard` before opening the server; a `--record` under the process
+      temporary directory authorises only its own parent, never all of `tempfile.gettempdir()`. RED: two cases
+      failed (`start_chassis(log_path=outside)` and `main --record outside` started the server and created the
+      file). GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_search_guard.py` 31
+      passed in 3.24s. The 5.1 curl probe still runs the fake as a subprocess: 6 cases correct, port closed,
+      home inventory identical (`tasks/bridge-r3-curl.log`). Evidence:
+      `reports/2026-10-12-step-11-guard-r3.md`.
+- [x] 11.4 M01 — complete the D4/H22 runner. `_check_host_pin` proves the CLI is the pinned host checkout,
+      `_read_bridge_lock`/`_canonical_archive`/`_verify_bridge_lock` compare the SHA-256 and byte size of
+      `git archive --format=tar` with the lock under D5's isolated Git configuration, and `_effective_catalog`
+      asks the real host loader and the real registry for the effective catalog and a scoped dispatch. RED:
+      `.venv/Scripts/python ../tasks/bridge-r3-m01-red.py` reports all six verifications missing from HEAD
+      (exit 1). GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_profile_install.py`
+      29 passed, 1 skipped in 1.61s (the VM E2E is the skip). Evidence:
+      `reports/2026-10-12-step-11-install-r3.md`.
+      Reclosed in R4: the D9 runner actually establishes the whole integration offline — provisioned managed
+      runtimes and build wheelhouse, closed external network, real install with `--enable`, real loader
+      catalog, scoped dispatch and full post-setup inventory comparison. `1 passed, 29 deselected in 264.38s`.
+      Evidence: `reports/2026-10-13-step-13-install-r4.md`.
+      Re-executed in bridge2 R2 at the D6/H14 product commit: a fresh read-only mirror and canonical archive
+      of the new HEAD, the provisioned managed CPython/uv and wheelhouse mounted read-only, `--network none`
+      and the container removed. Result recorded in `reports/2026-10-13-step-15-install-b2r1.md`.
+      Re-executed in bridge2 R3 at the turn-identity product commit `7e211ba`: `1 passed, 29 deselected in
+      471.62s`, supervisor exit 0 in 525.44s, container removed; archive SHA-256
+      `d456cd45eeac62fd07c7358afb77d0938f34ac5bcd99f114ea81bba5c564f5be` (2129920 bytes), catalog with one
+      `cited_search` tool, zero hooks/commands, scoped dispatch answered and the complete profile inventory
+      identical after setup. Evidence: `reports/2026-10-13-step-17-install-r4.md`.
+- [x] 11.5 Re-run the independent R2 probe after the corrections.
+      `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py`: before
+      4 failed, 17 passed; after 21 passed in 6.02s. `.venv/Scripts/python -m pytest -q -p no:cacheprovider
+      tests/test_plugin.py tests/test_modes.py tests/test_host.py tests/test_adversarial.py
+      tests/test_profile_scope.py tests/test_search_only_mode.py`: 173 passed in 84.29s.
+      Evidence: `reports/2026-10-12-step-11-callbacks-r3.md`.
+- [x] 11.6 6.2 — the living context and the documents state the per-callback binding with no drift.
+      `openspec/config.yaml` carries the rule; `docs/technical-manual.md`, `README.md` and `README.es.md` state
+      it. `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_docs_bridge.py
+      tests/test_manifest_modes.py`: 16 passed; `openspec validate --all --strict`: 2 passed, 0 failed.
+      Evidence: `reports/2026-10-12-step-11-config-r3.md`.
+      Reclosed in R4: the living context and the manuals now state the `(home, session, turn)` key, the plain
+      `mode.profile` key, the failing profile's redaction and the offline runtime provisioning; the D6-D9
+      documents agree with the implementation. Evidence: `reports/2026-10-13-step-13-r4-core.md` and
+      `reports/2026-10-13-step-13-install-r4.md`.
+      Reclosed in bridge2 R2: the context and the manuals add the per-owner turn capacity and the
+      explicit-identity precedence of D6/H14; `tests/test_docs_bridge.py tests/test_manifest_modes.py` pass
+      and `openspec validate --all --strict` is 2 passed, 0 failed. Evidence:
+      `reports/2026-10-13-step-15-close-b2r1.md`.
+      Reclosed in bridge2 R3: `openspec/config.yaml`, `docs/technical-manual.md`, `README.md` and
+      `README.es.md` now state the host-composed `session:task:suffix` identifier, the authoritative
+      `turn_id` of R01-B2R2 and the observation that never fabricates nor revives a turn.
+      `tests/test_docs_bridge.py tests/test_manifest_modes.py`: 16 passed in 0.76s;
+      `openspec validate --all --strict`: 2 passed, 0 failed (ver 1.1.1). Evidence:
+      `reports/2026-10-13-step-17-close-r3.md`.
+- [x] 11.7 Full suite with counts and runtime, and `gitleaks protect --staged` before every commit of this
+      round. `.venv/Scripts/python -m pytest -q`: 898 passed, 4 skipped in 314.14s (0:05:14);
+      `openspec validate --all --strict`: 2 passed, 0 failed; gitleaks clean before each commit.
+      Evidence: `reports/2026-10-12-step-11-suite-r3.md`.
+
+## 12. Independent round 3 review corrections
+- [x] 12.1 H22/D4: run the real catalog subprocess with the supplied profile as HERMES_HOME.
+      RED: external `test_bridge_codex_r3.py -k new_catalog_probe`, executed through
+      `../tasks/bridge-codex-r3-run.py`: the real pinned loader discovers no hermes-cited plugin and
+      dispatch returns Unknown tool: cited_search. Evidence: `bridge-codex-r3-real-red.log` outside
+      the repository. Preserve the profile scope and test a successful real dispatch after correction.
+      GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-fix-catalog
+      .venv/Scripts/python.exe -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
+      -k new_catalog_probe`: 1 passed, 12 deselected in 4.45s. The real catalog has one search tool,
+      zero full hooks and a successful scoped HTTP call. This is loader integration, not the VM install.
+- [x] 12.2 D4: reject tracked host modifications even when HEAD still equals the expected pin.
+      RED: `test_bridge_codex_r3.py -k host_pin_rejects_modified` accepts a changed tracked file;
+      `bridge-codex-r3-real-red.log` records DID NOT RAISE. This check validates checkout cleanliness,
+      not the provenance of executables installed in the host venv.
+      GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-fix-host
+      .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
+      -k host_pin_rejects_modified`: 1 passed, 12 deselected in 1.87s.
+- [x] 12.3 D5: reject an effective tar.umask override before creating a canonical archive.
+      RED: external `test_bridge_codex_r3.py -k archive_digest` computes different SHA-256 values
+      for the same commit after `git config tar.umask 0077`; both archives have 10240 bytes.
+      Evidence: `bridge-codex-r3-real-red.log`. The contract explicitly forbids this override.
+      GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-fix-archive
+      .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
+      -k archive_digest`: 1 passed, 12 deselected in 3.37s.
+- [x] 12.4 D5: require the lock byte size to be an integer without numeric coercion.
+      RED: external `test_bridge_codex_r3.py -k lock_size` accepts 10240.75 as 10240 bytes.
+      Evidence: `bridge-codex-r3-real-red.log` records DID NOT RAISE.
+      GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-fix-size
+      .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
+      -k lock_size`: 1 passed, 12 deselected in 1.61s.
+- [x] 12.5 Task 1.1: never implicitly register the whole system temporary directory for --record.
+      RED: `test_bridge_codex_r3.py -k cli_record`: 1 failed, 13 deselected in 3.66s;
+      prepare_cli_guard accepts a file directly under the temporary root and registers that root.
+      Evidence: `bridge-codex-r3-guard-red.log`. No file or server is created by this predicate probe.
+      GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-fix-guard
+      .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
+      -k cli_record`: 1 passed, 13 deselected in 1.43s. Regression: `pytest -q -p no:cacheprovider
+      tests/test_search_guard.py tests/test_chassis_fake.py`: 47 passed in 9.29s.
+- [x] 12.6 Wire v1: return 405 for unsupported HTTP methods in the fake.
+      RED: new external `bridge-codex-r3-curl.py` receives 501 for PATCH, DELETE and HEAD where
+      wire-contract.md requires 405. Five other new cases pass. `bridge-codex-r3-curl-red.log`
+      records the requests, response bodies, stopped PID, closed port and unchanged home inventory.
+      GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-curl-green
+      .venv/Scripts/python.exe ../tasks/bridge-codex-r3-curl.py`: exit 0, eight cases passed in 3.11s.
+      Evidence for 5.1 and this correction: `reports/2026-10-12-step-12-curl-codex-r3.md`.
+- [x] 12.7 Reopen completion statements contradicted by independent round 3 executions.
+      RED: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-tasks-red
+      .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
+      -k tasks_do_not`: 1 failed, 15 deselected in 4.31s.
+      11.1/11.6 remain open: the new real-secret-scope probes reproduce a colliding live turn,
+      deletion of the owner's turn by a refused foreign transformer and profile-token disclosure in
+      command/transformer exception diagnostics. The real PluginState rejects the home/NUL key prefix,
+      so /cited does not change the mode; legacy persisted mode keys are also ignored. See external
+      `bridge-codex-r3-real-red.log`, `bridge-codex-r3-state-red.log` and the independent review.
+      11.4 remains open: its original catalog never ran and discovered the wrong home when executed.
+      The small helper repairs are measured in 12.1-12.4; they do not by themselves close installation.
+      The earlier Reclosed in R3 and no-drift statements are historical and superseded by this entry.
+      The approved specifications remain unchanged. Product changes across these scope/state/failure
+      boundaries belong to the next implementation round; Codex's small corrections require Fable review.
+      GREEN: `.venv/Scripts/python ../tasks/bridge-codex-r3-run.py bridge-codex-r3-tasks-green
+      .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider ../tasks/test_bridge_codex_r3.py
+      -k tasks_do_not`: 1 passed, 15 deselected in 15.05s. The complete independent probe then reports
+      6 failed, 10 passed in 11.30s; failures are open product defects, not waived assertions.
+      Task 5.3 now records its actual Linux CLI failure instead of claiming missing prerequisites.
+      Command: `/opt/chassis/.venv/bin/python -m pytest -vv -s --showlocals -p no:cacheprovider
+      tests/test_profile_install.py -k a_fresh_real_profile_installs`: 1 failed, 29 deselected in 37.10s.
+      External supervisor `bridge-codex-r3-run.py bridge-codex-r3-linux-native9 docker run ...`
+      records exit 1, 92.38s, unchanged outer home and process_stopped=true. The exact argv and
+      independent integration evidence are in `reports/2026-10-12-step-12-install-codex-r3.md`.
+
+## 13. Round 4 implementation (contract amendment D6-D10 by Fable, 2026-10-12)
+- [x] 13.0 Read the third review and design D6-D10 before any code. Port the six failing external probes of the
+      third review (owner collision, refused foreign callback, real PluginState keys, persisted mode, command and
+      transformer diagnostics) into `tests/` as RED regression cases that use the real `agent.secret_scope` and the
+      real `PluginState` of the pinned host; record the red run in a report.
+      `tests/test_round4_amendments.py` ports the six probes plus the D7 invalid-key case with the real host of
+      pin `dce1e9b37581dd62e480a9064dc04a709c2940d3`. RED:
+      `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_round4_amendments.py` 7 failed in 3.88s.
+      Evidence: `reports/2026-10-13-step-13-r4-core.md`.
+- [x] 13.1 D8 (B01-R3): diagnostics redacted with the failing profile's set. `tests/test_profile_callbacks.py`
+      captures every log record and asserts that no synthetic profile secret appears in messages or tracebacks.
+      GREEN with counts.
+      `_report_failure`/`_sanitized_diagnostic` accept the explicit profile secret and the command, transformer,
+      post-tool and quote callbacks hand it over. GREEN:
+      `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_profile_callbacks.py` 9 passed in 0.74s.
+      Evidence: `reports/2026-10-13-step-13-r4-core.md`.
+- [x] 13.2 D6 (M01-R3): turn table keyed by (home, session, turn); refusal before any turn access; cleanup only of
+      the owned turn; eviction and migration on the same key. GREEN for both H19 scenarios plus the H14 regressions.
+      `_find_turn_locked`/`_turn_of`/`_drop_turn` use the composite key and `_transform_llm_output` validates before
+      any turn access and drops only when the call passed validation. GREEN: 286 passed in 140.99s (callbacks and
+      regressions) and 92 passed, 1 skipped in 73.36s (host, scope, search and install). Evidence:
+      `reports/2026-10-13-step-13-r4-core.md`.
+      Reclosed in bridge2 R2: `_evict_oldest_locked(owner)` keeps the capacity inside the calling owner's key
+      space, so a busy foreign profile never evicts the owner's pending turn, and `_resolve_active_turn`
+      distinguishes an absent identity from an explicit one that resolves to no open turn (refused, never
+      quoted). RED 2 failed in 1.45s → GREEN 9 passed in 2.49s; external probe 12 passed; H14/D6 regression
+      subsets 286 passed in 133.64s and 101 passed, 1 skipped in 59.08s. Evidence:
+      `reports/2026-10-13-step-15-turn-identity-b2r1.md`.
+      Reclosed in bridge2 R3: `_identity_sequence` makes a present `turn_id` authoritative over the
+      `task_id`, `_turn_has_identity` matches the literal identifier or the host-composed
+      `session:task:suffix` spelling, `_resolve_active_turn` keeps the raw spelling, and `_observed_turn`
+      locates a live turn without fabricating or reviving one. RED 5 failed in 11.91s → GREEN 5 passed in
+      17.19s; the external `test_bridge2_codex_r2.py` is 14 passed in 20.24s and the R3 task-identity
+      regression was updated to the authoritative precedence. Evidence:
+      `reports/2026-10-13-step-17-r4-core.md`.
+- [x] 13.3 D7 (M02-R3): plain `mode.profile` key through the real PluginState; no path or NUL prefix; `get` never
+      hides a host validation error; the legacy value is honoured after the upgrade; `/cited` and `/dot` persist.
+      GREEN with the real host state.
+      `_ProfileState` delegates the plain key and no longer swallows a key error. GREEN:
+      `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_round4_amendments.py` 7 passed in 2.52s.
+      Evidence: `reports/2026-10-13-step-13-r4-core.md`.
+- [x] 13.4 D9 (M03-R3): offline provisioning of the host's required runtimes in the Linux runner (versions and
+      digests recorded), network closed, install completes, catalog and scoped dispatch verified, full profile
+      inventory compared with the post-setup baseline (`tests/test_profile_install.py` compares the whole profile,
+      not only `cited/`). Re-run 5.3 and record it; a download attempt is a failure, not a skip.
+      Provisioned CPython `3.14.7+20260901` (sha256 `0ab330…`) and uv `0.12.3` (sha256 `600cf9…`) before closing
+      the network, warmed the uv cache with the real install and served the build-backend wheelhouse on a
+      loopback-only index; the managed runtimes live in `/opt/runtime` via `HERMES_RUNTIME_DIR`. Offline run:
+      `external_connect_refused: true`, mirror read-only, catalog `hermes-cited` enabled with `tools: 1`,
+      `hooks: 0`, `commands: 0`, scoped dispatch answered, and the full profile inventory identical after setup.
+      `1 passed, 29 deselected in 264.38s`; container exit 0, 301.95s, removed. Evidence:
+      `reports/2026-10-13-step-13-install-r4.md`.
+      Re-executed in bridge2 R2 on the delivery commit with the same pinned image, `--network none`,
+      read-only mirror/inputs/runtime/cache/wheelhouse and temporary homes; the fresh mirror and canonical
+      archive pin the new bridge commit. Evidence: `reports/2026-10-13-step-15-install-b2r1.md`.
+      Re-executed in bridge2 R3 on `7e211ba`: `1 passed, 29 deselected in 471.62s`, supervisor exit 0 in
+      525.44s, container removed; archive SHA-256
+      `d456cd45eeac62fd07c7358afb77d0938f34ac5bcd99f114ea81bba5c564f5be` and 2129920 bytes, catalog with one
+      `cited_search` tool and zero hooks/commands, scoped dispatch answered, complete profile inventory
+      identical after setup. Evidence: `reports/2026-10-13-step-17-install-r4.md`.
+- [x] 13.5 Close 11.1, 11.4 and 11.6 only with the evidence of 13.1-13.4; update the living context and the manuals
+      where D6-D9 changed behaviour; `openspec validate --all --strict` green.
+      11.1 closed with 13.1/13.2; 11.4 with 13.4; 11.6 with the context/manual updates below. `openspec/config.yaml`,
+      `docs/technical-manual.md`, `README.md` and `README.es.md` state the `(home, session, turn)` key, the plain
+      `mode.profile` key, the failing profile's redaction and the offline provisioning.
+      `tests/test_docs_bridge.py tests/test_manifest_modes.py`: 16 passed; `openspec validate --all --strict`:
+      2 passed, 0 failed. Evidence: `reports/2026-10-13-step-13-r4-core.md`,
+      `reports/2026-10-13-step-13-install-r4.md`.
+      Reclosed in bridge2 R2 with the D6/H14 corrections of this round: `openspec/config.yaml`, the technical
+      manual and both READMEs now state the per-owner turn capacity and the explicit-identity precedence
+      besides the composite key, the plain `mode.profile` key, the failing profile's redaction and the offline
+      provisioning. Evidence: `reports/2026-10-13-step-15-close-b2r1.md`.
+      Reclosed in bridge2 R3: 11.1 with 13.1/13.2, 11.4 with 13.4 and 11.6 with the context/manual update.
+      The four documents now state the host-composed `session:task:suffix` identifier, the authoritative
+      `turn_id` and the observation that never fabricates nor revives a turn.
+      `tests/test_docs_bridge.py tests/test_manifest_modes.py`: 16 passed in 0.76s;
+      `openspec validate --all --strict`: 2 passed, 0 failed (ver 1.1.1). Evidence:
+      `reports/2026-10-13-step-17-r4-core.md`, `reports/2026-10-13-step-17-install-r4.md` and
+      `reports/2026-10-13-step-17-close-r3.md`.
+- [x] 13.6 Full suite with counts and runtime; `gitleaks protect --staged` before every commit; no `tasks/` inside
+      the repository; delivery with `## Issues`.
+      `.venv/Scripts/python -m pytest -q -p no:cacheprovider`: 910 passed, 1 skipped in 339.03s (0:05:39);
+      `openspec validate --all --strict`: 2 passed, 0 failed; `gitleaks protect --staged`: no leaks before each
+      commit; no `tasks/` inside the repository. Evidence: `reports/2026-10-13-step-13-r4-core.md` and
+      `reports/2026-10-13-step-13-install-r4.md`.
+      Re-executed in bridge2 R3: `.venv/Scripts/python -m pytest -q -ra -p no:cacheprovider` 934 passed,
+      4 skipped in 440.33s (0:07:20); with `CITED_DOCS_REPO` at the read-only `community-hermes` checkout
+      `2c5b5d380085cf75923132d58d53390b385a274b` the three cross-repository checks pass and the run is
+      937 passed, 1 skipped in 458.23s (0:07:38), the only skip being the Linux install, which passed
+      separately in 13.4 (`1 passed, 29 deselected in 471.62s`). `openspec validate --all --strict`:
+      2 passed, 0 failed; `gitleaks protect --staged`: no leaks before each commit; no `tasks/` inside the
+      repository. Evidence: `reports/2026-10-13-step-17-close-r3.md`.
+
+## 14. Bridge2 round 1 independent review corrections
+- [x] 14.1 H6: redact invalid quote selection diagnostics with the validated profile credential.
+      New external probe: `../tasks/test_bridge2_codex_r1.py::test_invalid_quote_line_does_not_echo_profile_credential`.
+      RED: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r1.py`
+      returns the synthetic profile credential in the invalid-line sentence. External evidence:
+      `C:/Users/Franc/Documents/katalis-dev/tasks/bridge2-codex-r1-probes-validated-red.log`.
+      GREEN: the same pytest command with `-k invalid_quote_line`: 1 passed, 11 deselected in 7.35s;
+      `bridge2-codex-r1-fix-quote.log` records the redacted sentence and an unchanged temporary home.
+- [x] 14.2 D8/H6: contain and redact unexpected pre-hook exceptions before the real host dispatcher logs them.
+      RED: the external probe `test_pre_hook_exception_is_sanitized_before_host_dispatch_logs_it` runs the
+      pinned host dispatcher and finds the synthetic profile credential in its warning. Command and output:
+      `C:/Users/Franc/Documents/katalis-dev/tasks/bridge2-codex-r1-probes-validated-red.log`.
+      GREEN: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r1.py
+      -k pre_hook_exception`: 1 passed, 11 deselected in 1.45s; external `bridge2-codex-r1-fix-prehook.log`.
+- [x] 14.3 H21: reject non-string argument keys before sorting unknown search properties.
+      RED: the external probe `test_search_mixed_nonstring_unknown_keys_return_sentence` raises TypeError
+      for mixed string/integer keys before the transport boundary. This is a native Python handler edge
+      case; JSON objects cannot carry integer keys. Command/output: `bridge2-codex-r1-probes-validated-red.log`.
+      GREEN: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r1.py
+      -k mixed_nonstring`: 1 passed, 11 deselected in 0.93s; external `bridge2-codex-r1-fix-keys.log`.
+- [x] 14.4 Update the existing mode-resolution regression for D8's contained pre-hook failure.
+      Keep every transformer assertion: operational refusal, nonempty result, no model prose and no seal.
+      RED: `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/regressions/test_r4_transformer.py
+      -k mode_resolution_failure`: 1 failed, 9 deselected in 0.70s, because it expects the unsafe exception
+      to escape the pre-hook. External evidence: `bridge2-codex-r1-prehook-regression-red.log`.
+      GREEN: the same pytest command without `-k`, running the whole file: 10 passed in 5.60s;
+      external `bridge2-codex-r1-prehook-regression-green.log`.
+- [x] 14.5 Reconcile completion flags with the new independent turn counterexamples and the measured
+      HTTP/install evidence. Preserve historical reports, reopen unsupported D6/H14 closure and close
+      stale guard/install flags only with executions. The new external evidence consistency probe is RED:
+      `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge2_codex_r1_evidence.py`
+      gives 1 failed in 1.28s (`bridge2-codex-r1-evidence-red.log`).
+      Bridge2 R1 reopens 11.1, 11.6, 13.2 and 13.5: a validated foreign profile opening 64 turns evicts
+      the owner's live evidence, and an explicit unmatched turn identifier selects the sole different
+      live turn. These supersede the R4 statements of complete D6/H14 implementation; the earlier
+      specific collision, refusal and persisted-state executions remain historical evidence.
+      `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r1.py`:
+      2 failed, 10 passed in 7.22s. External `bridge2-codex-r1-probes-final.log` contains both counterexamples.
+      Independent integration: `reports/2026-10-13-step-14-integration-codex.md`. Eight new curl cases pass,
+      with the owned server terminated and its port verified closed. The real offline install at product
+      commit 9a5066a passes (1 passed, 29 deselected in 291.99s), with the full 266-file profile inventory
+      unchanged after setup and the container removed. This refreshes 5.1/5.3 and closes 1.4/9.6.
+      `pytest -q -p no:cacheprovider tests/test_chassis_fake.py tests/test_search_guard.py
+      tests/test_manifest_modes.py tests/test_docs_bridge.py`: 63 passed in 13.37s; closes 1.1/9.4 using
+      their historical RED reports plus the current guard execution. `bridge2-codex-r1-sdd.py` confirms
+      17 valid modified requirements, 4 additions, unique merged H0-H22, identical counterpart wire bytes
+      and no normative drift from Fable's f59ab76. The remaining old closure notes do not override the
+      reopened turn tasks above.
+      GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge2_codex_r1_evidence.py`:
+      1 passed in 1.18s; external `bridge2-codex-r1-evidence-green.log`.
+      Reclosed in bridge2 R2: the two turnaround counterexamples are corrected in `plugin.py` and ported as
+      `tests/test_round4_amendments.py`; the evidence-consistency probe now closes 11.1/11.4/11.6/13.2/13.5
+      with their measured reports instead of requiring them open. RED 2 failed in 1.45s → GREEN 9 passed in
+      2.49s; the full round evidence is in `reports/2026-10-13-step-15-turn-identity-b2r1.md`,
+      `reports/2026-10-13-step-15-install-b2r1.md` and `reports/2026-10-13-step-15-close-b2r1.md`.
+
+## 15. Bridge2 round 2 independent review corrections
+- [x] 15.1 H21/wire v1: reject malformed UTF-8 response bytes before exposing search passages.
+      External new probe: `../tasks/test_bridge2_codex_r2.py -k invalid-utf8`.
+      RED: `pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r2.py` accepts invalid byte 0xff
+      in both content and excerpt and exposes replacement characters as documentary text.
+      Evidence: `C:/Users/Franc/Documents/katalis-dev/tasks/bridge2-codex-r2-probes-red.log`.
+      Planned correction: decode the search response strictly inside its existing failure boundary;
+      retain the full-mode decoder and its compatibility behavior.
+      GREEN: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider
+      ../tasks/test_bridge2_codex_r2.py -k invalid-utf8`: 1 passed, 12 deselected in 1.11s.
+      External `bridge2-codex-r2-fix-utf8.log` records the fixed diagnostic and unchanged temporary home.
+- [x] 15.2 H21: keep the named setting diagnostic for arbitrarily long decimal timeout strings.
+      RED: external `test_oversized_numeric_timeout_names_the_setting_without_connecting` receives
+      the generic profile error for 5000 digits instead of a sentence naming CITED_TIMEOUT_MS.
+      Evidence: `C:/Users/Franc/Documents/katalis-dev/tasks/bridge2-codex-r2-probes-red.log`.
+      Planned correction: bound the significant decimal digits before integer conversion, preserving
+      valid leading-zero forms and the existing 1..120000 range; no request on invalid configuration.
+      GREEN: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider
+      ../tasks/test_bridge2_codex_r2.py -k oversized_numeric_timeout`: 1 passed, 12 deselected in 1.32s.
+      Added a valid 5000-leading-zero control; the same pytest file with `-k timeout` gives
+      2 passed, 12 deselected in 1.81s (`bridge2-codex-r2-timeout-boundaries.log`).
+- [x] 15.3 Reconcile turn completion claims with the newly executed host-dispatch counterexample and
+      preserve historical reports as evidence of their specific executions, not current compliance.
+      RED: `.venv/Scripts/python -m pytest -q -p no:cacheprovider
+      ../tasks/test_bridge2_codex_r2_evidence.py`: 1 failed in 5.21s (`bridge2-codex-r2-evidence-red.log`).
+      The pinned host's real `model_tools._execute_tool` passes task_id and session_id to the real registry,
+      but omits turn_id. Its normal task_id differs from its pre-hook turn_id. With the current plugin,
+      search returns no pid and cited_quote refuses the normal turn. External new probe:
+      `pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r2.py -k pinned_host_execution`:
+      1 failed, 12 deselected in 5.91s (`bridge2-codex-r2-real-dispatch.log`). The identical probe with
+      only plugin.py loaded from 65b3051 passes in 6.78s (`bridge2-codex-r2-real-dispatch-baseline.log`).
+      Reopen 11.1/11.6/13.2/13.5. This supersedes their earlier bridge2 R2 closure assertions and 14.5's
+      reclosed note. The new opaque-identity and task-only-observer probes also find inconsistent turn
+      resolution. A delayed observer can recreate a completed turn; actual host delivery of that ordering
+      has not been established. None of these turn paths is repaired by a search-only wire fix.
+      11.4/13.4 remain backed by the independently executed offline installation; D10 excludes Ledger R10.
+      Identity resolution across pre-hook, handler, observer and cleanup requires the next implementation
+      round with its approved contract. No host or personal installation was modified.
+      GREEN: `pytest -q -p no:cacheprovider tests/test_bridge2_amendments.py
+      ../tasks/test_bridge2_codex_r2_evidence.py -k 'reopened_rounds or current_turn_closure'`:
+      2 passed, 19 deselected in 2.05s (`bridge2-codex-r2-closure-green.log`). The existing closure test
+      first failed after reopening 11.1 (1 failed, 19 deselected in 0.56s); it now preserves the historical
+      report assertions and checks the measured open turn tasks separately from the completed install.
+      Independent integration: `reports/2026-10-13-step-16-integration-codex-r2.md`. Eight new curl cases
+      pass with stopped PID/closed port; the real offline search install at product b747a57 passes
+      (1 passed, 29 deselected in 334.44s) with a complete unchanged 271-file inventory and removed container.
+      Final full suite: `.venv/Scripts/python -m pytest -q -ra -p no:cacheprovider`:
+      932 passed, 1 skipped in 366.80s (`bridge2-codex-r2-suite-final.log`). The skip is the install without
+      its prerequisite variables, executed separately above. New final external probes: 5 failed,
+      9 passed in 14.35s (`bridge2-codex-r2-probes-final.log`); turn issues remain open, not waived.
+
+## 16. Bridge2 round 3 independent review corrections
+- [x] 16.1 D6/H14: preserve complete session and task identifiers when matching the pinned host's composed
+      turn identifier. New external probes use the real `_bind_turn_identity` and `_execute_tool` functions:
+      `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r3.py`.
+      RED: 4 failed, 8 passed in 11.86s. Three embedded-delimiter cases lose the passage identifier;
+      a dispatch carrying task `job` incorrectly quotes a turn created for task `job:child`.
+      Evidence: external `bridge2-codex-r3-probes-red.log`. Planned local correction: compare the complete
+      session/task prefix after separating only the final host-generated suffix; retain authoritative
+      explicit turn identifiers and ambiguity rejection. No normative requirement changes.
+      Implemented as a two-line comparator correction. GREEN: the same command returns 12 passed in
+      16.49s (`bridge2-codex-r3-probes-green.log`). The three complete identities now return P1 and their
+      literal selected line; the short task is refused and leaves zero selections in the owner's turn.
+- [x] 16.2 Reconcile stale 1.3/2.3/6.2/9.8 flags with their completed successor tasks only after the
+      independent full suite, new probes, curl and real offline installation finish successfully.
+      RED: `.venv/Scripts/python -m pytest -q -p no:cacheprovider
+      ../tasks/test_bridge2_codex_r3_evidence.py`: 1 failed in 5.97s; 1.3 is still open despite its
+      documented successors. External evidence: `bridge2-codex-r3-evidence-red.log`.
+      Preserve all historical reports and leave final independent approval, remote CI and release tasks open.
+      Full suite on the corrected product: 937 passed, 1 skipped in 459.92s; new external probes: 12 passed
+      in 35.81s. Eight new curl cases pass on port 53719, PID 30272 terminated and the port is closed.
+      Real offline install at 2ebf7c5: 1 passed, 29 deselected in 433.51s; supervisor exit 0 in 542.61s,
+      container removed, complete 275-file profile inventory unchanged. These runs also refresh
+      5.1/5.3/11.4/13.4. Evidence: `reports/2026-10-13-step-18-integration-codex-r3.md`.
+      GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider
+      ../tasks/test_bridge2_codex_r3_evidence.py tests/test_bridge2_amendments.py
+      -k 'current_task_flags or reopened_rounds'`: 2 passed, 24 deselected in 1.38s;
+      external `bridge2-codex-r3-evidence-green.log`.

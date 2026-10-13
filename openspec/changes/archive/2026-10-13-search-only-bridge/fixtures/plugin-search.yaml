@@ -1,0 +1,40 @@
+name: hermes-cited
+version: 0.2.0
+description: Full mode provides cited composition and audit; search mode provides only unsealed cited_search over the dedicated search surface. Tool and hook lists are potential catalogs; registration depends on CITED_BRIDGE_TOOLS.
+author: Katalis
+license: Apache-2.0
+homepage: https://github.com/RonnieGex/hermes-cited
+kind: standalone
+label: Cited
+tags:
+  - cited
+  - citations
+  - knowledge-base
+  - audit
+requires_env:
+  - name: CITED_URL
+    description: Shared origin of the installation. Search requires an origin without path and calls /api/chassis/mcp; full calls /api/mcp.
+optional_env:
+  - name: CITED_BRIDGE_TOOLS
+    description: full or search, default full when absent or empty.
+  - name: CITED_SEARCH_TOKEN
+    description: Required by runtime only in search mode; sent only to /api/chassis/mcp.
+    secret: true
+  - name: CITED_MCP_TOKEN
+    description: Required by runtime only in full mode; never read in search mode.
+    secret: true
+  - name: CITED_TIMEOUT_MS
+    description: How long one call to Cited may take, in milliseconds. 30000 by default.
+  - name: CITED_DEFAULT_MODE
+    description: The mode a conversation starts in, dot or cited. dot by default.
+  - name: CITED_LANGUAGE
+    description: The language of the cited-mode render, es or en. es by default. The quoted lines are always verbatim.
+provides_tools:
+  - cited_search
+  - cited_ask
+  - cited_quote
+provides_hooks:
+  - pre_llm_call
+  - post_tool_call
+  - transform_llm_output
+python_dependencies: []

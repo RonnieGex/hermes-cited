@@ -1,6 +1,6 @@
 name: hermes-cited
-version: 0.1.0
-description: Cited in Hermes Agent. cited_search, cited_ask and cited_quote as native tools over POST <CITED_URL>/api/mcp, the /cited and /dot conversation modes, an answer in cited mode written by the plugin from chosen lines, and a local hash-chained consistency record of what was delivered.
+version: 0.2.0
+description: Full mode provides cited composition and audit; search mode provides only unsealed cited_search over the dedicated search surface. Tool and hook lists are potential catalogs; registration depends on CITED_BRIDGE_TOOLS.
 author: Katalis
 license: Apache-2.0
 homepage: https://github.com/RonnieGex/hermes-cited
@@ -13,11 +13,16 @@ tags:
   - audit
 requires_env:
   - name: CITED_URL
-    description: The address of the Cited installation, like https://cited.example.com. The plugin calls <CITED_URL>/api/mcp.
-  - name: CITED_MCP_TOKEN
-    description: The CITED_MCP_TOKEN of that installation. It travels only in the Authorization header.
-    secret: true
+    description: Shared origin of the installation. Search requires an origin without path and calls /api/chassis/mcp; full calls /api/mcp.
 optional_env:
+  - name: CITED_BRIDGE_TOOLS
+    description: full or search, default full when absent or empty.
+  - name: CITED_SEARCH_TOKEN
+    description: Required by runtime only in search mode; sent only to /api/chassis/mcp.
+    secret: true
+  - name: CITED_MCP_TOKEN
+    description: Required by runtime only in full mode; never read in search mode.
+    secret: true
   - name: CITED_TIMEOUT_MS
     description: How long one call to Cited may take, in milliseconds. 30000 by default.
   - name: CITED_DEFAULT_MODE
