@@ -358,6 +358,15 @@ def _provisioned_runtime(runtime: Path, host_root: Path) -> dict:
         expected = pinned[name]
         assert fact["version"] == expected["version"], name
         assert fact["sha256"] == expected["artifacts"]["linux-x64"]["sha256"], name
+    wheelhouse = Path(str(os.environ.get("HERMES_TEST_WHEELHOUSE") or "/wheelhouse"))
+    assert record.get("wheelhouse"), "the runner must provision the build backend offline"
+    for filename, digest in record["wheelhouse"].items():
+        path = wheelhouse / filename
+        assert path.is_file(), filename
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == digest, filename
+    assert str(os.environ.get("UV_INDEX_URL") or "").startswith("http://127.0.0.1:"), (
+        "the loopback build index must be up before the install"
+    )
     return record
 
 
@@ -651,6 +660,12 @@ def test_a_fresh_real_profile_installs_the_search_bridge(tmp_path):
         assert facts["python"]["version"] == provision["packages"]["python"]["version"]
         assert facts["python"]["target"] == "linux-x64"
         assert (runtime / facts["python"]["entry"]).is_dir()
+
+        # D4: the harness operations adapter owns reload and readiness. The loader runs once as setup —
+        # it writes the host's own config backup and warms its caches — and only then is the inventory
+        # baseline taken, so D5 measures the calls after setup and excludes no plugin-created file.
+        setup_catalog = _effective_catalog(python, profile_home)
+        _assert_search_catalog(setup_catalog)
 
         baseline = bridge_support.inventory(profile_home)
         catalog = _effective_catalog(python, profile_home)

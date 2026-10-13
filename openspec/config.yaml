@@ -8,6 +8,13 @@ context: |
   Every registered callback of full and its turn state belong to the profile that registered them: a call in
   another home or with a changed mode is refused before any effect, and the default mode, the language, the
   selected token and the audit path of a turn come from that profile and not from the process root.
+  Live turns are keyed by that profile's canonical home together with the host session and turn identifiers, so
+  identical identifiers in two profiles are two turns and a refused foreign callback performs no cleanup. The
+  persisted conversation mode uses the host's plain mode.profile key, which the host partitions per home: the
+  plugin never prefixes it with a path or NUL and never hides a host key error. A failure diagnostic is redacted
+  with the secret of the profile whose callback failed, tracebacks included. The disposable install runner
+  provisions the pinned host's managed runtimes before closing the network and compares the whole profile
+  inventory after setup with its baseline.
   H6 applies to both modes.
   Full-mode hermes_cited/ implements cited_search and cited_ask over the configured Cited POST /api/mcp endpoint,
   the /cited and /dot conversation modes, the deterministic cited-mode verifier and the hash-chained

@@ -3,7 +3,7 @@
 This manual is the reference of the two modes of the plugin, the profile-scoped configuration, the search
 wire and the pinned per-profile installation. It describes the implementation of
 `openspec/changes/search-only-bridge`; the normative contracts are `spec.md` (H0-H22),
-`design.md` (D1-D5) and `wire-contract.md` of that change.
+`design.md` (D1-D10) and `wire-contract.md` of that change.
 
 ## 1. The closed mode switch
 
@@ -59,9 +59,25 @@ the same profile scope on every handler call.
 Every registered callback of `full` — `cited_search`, `cited_ask`, `cited_quote`, the three hooks and the two
 commands — validates the registration's profile before an effect and reads its settings from that profile. The
 default mode, the language, the selected token and the audit path of a turn come from the profile that
-registered the callback, the mode state of a registration lives in a per-profile view of `ctx.state`, and a
-turn is visible only to the profile that opened it. A process that hosts more than one Hermes profile therefore
-never serves one profile's mode, evidence or log from another.
+registered the callback, and a turn is visible only to the profile that opened it. A process that hosts more
+than one Hermes profile therefore never serves one profile's mode, evidence or log from another.
+
+Round 4 (D6-D8) makes that binding explicit:
+
+- **Turn identity (D6).** The live turns of the process are keyed by the canonical profile home together with
+  the host session and turn identifiers, so two profiles that receive identical `session_id`/`turn_id` values
+  hold two independent turns. A callback whose active scope resolves to another home or mode is refused before
+  any turn is read, created or dropped, and the refusal performs no cleanup; the transformer drops only the
+  turn its own validated call owns, through the same key.
+- **Persisted mode (D7).** The host's `PluginState` already partitions its state per profile home, so the
+  plugin writes the plain `mode.profile` key of the previous version and never a path or NUL prefix. Every key
+  satisfies the host pattern `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`; a `mode.profile` value written before the
+  upgrade is honoured with no migration, and a host key-validation error is surfaced instead of being turned
+  into the default.
+- **Diagnostics (D8).** The redaction set of a failure diagnostic is the one of the profile whose callback
+  failed. `_profile_call` hands the resolved bearer to `_report_failure` (or keeps the call context active
+  until the report), so every log record and traceback is redacted with that profile's secret and never with
+  the root environment's.
 
 ## 3. The search wire, version 1
 
@@ -126,6 +142,11 @@ env HERMES_HOME=<root> <chassis>/.venv/bin/hermes --profile <name> \
 - The package is version `0.2.0`; only `CITED_URL` is unconditionally required, and both tokens are
   conditional secrets. `provides_tools` and `provides_hooks` are potential catalogs, not effective
   registrations: the mode established by `CITED_BRIDGE_TOOLS` is what actually registers.
+- The disposable Linux runner pre-provisions the managed runtimes the pinned host's `plugins install` needs
+  beyond the venv (that pin: CPython `3.14.7+20260901` and uv `0.12.3`) before the network namespace is
+  closed, recording each version, SHA-256 and store path. During the run the network stays closed, a download
+  attempt fails the test rather than skipping it, and the complete inventory of the profile home after setup is
+  compared with its baseline (D5, D9), not only the absence of `cited/`.
 
 The release artifact is exactly the bytes of `git archive --format=tar <full-archived-merge-sha>` with no
 prefix and no gzip. Use an isolated Git configuration with no global, system or info attribute overrides and

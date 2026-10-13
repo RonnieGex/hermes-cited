@@ -82,7 +82,12 @@ of a registration cannot change without registering that profile again. The sear
 The same boundary applies to `full`: every registered callback and its turn state belong to the profile that
 registered them, and the default mode, the language, the selected token and the audit path of a turn come from
 that profile, never from the process root. A call in another home or with a changed mode is refused before any
-effect, so no evidence, mode or log of one profile is served from another.
+effect, so no evidence, mode or log of one profile is served from another. Live turns are keyed by that
+profile's home together with the session and turn identifiers, so two profiles that receive the same
+identifiers keep two independent turns and a refused foreign callback cleans up nothing. The persisted
+conversation mode uses the host's own plain `mode.profile` key, which the host partitions per profile home, so
+a mode written by an older version is honoured without migration. A failure diagnostic is redacted with the
+secret of the profile whose callback failed, never with the root environment's.
 
 ### The search wire, version 1
 
@@ -116,6 +121,12 @@ local mirror is read-only to the chassis. The release artifact is exactly the by
 `git archive --format=tar <full-archived-merge-sha>` with no prefix or gzip; on Windows capture the bytes
 with Git's binary `--output` option, not with a text redirection. The lock records the full SHA, the SHA-256
 and the byte size, and it is written in a later consumer commit, never with a self-referential hash.
+
+The disposable Linux installer provisions the managed runtimes the pinned host's `plugins install` needs
+(that pin: CPython `3.14.7+20260901` and uv `0.12.3`, with their SHA-256 recorded) **before** the network is
+closed. During the run the network stays closed, a download attempt fails the test instead of skipping it,
+and the complete inventory of the profile home after setup is compared with its baseline, not only the
+absence of `cited/`.
 
 ## The three native tools
 

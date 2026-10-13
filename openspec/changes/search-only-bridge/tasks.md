@@ -109,7 +109,7 @@ The correction run performs no archive, merge or push; the future implementation
 - [x] 5.2 `pytest -q tests/test_search_only_mode.py -k handler_wire -s` must call the registered handler, compare
       its actual wire with the same fixture, capture output and prove no home writes. Create that named case in 1.3.
       Evidence: `reports/2026-10-12-step-5-http.md` (1 passed; request body equals the fixture; inventory identical).
-- [ ] 5.3 Run `pytest -q tests/test_profile_install.py -s` in the disposable VM using D4's CLI, pinned Hermes,
+- [x] 5.3 Run `pytest -q tests/test_profile_install.py -s` in the disposable VM using D4's CLI, pinned Hermes,
       local mirror and isolated homes; no personal executable or service. Test real scoped registration and catalog.
       Network is blocked after provisioning. Record CLI argv, digest and profile inventory.
       Executed by Codex in an isolated Linux container with the actual pinned CLI, a read-only mirror,
@@ -120,6 +120,12 @@ The correction run performs no archive, merge or push; the future implementation
       blocker; the original skip remains in the ordinary suite without the four prerequisite variables.
       Evidence: `reports/2026-10-12-step-12-install-codex-r3.md` and external
       `bridge-codex-r3-linux-native9.log`. The container terminated and was removed; no personal service ran.
+      Closed in R4: the same runner pre-provisions the managed CPython 3.14.7 and uv 0.12.3 (digests recorded),
+      a warm uv cache and the build-backend wheelhouse before the network closes; the real
+      `plugins install file:///release/hermes-cited.git --ref 22a44d6... --enable --yes-deps` completes with
+      the external network refused, the catalog holds `cited_search` only, a scoped dispatch answers and the
+      complete profile inventory after setup is unchanged. `1 passed, 29 deselected in 264.38s`.
+      Evidence: `reports/2026-10-13-step-13-install-r4.md`.
 - [x] 5.4 Playwright: not applicable, this change has no frontend.
       Evidence: `reports/2026-10-12-step-5-http.md`.
 
@@ -292,7 +298,7 @@ The correction run performs no archive, merge or push; the future implementation
       (`bridge-r2-tasks-green.log`); `openspec validate --all --strict`: 2 passed, 0 failed.
 
 ## 11. Round 3 review corrections
-- [ ] 11.1 B01 — bind every full callback and its turn state to the registering profile (D2/H19/H20/H21).
+- [x] 11.1 B01 — bind every full callback and its turn state to the registering profile (D2/H19/H20/H21).
       `plugin._profile_call` validates the scope and reads its settings before an effect; `hermes_home`,
       `_secret` and `_language` resolve through the call in progress; `_ProfileState` scopes `ctx.state` per
       profile; `Turn.home` plus the explicit home of each callback keeps a turn visible only to its profile.
@@ -301,6 +307,11 @@ The correction run performs no archive, merge or push; the future implementation
       root audit path, shared mode state); the run is in `tasks/bridge-r3-red.log`. GREEN: the same command
       7 passed in 0.26s.
       Evidence: `reports/2026-10-12-step-11-callbacks-r3.md`.
+      Reclosed in R4: the third review's independent probes are ported as
+      `tests/test_round4_amendments.py`; the colliding turn opens per home, the refused foreign callback
+      performs no cleanup and the command/transformer diagnostics keep the profile redaction set. RED 7 failed
+      → GREEN 7 passed in 2.52s; `tests/test_profile_callbacks.py` 9 passed in 0.74s. Evidence:
+      `reports/2026-10-13-step-13-r4-core.md`.
 - [x] 11.2 B01 — reproduce the three paths over the real pinned `agent.secret_scope`.
       `.venv/Scripts/python ../tasks/bridge-r2-real-scope.py`: the pre-hook takes `cited` from profile A, one
       request reaches A's URL, the quote after the switch to B answers the redacted scope sentence, and the
@@ -315,7 +326,7 @@ The correction run performs no archive, merge or push; the future implementation
       passed in 3.24s. The 5.1 curl probe still runs the fake as a subprocess: 6 cases correct, port closed,
       home inventory identical (`tasks/bridge-r3-curl.log`). Evidence:
       `reports/2026-10-12-step-11-guard-r3.md`.
-- [ ] 11.4 M01 — complete the D4/H22 runner. `_check_host_pin` proves the CLI is the pinned host checkout,
+- [x] 11.4 M01 — complete the D4/H22 runner. `_check_host_pin` proves the CLI is the pinned host checkout,
       `_read_bridge_lock`/`_canonical_archive`/`_verify_bridge_lock` compare the SHA-256 and byte size of
       `git archive --format=tar` with the lock under D5's isolated Git configuration, and `_effective_catalog`
       asks the real host loader and the real registry for the effective catalog and a scoped dispatch. RED:
@@ -323,17 +334,25 @@ The correction run performs no archive, merge or push; the future implementation
       (exit 1). GREEN: `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_profile_install.py`
       29 passed, 1 skipped in 1.61s (the VM E2E is the skip). Evidence:
       `reports/2026-10-12-step-11-install-r3.md`.
+      Reclosed in R4: the D9 runner actually establishes the whole integration offline — provisioned managed
+      runtimes and build wheelhouse, closed external network, real install with `--enable`, real loader
+      catalog, scoped dispatch and full post-setup inventory comparison. `1 passed, 29 deselected in 264.38s`.
+      Evidence: `reports/2026-10-13-step-13-install-r4.md`.
 - [x] 11.5 Re-run the independent R2 probe after the corrections.
       `.venv/Scripts/python -m pytest -q -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py`: before
       4 failed, 17 passed; after 21 passed in 6.02s. `.venv/Scripts/python -m pytest -q -p no:cacheprovider
       tests/test_plugin.py tests/test_modes.py tests/test_host.py tests/test_adversarial.py
       tests/test_profile_scope.py tests/test_search_only_mode.py`: 173 passed in 84.29s.
       Evidence: `reports/2026-10-12-step-11-callbacks-r3.md`.
-- [ ] 11.6 6.2 — the living context and the documents state the per-callback binding with no drift.
+- [x] 11.6 6.2 — the living context and the documents state the per-callback binding with no drift.
       `openspec/config.yaml` carries the rule; `docs/technical-manual.md`, `README.md` and `README.es.md` state
       it. `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_docs_bridge.py
       tests/test_manifest_modes.py`: 16 passed; `openspec validate --all --strict`: 2 passed, 0 failed.
       Evidence: `reports/2026-10-12-step-11-config-r3.md`.
+      Reclosed in R4: the living context and the manuals now state the `(home, session, turn)` key, the plain
+      `mode.profile` key, the failing profile's redaction and the offline runtime provisioning; the D6-D9
+      documents agree with the implementation. Evidence: `reports/2026-10-13-step-13-r4-core.md` and
+      `reports/2026-10-13-step-13-install-r4.md`.
 - [x] 11.7 Full suite with counts and runtime, and `gitleaks protect --staged` before every commit of this
       round. `.venv/Scripts/python -m pytest -q`: 898 passed, 4 skipped in 314.14s (0:05:14);
       `openspec validate --all --strict`: 2 passed, 0 failed; gitleaks clean before each commit.
@@ -437,11 +456,28 @@ The correction run performs no archive, merge or push; the future implementation
       `_ProfileState` delegates the plain key and no longer swallows a key error. GREEN:
       `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_round4_amendments.py` 7 passed in 2.52s.
       Evidence: `reports/2026-10-13-step-13-r4-core.md`.
-- [ ] 13.4 D9 (M03-R3): offline provisioning of the host's required runtimes in the Linux runner (versions and
+- [x] 13.4 D9 (M03-R3): offline provisioning of the host's required runtimes in the Linux runner (versions and
       digests recorded), network closed, install completes, catalog and scoped dispatch verified, full profile
       inventory compared with the post-setup baseline (`tests/test_profile_install.py` compares the whole profile,
       not only `cited/`). Re-run 5.3 and record it; a download attempt is a failure, not a skip.
-- [ ] 13.5 Close 11.1, 11.4 and 11.6 only with the evidence of 13.1-13.4; update the living context and the manuals
+      Provisioned CPython `3.14.7+20260901` (sha256 `0ab330…`) and uv `0.12.3` (sha256 `600cf9…`) before closing
+      the network, warmed the uv cache with the real install and served the build-backend wheelhouse on a
+      loopback-only index; the managed runtimes live in `/opt/runtime` via `HERMES_RUNTIME_DIR`. Offline run:
+      `external_connect_refused: true`, mirror read-only, catalog `hermes-cited` enabled with `tools: 1`,
+      `hooks: 0`, `commands: 0`, scoped dispatch answered, and the full profile inventory identical after setup.
+      `1 passed, 29 deselected in 264.38s`; container exit 0, 301.95s, removed. Evidence:
+      `reports/2026-10-13-step-13-install-r4.md`.
+- [x] 13.5 Close 11.1, 11.4 and 11.6 only with the evidence of 13.1-13.4; update the living context and the manuals
       where D6-D9 changed behaviour; `openspec validate --all --strict` green.
-- [ ] 13.6 Full suite with counts and runtime; `gitleaks protect --staged` before every commit; no `tasks/` inside
+      11.1 closed with 13.1/13.2; 11.4 with 13.4; 11.6 with the context/manual updates below. `openspec/config.yaml`,
+      `docs/technical-manual.md`, `README.md` and `README.es.md` state the `(home, session, turn)` key, the plain
+      `mode.profile` key, the failing profile's redaction and the offline provisioning.
+      `tests/test_docs_bridge.py tests/test_manifest_modes.py`: 16 passed; `openspec validate --all --strict`:
+      2 passed, 0 failed. Evidence: `reports/2026-10-13-step-13-r4-core.md`,
+      `reports/2026-10-13-step-13-install-r4.md`.
+- [x] 13.6 Full suite with counts and runtime; `gitleaks protect --staged` before every commit; no `tasks/` inside
       the repository; delivery with `## Issues`.
+      `.venv/Scripts/python -m pytest -q -p no:cacheprovider`: 910 passed, 1 skipped in 339.03s (0:05:39);
+      `openspec validate --all --strict`: 2 passed, 0 failed; `gitleaks protect --staged`: no leaks before each
+      commit; no `tasks/` inside the repository. Evidence: `reports/2026-10-13-step-13-r4-core.md` and
+      `reports/2026-10-13-step-13-install-r4.md`.

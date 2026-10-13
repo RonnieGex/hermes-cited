@@ -83,7 +83,13 @@ siquiera para comprobarlo o redactarlo.
 El mismo límite aplica a `full`: cada callback registrado y su estado de turno pertenecen al perfil que los
 registró, y el modo por omisión, el idioma, el token seleccionado y la ruta de auditoría de un turno vienen de
 ese perfil, nunca de la raíz del proceso. Una llamada en otro home o con un modo cambiado se rechaza antes de
-cualquier efecto, así que ninguna evidencia, modo o bitácora de un perfil se sirve desde otro.
+cualquier efecto, así que ninguna evidencia, modo o bitácora de un perfil se sirve desde otro. Los turnos vivos
+se indexan por el home de ese perfil junto con los identificadores de sesión y de turno, así que dos perfiles
+que reciben los mismos identificadores conservan dos turnos independientes y un callback ajeno rechazado no
+limpia nada. El modo persistido de la conversación usa la clave plana `mode.profile` del propio host, que el
+host particiona por home del perfil, de modo que un modo escrito por una versión anterior se honra sin
+migración. Un diagnóstico de fallo se redacta con el secreto del perfil cuyo callback falló, nunca con el del
+entorno raíz.
 
 ### El wire de búsqueda, versión 1
 
@@ -119,6 +125,12 @@ espejo local es de solo lectura para el chasis. El artefacto de release son exac
 la opción binaria `--output` de Git, no con una redirección de texto. El lock registra el SHA completo, el
 SHA-256 y el tamaño en bytes, y se escribe en un commit consumidor posterior, nunca con un hash
 autorreferente.
+
+El instalador Linux desechable aprovisiona los runtimes administrados que `plugins install` del host fijado
+necesita (ese pin: CPython `3.14.7+20260901` y uv `0.12.3`, con su SHA-256 registrado) **antes** de cerrar la
+red. Durante la corrida la red permanece cerrada, un intento de descarga falla la prueba en lugar de omitirla,
+y el inventario completo del home del perfil tras el setup se compara con su línea base, no solo la ausencia
+de `cited/`.
 
 ## Las tres herramientas nativas
 
