@@ -481,3 +481,12 @@ The correction run performs no archive, merge or push; the future implementation
       `openspec validate --all --strict`: 2 passed, 0 failed; `gitleaks protect --staged`: no leaks before each
       commit; no `tasks/` inside the repository. Evidence: `reports/2026-10-13-step-13-r4-core.md` and
       `reports/2026-10-13-step-13-install-r4.md`.
+
+## 14. Bridge2 round 1 independent review corrections
+- [x] 14.1 H6: redact invalid quote selection diagnostics with the validated profile credential.
+      New external probe: `../tasks/test_bridge2_codex_r1.py::test_invalid_quote_line_does_not_echo_profile_credential`.
+      RED: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge2_codex_r1.py`
+      returns the synthetic profile credential in the invalid-line sentence. External evidence:
+      `C:/Users/Franc/Documents/katalis-dev/tasks/bridge2-codex-r1-probes-validated-red.log`.
+      GREEN: the same pytest command with `-k invalid_quote_line`: 1 passed, 11 deselected in 7.35s;
+      `bridge2-codex-r1-fix-quote.log` records the redacted sentence and an unchanged temporary home.

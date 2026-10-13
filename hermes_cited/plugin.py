@@ -808,7 +808,7 @@ def _quote_handler(state, registration=None):
                     return error
                 texts, error = turn.add_quote(args)
                 if error:
-                    return "Cited could not quote: {0}.".format(error)
+                    return audit.redact("Cited could not quote: {0}.".format(error), secret)
                 return "\n".join(texts)
         except config.CitedError as error:
             return str(error)
