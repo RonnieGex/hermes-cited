@@ -206,3 +206,12 @@ The correction run performs no archive, merge or push; the future implementation
 - [x] 9.8 6.2 — the living context against the corrected implementation; the package version drift (0.1.0 vs the
       0.2.0 manifest) is corrected and config.yaml states the fail-closed scope rule.
       Evidence: `reports/2026-10-12-step-6-config-r2.md`.
+
+## 10. Independent round 2 corrections
+- [x] 10.1 D2/H19: treat a missing internal agent submodule as a broken host, not an absent host.
+      RED: `.venv/Scripts/python -m pytest -q -s -p no:cacheprovider ../tasks/test_bridge_r2_adversarial.py`
+      produced two failing `broken_agent_submodule` cases; both registered search from the root environment.
+      GREEN: the same probe with `-k broken_agent_submodule`: 2 passed, 17 deselected in 0.57s;
+      `.venv/Scripts/python -m pytest -q -p no:cacheprovider tests/test_profile_scope.py`: 26 passed in 5.98s.
+      Logs are external by the owner's instruction: `bridge-r2-adversarial-before.log`,
+      `bridge-r2-fix-host.log`, `bridge-r2-host-regression.log`. Independent approval remains pending.

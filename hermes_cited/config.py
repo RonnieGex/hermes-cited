@@ -161,7 +161,7 @@ def _environ_scope() -> ProfileScope:
 def _agent_is_absent(error) -> bool:
     """True only when ``agent`` itself is missing, not when one of its own dependencies is (B01)."""
     name = str(getattr(error, "name", "") or "")
-    return name == "agent" or name.startswith("agent.")
+    return name == "agent"
 
 
 def host_is_present() -> bool:
