@@ -43,6 +43,31 @@ exit=0
 The strict OpenSpec validation and the documentation tests after the rewording, and the whole suite, are recorded in
 the step 4 report (second section) and in the step 7 report with the pipeline of the fix commit.
 
+## The re-check of the reviewer
+
+The same reviewer (Codex, `gpt-6-astra`, `high`, `read-only`) re-checked the six findings on `cc2be14`:
+
+**PASS WITH GAPS**: "all six previous findings are resolved, including one acceptable documented deviation, with one
+minor documentation inconsistency and integration checks not independently rerun."
+
+- 1 Blocker, resolved: its file-free probe with the real routing functions (pinned A, override A, live `HERMES_HOME`
+  B) saw zero builder calls and no registration; with the homes agreeing, the builder and the scope use the pinned
+  identity.
+- 2 Major, resolved with deviation: refusing the launch-body transition is "an acceptable conservative compatibility
+  limitation"; H23, D4.3, both READMEs and the manual record it consistently; the real-host test asserts both
+  outcomes and its probe reproduced them.
+- 3 Major, resolved: every builder exception, `CitedScopeError` included, becomes the fixed sentence with the chain
+  suppressed; the registration diagnostic omits the synthetic text.
+- 4, 5, 6 Minor, resolved: `-I -B` with `sys.dont_write_bytecode` asserted; independent snapshots and growing builder
+  counts; `git rev-parse` with skip, fail and pass exercised.
+- New Minor: the module docstring of `tests/test_single_profile_host.py` promised a skip for a different revision while
+  the code fails it. Resolved in the evidence commit: the docstring now says an unreadable revision skips and another
+  commit fails the pin. The implementation was judged correct.
+
+Not independently rerun by the reviewer (no writable temporary directory in its sandbox): the pytest suites, the
+filesystem-backed real-host test, the `.env` loading and the bearer transmission; those are the implementer's runs of
+steps 1, 4 and 5, and the pipeline of step 7.
+
 ## What the reviewer could not run, and who ran it
 
 Codex's read-only sandbox had no writable temporary directory, so both permitted pytest commands exited before

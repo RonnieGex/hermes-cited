@@ -2,9 +2,9 @@
 ``tui_gateway.launch_profile_policy`` of Hermes Agent v0.22.4 (commit ``4d04303818b61bf3aa09278af48356315515965b``).
 
 Opt-in evidence. ``HERMES_HOST_0_22_SOURCE`` names a checkout of that exact commit (``git rev-parse HEAD`` is
-asked; a checkout whose revision cannot be read or is another commit is skipped with the reason) and
-``HERMES_HOST_0_22_PYTHON`` an interpreter that has the host's dependencies (``ruamel.yaml``); without the checkout
-the module is skipped, so the suite stays runnable on a machine without it and in CI. The probe runs in a
+asked: a checkout whose revision cannot be read is skipped with the reason, and a checkout at another commit fails
+the pin) and ``HERMES_HOST_0_22_PYTHON`` an interpreter that has the host's dependencies (``ruamel.yaml``); without
+the checkout the module is skipped, so the suite stays runnable on a machine without it and in CI. The probe runs in a
 subprocess with ``-I -B``: no host module enters this process, no bytecode is written (``-I`` ignores
 ``PYTHONDONTWRITEBYTECODE``, so ``-B`` is passed and the ``__pycache__`` inventory of the checkout is compared
 before and after), the temporary ``HERMES_HOME`` is the only home the host sees, the ``APPDATA`` and
