@@ -40,15 +40,18 @@ The plugin SHALL read its configuration from the launch profile when the `agent`
 `owner_secret_scope(get_process_hermes_home())` of `tui_gateway.launch_profile_policy`, the builder Hermes v0.22.4
 (upstream commit `4d043038`) binds for every launch-profile body, `<HERMES_HOME>/.env` over the launch environment
 (`tui_gateway/launch_profile_policy.py`, `launch_body` and `owner_secret_scope`; `agent/secret_scope.py`,
-`get_secret`). That scope SHALL carry the process
-home as its profile home, no host getter and the source `hermes`, and the builder SHALL be called on every read so a
-rotated value is sent on the next call. While `is_multiplex_active()` answers true the plugin SHALL refuse the
-missing scope with the redacted sentence, as the host's `get_secret` raises `UnscopedSecretError` there, and SHALL
-register nothing; it SHALL refuse it the same way while `serves_routed_profile()` answers true (a `HERMES_HOME`
-override that names another home), because the launch profile is then not the profile of the task. A host without
-that builder, a blank process home, a builder that raises or one that answers a non-mapping SHALL be refused with the
-same redacted sentence, which SHALL carry no part of the host's exception. An installed scope SHALL be used as
-before, without consulting the builder, and the plugin SHALL NOT read `os.environ` in any of these cases.
+`get_secret`). The home of that scope SHALL be the pinned identity of the process
+(`get_routing_process_hermes_home()`), it SHALL carry no host getter and the source `hermes`, and the builder SHALL be
+called on every read so a rotated value is sent on the next call. The plugin SHALL refuse the missing scope with the
+redacted sentence, calling no builder and registering nothing, in every state where the launch profile is not provably
+the task's own: while `is_multiplex_active()` answers true (there the host's unscoped read raises
+`UnscopedSecretError`, or answers from a launch body armed before the flip, a private transitional state the plugin
+does not read); while `serves_routed_profile()` answers true (a `HERMES_HOME` override that names another home); and
+while the pinned identity and the live `HERMES_HOME` (`get_process_hermes_home()`) name different homes, as in a host
+that mirrors a served profile into the environment. A host without that builder, a blank home, a builder that raises
+(the plugin's own error type included) or one that answers a non-mapping SHALL be refused with the same redacted
+sentence, which SHALL carry no part of the host's exception. An installed scope SHALL be used as before, without
+consulting the builder, and the plugin SHALL NOT read `os.environ` in any of these cases.
 
 #### Scenario: An installed scope is used as before
 - **WHEN** the host answers a mapping and a home from `current_secret_scope()` and `current_secret_scope_home()`
@@ -70,10 +73,14 @@ before, without consulting the builder, and the plugin SHALL NOT read `os.enviro
 - **WHEN** the host answers `None`, `is_multiplex_active()` is false and `serves_routed_profile()` is true, in full and in search
 - **THEN** `active_scope()` raises the redacted sentence, `owner_secret_scope` is never called, and registration installs nothing
 
+#### Scenario: A live home that disagrees with the pinned identity
+- **WHEN** the host answers `None`, neither multiplexing nor routing is active, and `get_process_hermes_home()` names a home other than `get_routing_process_hermes_home()`
+- **THEN** `active_scope()` raises the redacted sentence, `owner_secret_scope` is never called, and registration installs nothing; when both name the same home in different spellings, the scope's home is the pinned identity and the builder is called with it
+
 #### Scenario: A host without the builder, a blank home or a failing builder
-- **WHEN** `tui_gateway.launch_profile_policy` has no `owner_secret_scope`, or `get_process_hermes_home()` is blank, or the builder raises an exception that carries a synthetic secret, or it answers a list
-- **THEN** `active_scope()` raises the redacted sentence, the sentence does not contain the secret, and registration installs nothing
+- **WHEN** `tui_gateway.launch_profile_policy` has no `owner_secret_scope`, or the home is blank, or the builder raises an exception that carries a synthetic secret, or it raises the plugin's own `CitedScopeError` with another text, or it answers a list
+- **THEN** `active_scope()` raises the fixed redacted sentence, neither the sentence nor the registration diagnostic contains the secret or the other text, and registration installs nothing
 
 #### Scenario: The real host of v0.22.4
 - **WHEN** the plugin registers under the real `agent.secret_scope`, `hermes_constants` and `tui_gateway.launch_profile_policy` of commit `4d043038`, in a temporary `HERMES_HOME` whose `.env` holds `CITED_URL` and a synthetic `CITED_MCP_TOKEN`, with a contradictory `CITED_URL` in the process environment
-- **THEN** no scope is bound and multiplexing is inactive before the plugin runs, the scope holds the `.env` values with the process home and no getter, full registers `cited_search`, `cited_ask` and `cited_quote`, and after `set_multiplex_active(True)` the scope is refused and nothing registers
+- **THEN** no scope is bound and multiplexing is inactive before the plugin runs, the pinned identity and the live home are that `HERMES_HOME`, the scope holds the `.env` values with that home and no getter, full registers `cited_search`, `cited_ask` and `cited_quote`; inside a `launch_body()` with `set_multiplex_active(True)` the host's unscoped `get_secret` still answers the `.env` value while the plugin refuses; and after the flip the scope is refused and nothing registers

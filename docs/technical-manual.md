@@ -44,14 +44,18 @@ what keeps the unit suite and a standalone client testable.
 `tui_gateway/launch_profile_policy.py` of v0.22.4 (commit `4d043038`) binds nothing while single-profile
 (`launch_body`), and `agent/secret_scope.py:get_secret` reads the process environment when no scope is bound
 and multiplexing is inactive. When `current_secret_scope()` answers `None` and `is_multiplex_active()` is
-false, `active_scope()` builds the scope with the host's own `owner_secret_scope(get_process_hermes_home())`:
-the launch profile, `<HERMES_HOME>/.env` over the launch environment, with the process home as the profile
-home, no host getter and the source `hermes`. The builder runs on every read, so a rotated value in `.env` is
-sent on the next call. While `is_multiplex_active()` is true the missing scope is refused, exactly as the host
-raises `UnscopedSecretError`, and so is a task routed to another profile (`serves_routed_profile()`: a
-`HERMES_HOME` override that names another home while multiplexing is inactive), where the launch profile would
-be the wrong profile; a host without that builder (0.21), a blank process home, a builder that raises or one
-that answers a non-mapping are refused with the same redacted sentence. Precedence follows the host's
+false, `active_scope()` builds the scope with the host's own `owner_secret_scope`, called with the pinned
+identity of the process (`get_routing_process_hermes_home()`): the launch profile, `<HERMES_HOME>/.env` over
+the launch environment, with that home as the profile home, no host getter and the source `hermes`. The builder
+runs on every read, so a rotated value in `.env` is sent on the next call. The missing scope is refused, before
+the builder is called, wherever the launch profile is not provably the task's own: while
+`is_multiplex_active()` is true (the host's unscoped read raises `UnscopedSecretError` there, or answers from a
+launch body armed before the flip, a private transitional state the plugin does not read and fails closed in);
+for a task routed to another profile (`serves_routed_profile()`: a `HERMES_HOME` override that names another
+home while multiplexing is inactive); and when the pinned identity and the live `HERMES_HOME`
+(`get_process_hermes_home()`) disagree, as in a host that mirrors a served profile into the environment. A host
+without that builder (0.21), a blank home, a builder that raises (the plugin's own error type with another text
+included) or one that answers a non-mapping are refused with the same fixed sentence. Precedence follows the host's
 builder: for a key present in both, `.env` wins over the launch environment (`launch_secret_scope`), while an
 unscoped `get_secret` of the host reads the environment; in a normal launch both agree, because the host loads
 `.env` into the environment at start. The plugin itself reads `os.environ` in none of these cases.
@@ -61,7 +65,7 @@ The failures are:
 | Situation | Answer | Requests |
 |---|---|---|
 | a non-mapping value or no home of an installed scope | redacted configuration sentence | zero |
-| no scope while the host multiplexes profiles, or while the task is routed to another profile | redacted configuration sentence | zero |
+| no scope while the host multiplexes profiles, while the task is routed to another profile, or while the pinned identity and the live `HERMES_HOME` disagree | redacted configuration sentence | zero |
 | no scope, one profile, and a host without `owner_secret_scope` (0.21) or a builder that fails | redacted configuration sentence | zero |
 | the host is present but its scope cannot be imported | redacted configuration sentence | zero |
 | a home different from the registration's (canonical paths, so `home/child/..` is the same identity) | redacted configuration sentence | zero |

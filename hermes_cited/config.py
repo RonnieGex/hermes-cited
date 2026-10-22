@@ -237,31 +237,38 @@ def _single_profile_scope() -> ProfileScope:
     ``owner_secret_scope``) and ``agent/secret_scope.py`` (``get_secret``) of v0.22.4. The plugin honours
     the same contract through the host's own builder, ``owner_secret_scope(get_process_hermes_home())``,
     the mapping Hermes binds for every launch-profile body: ``<home>/.env`` over the launch environment.
-    The read stays closed while multiplexing is active, exactly as ``get_secret`` raises there, and while
+    The read stays closed while multiplexing is active (the host's unscoped read raises there, or answers
+    from a launch body armed before the flip, a private transitional state this plugin does not read), while
     the task is routed to another profile (``serves_routed_profile``: a ``HERMES_HOME`` override that names
-    another home), where the launch profile would be the wrong profile. A host without that builder (0.21)
-    keeps the refusal. The plugin itself never reads ``os.environ`` here.
+    another home), and while the pinned identity of the process (``get_routing_process_hermes_home``) and the
+    live ``HERMES_HOME`` (``get_process_hermes_home``) disagree, as in a host that mirrors a served profile
+    into the environment: in every one of those states the launch profile is not provably the task's own. A
+    host without that builder (0.21) keeps the refusal. Every exception of the host, whatever its type, is
+    the fixed sentence. The plugin itself never reads ``os.environ`` here.
     """
     try:
         from agent.secret_scope import is_multiplex_active, serves_routed_profile
-        from hermes_constants import get_process_hermes_home
+        from hermes_constants import get_process_hermes_home, get_routing_process_hermes_home
         from tui_gateway.launch_profile_policy import owner_secret_scope
     except Exception:
         raise CitedScopeError(SCOPE_SENTENCE) from None
     try:
-        if is_multiplex_active() or serves_routed_profile():
-            raise CitedScopeError(SCOPE_SENTENCE)
-        launch_home = str(get_process_hermes_home() or "").strip()
-        if not launch_home:
-            raise CitedScopeError(SCOPE_SENTENCE)
-        values = owner_secret_scope(launch_home)
-    except CitedScopeError:
-        raise
+        closed = bool(is_multiplex_active()) or bool(serves_routed_profile())
+        routing_home = str(get_routing_process_hermes_home() or "").strip()
+        live_home = str(get_process_hermes_home() or "").strip()
+    except Exception:
+        raise CitedScopeError(SCOPE_SENTENCE) from None
+    if closed:
+        raise CitedScopeError(SCOPE_SENTENCE)
+    if not routing_home or not live_home or canonical_home(routing_home) != canonical_home(live_home):
+        raise CitedScopeError(SCOPE_SENTENCE)
+    try:
+        values = owner_secret_scope(routing_home)
     except Exception:
         raise CitedScopeError(SCOPE_SENTENCE) from None
     if not isinstance(values, collections.abc.Mapping):
         raise CitedScopeError(SCOPE_SENTENCE)
-    return ProfileScope(values=values, home=launch_home, getter=None, source="hermes")
+    return ProfileScope(values=values, home=routing_home, getter=None, source="hermes")
 
 
 def _check_registration(scope: ProfileScope, registration: Registration) -> None:

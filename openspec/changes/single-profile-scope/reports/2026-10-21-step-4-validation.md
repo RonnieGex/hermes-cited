@@ -51,6 +51,35 @@ configuration from the launch profile when ...", with the same content. Second r
 Totals: 2 passed, 0 failed (2 items)
 ```
 
+## After the adversarial review (step 8)
+
+Run 3, on the tree that resolves the review (the pinned-identity check, the normalization of every host exception,
+the three new stand-in cases, the rewritten rotation case, the `-I -B` probe with its `git rev-parse` pin and the
+documentation wording):
+
+```
+.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider -rs
+951 passed, 6 skipped in 370.21s (0:06:10)
+exit=0
+```
+
+The six skips are the ones of the table above. The H23 delta was reworded for the pinned identity, the launch-body
+transition and the builder's own error type; the strict validation after that:
+
+```
+npx --yes @fission-ai/openspec@1.1.1 validate --all --strict
+✓ spec/hermes-plugin
+✓ change/single-profile-scope
+Totals: 2 passed, 0 failed (2 items)
+```
+
+The documentation tests after the wording of both READMEs and the manual:
+
+```
+.venv/Scripts/python.exe -m pytest -q tests/test_docs_bridge.py tests/test_package.py tests/regressions/test_r6_docs.py tests/regressions/test_r8_docs.py -p no:cacheprovider
+31 passed, 3 skipped in 5.56s
+```
+
 ## State of the checkout
 
 There is no plugin database. `git status --short` after both runs lists only the files of this change: no test left a

@@ -52,6 +52,12 @@ real-host probe runs in a temporary `HERMES_HOME` and never opens the personal i
 
 ## 7. Closure
 
-- [ ] 7.1 Pull request against `main` with the `tests` workflow green on Ubuntu and Windows; record the run.
-- [ ] 7.2 Independent adversarial review recorded in `reports/`; Fable implemented, so Fable does not review.
+- [x] 7.1 Pull request against `main` with the `tests` workflow green on Ubuntu and Windows; record the run.
+      Evidence: [step 7](reports/2026-10-21-step-7-ci.md): #1, run `39706738769` green on both for `d0704b6`; the
+      run of the fix commit is appended there when known.
+- [x] 7.2 Independent adversarial review recorded in `reports/`; Fable implemented, so Fable does not review.
+      Evidence: [step 8](reports/2026-10-21-step-8-adversarial-review.md): Codex `gpt-6-astra`: FAIL on `d0704b6`,
+      one Blocker (the pinned identity against the live home), two Majors (the launch-body transition, documented
+      and refused; the builder's own-type exception, normalized) and three Minors, every one resolved or recorded
+      as a deviation; 45 targeted cases green after the fix.
 - [ ] 7.3 Merge and archive belong to Franc.

@@ -370,12 +370,14 @@ que una falla de su paso directo devuelve `None` y deja el texto en su lugar.
   scope lanza `UnscopedSecretError`. El plugin 0.2.0 se negaba a registrarse en ese host ("no readable secret
   scope"). Desde el cambio `single-profile-scope`, cuando `current_secret_scope()` responde `None` y
   `is_multiplex_active()` es falso, el plugin construye su scope con el constructor del propio host,
-  `owner_secret_scope(get_process_hermes_home())`: el perfil de arranque, es decir `<HERMES_HOME>/.env` sobre
-  el entorno de arranque, con el home del proceso como home del perfil y sin getter del host. Con el
-  multiplexado activo el scope ausente sigue rechazado, igual que lo rechaza el host; también una tarea
-  enrutada a otro perfil mediante un override de `HERMES_HOME`, donde el perfil de arranque sería el
-  equivocado; y un host sin ese constructor (0.21) conserva el rechazo. Este punto lo resuelve el plugin; no le
-  pide nada a Hermes.
+  `owner_secret_scope`, llamado con la identidad fijada del proceso (`get_routing_process_hermes_home()`): el
+  perfil de arranque, es decir `<HERMES_HOME>/.env` sobre el entorno de arranque, con ese home como home del
+  perfil y sin getter del host. El scope ausente sigue rechazado dondequiera que el perfil de arranque no sea
+  demostrablemente el de la tarea: con el multiplexado activo (ahí la lectura sin scope del host lanza, o
+  responde desde un launch body armado antes del cambio, un estado transitorio privado que el plugin no lee),
+  en una tarea enrutada a otro perfil mediante un override de `HERMES_HOME`, y cuando la identidad fijada y el
+  `HERMES_HOME` vivo no coinciden, como en un host que refleja un perfil servido en el entorno. Un host sin ese
+  constructor (0.21) conserva el rechazo. Este punto lo resuelve el plugin; no le pide nada a Hermes.
 
 El contrato que este plugin le pide a Hermes son tres contratos: la **retención síncrona de la entrega** — una
 política de entrega resuelta una vez por turno que retenga texto, razonamiento, comentario intermedio, voz y la

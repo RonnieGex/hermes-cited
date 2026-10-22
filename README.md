@@ -360,12 +360,15 @@ so a failure of its pass-through returns `None` and leaves the text in place.
   once a second profile is served, multiplexing is active and an unscoped read raises `UnscopedSecretError`.
   Plugin 0.2.0 refused to register on such a host ("no readable secret scope"). Since the change
   `single-profile-scope`, when `current_secret_scope()` answers `None` and `is_multiplex_active()` is false,
-  the plugin builds its scope with the host's own builder, `owner_secret_scope(get_process_hermes_home())`:
-  the launch profile, that is `<HERMES_HOME>/.env` over the launch environment, with the process home as the
-  profile home and no host getter. While multiplexing is active the missing scope is still refused, exactly as
-  the host refuses it; so is a task routed to another profile through a `HERMES_HOME` override, where the launch
-  profile would be the wrong one; and a host without that builder (0.21) keeps the refusal. This point is
-  handled by the plugin; it asks Hermes for nothing.
+  the plugin builds its scope with the host's own builder, `owner_secret_scope`, called with the pinned identity
+  of the process (`get_routing_process_hermes_home()`): the launch profile, that is `<HERMES_HOME>/.env` over the
+  launch environment, with that home as the profile home and no host getter. The missing scope is still refused
+  wherever the launch profile is not provably the task's own: while multiplexing is active (the host's unscoped
+  read raises there, or answers from a launch body armed before the flip, a private transitional state the plugin
+  does not read), for a task routed to another profile through a `HERMES_HOME` override, and when the pinned
+  identity and the live `HERMES_HOME` disagree, as in a host that mirrors a served profile into the environment. A
+  host without that builder (0.21) keeps the refusal. This point is handled by the plugin; it asks Hermes for
+  nothing.
 
 The contract this plugin asks Hermes for is three contracts: **synchronous retention of the delivery** — a
 delivery policy resolved once per turn that holds text, reasoning, interim commentary, voice and the SSE route

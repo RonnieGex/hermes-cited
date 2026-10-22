@@ -32,15 +32,19 @@ class Host:
 
 
 def install_host(monkeypatch, *, scope=None, scope_home=None, multiplex=False, routed=False, process_home="",
-                 owner=None, with_builder=True, builder_error=None):
+                 routing_home=None, owner=None, with_builder=True, builder_error=None):
     """Install ``agent.secret_scope``, ``hermes_constants`` and ``tui_gateway.launch_profile_policy`` stand-ins.
 
     ``scope`` is what ``current_secret_scope()`` answers (``None`` is the single-profile host of 0.22),
     ``multiplex`` is what ``is_multiplex_active()`` answers, ``routed`` is what ``serves_routed_profile()``
     answers (a ``HERMES_HOME`` override that names another home), ``process_home`` is what
-    ``get_process_hermes_home()`` answers, and ``owner`` is the mapping ``owner_secret_scope`` returns.
+    ``get_process_hermes_home()`` answers (the live ``HERMES_HOME``), ``routing_home`` is what
+    ``get_routing_process_hermes_home()`` answers (the pinned identity; the live home when ``None``), and
+    ``owner`` is the mapping ``owner_secret_scope`` returns, or a callable that builds one per call.
     """
     host = Host()
+    if routing_home is None:
+        routing_home = process_home
     agent = types.ModuleType("agent")
     secret_scope = types.ModuleType("agent.secret_scope")
     secret_scope.current_secret_scope = lambda: scope
@@ -54,6 +58,7 @@ def install_host(monkeypatch, *, scope=None, scope_home=None, multiplex=False, r
     agent.secret_scope = secret_scope
     constants = types.ModuleType("hermes_constants")
     constants.get_process_hermes_home = lambda: process_home
+    constants.get_routing_process_hermes_home = lambda: routing_home
     tui_gateway = types.ModuleType("tui_gateway")
     policy = types.ModuleType("tui_gateway.launch_profile_policy")
 
@@ -61,6 +66,8 @@ def install_host(monkeypatch, *, scope=None, scope_home=None, multiplex=False, r
         host.owner_calls.append(home)
         if builder_error is not None:
             raise builder_error
+        if callable(owner):
+            return owner()
         return owner if owner is not None else {}
 
     if with_builder:
@@ -171,27 +178,90 @@ def test_a_single_profile_host_registers_search_against_the_chassis(monkeypatch,
 
 
 def test_the_launch_profile_is_read_fresh_on_every_call(monkeypatch, tmp_path, cited_factory):
-    """A rotated value in the launch profile is sent on the next call, like a rotated profile value."""
+    """A rotated value in the launch profile is sent on the next call, like a rotated profile value.
+
+    The builder answers an independent snapshot on every call and the backing mapping is replaced, not mutated,
+    between the two handler calls, so a cached mapping could not pass; and every handler call must have asked the
+    builder at least once more.
+    """
     full = cited_factory()
     home = tmp_path / "launch-home"
     home.mkdir()
     first = full.token
-    owner = full_values(full.url, first)
-    host = install_host(monkeypatch, process_home=home, owner=owner)
+    backing = {"current": full_values(full.url, first)}
+    host = install_host(monkeypatch, process_home=home, owner=lambda: dict(backing["current"]))
     context = support.FakeContext()
     plugin.register(context)
     handler = context.tools["cited_search"]["handler"]
+    calls_after_registration = len(host.owner_calls)
     handler({"query": "precio"})
-    owner["CITED_MCP_TOKEN"] = "rotated-token-5d2e"
+    calls_after_first = len(host.owner_calls)
+    assert calls_after_first > calls_after_registration
+    backing["current"] = full_values(full.url, "rotated-token-5d2e")
     full.token = "rotated-token-5d2e"
     handler({"query": "precio"})
+    assert len(host.owner_calls) > calls_after_first
     bearers = [
         request["headers"]["authorization"]
         for request in full.requests
         if (request.get("body") or {}).get("method") == "tools/call"
     ]
     assert bearers == ["Bearer {0}".format(first), "Bearer rotated-token-5d2e"]
-    assert len(host.owner_calls) >= 2
+
+
+def test_a_live_home_that_disagrees_with_the_pinned_identity_is_refused(monkeypatch, tmp_path):
+    """A host that mirrors a served profile into HERMES_HOME pins its own home; when the two disagree, the launch
+    profile is not provably the task's: the builder is never called and nothing registers."""
+    pinned = tmp_path / "launch-home"
+    mirrored = tmp_path / "served-home"
+    pinned.mkdir()
+    mirrored.mkdir()
+    host = install_host(
+        monkeypatch,
+        process_home=mirrored,
+        routing_home=pinned,
+        owner=full_values("http://127.0.0.1:60123", CITED_MCP_TOKEN),
+    )
+    with pytest.raises(config.CitedScopeError) as caught:
+        config.active_scope()
+    assert str(caught.value) == config.SCOPE_SENTENCE
+    context = support.FakeContext()
+    plugin.register(context)
+    assert_nothing_registered(context)
+    assert host.owner_calls == []
+
+
+def test_the_scope_home_is_the_pinned_identity_when_both_agree(monkeypatch, tmp_path):
+    home = tmp_path / "launch-home"
+    home.mkdir()
+    host = install_host(
+        monkeypatch,
+        process_home=home,
+        routing_home=home / "child" / "..",
+        owner=full_values("http://127.0.0.1:60123", CITED_MCP_TOKEN),
+    )
+    scope = config.active_scope()
+    assert config.canonical_home(scope.home) == config.canonical_home(home)
+    assert host.owner_calls == [str(home / "child" / "..")]
+
+
+def test_a_builder_that_raises_the_plugins_own_error_is_still_the_fixed_sentence(monkeypatch, tmp_path, capsys):
+    """Whatever the host raises, the plugin's own error type included, the sentence is the fixed one."""
+    install_host(
+        monkeypatch,
+        process_home=tmp_path,
+        builder_error=config.CitedScopeError("synthetic-secret-{0}".format(CITED_MCP_TOKEN)),
+    )
+    with pytest.raises(config.CitedScopeError) as caught:
+        config.active_scope()
+    assert str(caught.value) == config.SCOPE_SENTENCE
+    context = support.FakeContext()
+    plugin.register(context)
+    assert_nothing_registered(context)
+    captured = capsys.readouterr()
+    assert "synthetic-secret" not in captured.err
+    assert CITED_MCP_TOKEN not in captured.err
+    assert config.SCOPE_SENTENCE in captured.err
 
 
 @pytest.mark.parametrize("mode", ["full", "search"])
