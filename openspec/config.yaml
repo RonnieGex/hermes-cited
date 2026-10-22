@@ -3,8 +3,11 @@ context: |
   hermes-cited is an Apache-2.0 native Hermes Agent plugin, written in Python.
   CITED_BRIDGE_TOOLS selects full (default) or search. Search registers only cited_search over /api/chassis/mcp
   with a profile-scoped CITED_SEARCH_TOKEN, no hooks, commands, skill or local writes. Configuration is read
-  from the active profile: a missing, non-mapping or unreadable scope fails closed at registration and at every
-  call, and there is no fallback to the process environment while the agent package of Hermes is present.
+  from the active profile: a non-mapping or unreadable scope fails closed at registration and at every call, a
+  missing scope fails closed while the host multiplexes profiles, and on a Hermes 0.22 host that serves one
+  profile and binds no scope (v0.22.4, commit 4d043038) the plugin reads the launch profile through the host's
+  own owner_secret_scope builder; the plugin itself never reads the process environment while the agent
+  package of Hermes is present.
   Every registered callback of full and its turn state belong to the profile that registered them: a call in
   another home or with a changed mode is refused before any effect, and the default mode, the language, the
   selected token and the audit path of a turn come from that profile and not from the process root.

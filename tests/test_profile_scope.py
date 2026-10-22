@@ -161,7 +161,12 @@ def test_a_broken_host_dependency_is_not_an_absent_host(monkeypatch):
 
 @pytest.mark.parametrize("mode", ["full", "search"])
 def test_a_missing_host_scope_registers_nothing(monkeypatch, mode):
-    """B01: with Hermes present and no readable scope the registration refuses every mode."""
+    """B01: with Hermes present and no readable scope the registration refuses every mode.
+
+    This stand-in host answers no scope and offers no ``is_multiplex_active`` and no launch-profile builder,
+    which is the shape of Hermes 0.21: H23 keeps the refusal there. The single-profile contract of Hermes
+    0.22, where a missing scope reads the launch profile, is covered by ``tests/test_single_profile_scope.py``.
+    """
     _install_fake_agent(monkeypatch, values=None, home=None)
     monkeypatch.setenv("CITED_URL", "http://127.0.0.1:60123")
     monkeypatch.setenv("CITED_MCP_TOKEN", CITED_MCP_TOKEN)

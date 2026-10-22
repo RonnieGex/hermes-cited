@@ -22,6 +22,10 @@ Hecho por Katalis. Apache-2.0.
 
 - Hermes Agent con la API nativa de plugins. Todo se verificó en **v0.21.6+387 (commit `dce1e9b`)**, Python
   3.11.15 del venv de Hermes, en Windows.
+- Hermes **0.22** cambia un contrato del que depende este plugin: un host que sirve un solo perfil no instala
+  ningún scope de secretos. Verificado sobre el código de **v0.22.4 (commit `4d043038`)**: el plugin lee
+  entonces el perfil de arranque como lo hace el host, y sigue rechazando un scope ausente mientras el host
+  multiplexa perfiles. Ver "Incompatibilidades del host".
 - Una instalación de Cited cuyo `/api/mcp` acepte el encabezado `MCP-Protocol-Version` que Hermes manda
   desde `initialize`. Hermes manda `2025-11-25`; Cited necesita
   [RonnieGex/cited#21](https://github.com/RonnieGex/cited/pull/21), fusionado en `main` como `ef11f88`. Sin
@@ -75,9 +79,11 @@ registro antes de instalar un solo callback. El modo es inmutable para ese regis
 
 En modo `search` el plugin lee la configuración del perfil activo de Hermes a través de
 `agent.secret_scope`, exige el mapeo y el home de ese perfil en el registro y en cada llamada, y toma el
-valor por omisión documentado cuando falta una clave: nunca cae al entorno del proceso. Un scope ausente,
-con home cambiado o ilegible responde una oración redactada y no envía ninguna petición, y el modo de un
-registro no cambia sin volver a registrar ese perfil. La ruta de búsqueda nunca pide `CITED_MCP_TOKEN`, ni
+valor por omisión documentado cuando falta una clave: nunca cae al entorno del proceso. En un host Hermes 0.22
+que sirve un solo perfil y no instala ningún scope, el perfil es el perfil de arranque que construye el propio
+host (ver "Incompatibilidades del host"). Un scope con home cambiado o ilegible, y un scope ausente mientras el
+host multiplexa perfiles, responden una oración redactada y no envían ninguna petición, y el modo de un registro
+no cambia sin volver a registrar ese perfil. La ruta de búsqueda nunca pide `CITED_MCP_TOKEN`, ni
 siquiera para comprobarlo o redactarlo.
 
 El mismo límite aplica a `full`: cada callback registrado y su estado de turno pertenecen al perfil que los
@@ -357,6 +363,21 @@ que una falla de su paso directo devuelve `None` y deja el texto en su lugar.
   fallaron (`agent/turn_finalizer.py:645-647`). El mensaje final puede entonces diferir del render que
   compuso el plugin y del renglón que guardó el registro. El plugin no reclama el render de C1 para una ruta
   del host que pueda agregar texto.
+- **Hermes 0.22 no instala ningún scope de secretos mientras sirve un solo perfil.** En v0.22.4 (commit
+  `4d043038`) `tui_gateway/launch_profile_policy.py` no ata nada para un proceso de un solo perfil
+  (`launch_body`: "Nothing is bound while single-profile") y `agent/secret_scope.py:get_secret` lee entonces el
+  entorno del proceso; en cuanto se sirve un segundo perfil, el multiplexado está activo y una lectura sin
+  scope lanza `UnscopedSecretError`. El plugin 0.2.0 se negaba a registrarse en ese host ("no readable secret
+  scope"). Desde el cambio `single-profile-scope`, cuando `current_secret_scope()` responde `None` y
+  `is_multiplex_active()` es falso, el plugin construye su scope con el constructor del propio host,
+  `owner_secret_scope`, llamado con la identidad fijada del proceso (`get_routing_process_hermes_home()`): el
+  perfil de arranque, es decir `<HERMES_HOME>/.env` sobre el entorno de arranque, con ese home como home del
+  perfil y sin getter del host. El scope ausente sigue rechazado dondequiera que el perfil de arranque no sea
+  demostrablemente el de la tarea: con el multiplexado activo (ahí la lectura sin scope del host lanza, o
+  responde desde un launch body armado antes del cambio, un estado transitorio privado que el plugin no lee),
+  en una tarea enrutada a otro perfil mediante un override de `HERMES_HOME`, y cuando la identidad fijada y el
+  `HERMES_HOME` vivo no coinciden, como en un host que refleja un perfil servido en el entorno. Un host sin ese
+  constructor (0.21) conserva el rechazo. Este punto lo resuelve el plugin; no le pide nada a Hermes.
 
 El contrato que este plugin le pide a Hermes son tres contratos: la **retención síncrona de la entrega** — una
 política de entrega resuelta una vez por turno que retenga texto, razonamiento, comentario intermedio, voz y la

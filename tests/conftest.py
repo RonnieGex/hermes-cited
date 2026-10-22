@@ -51,7 +51,7 @@ def forbidden_target_guard(monkeypatch, tmp_path):
 #: if those modules stayed in ``sys.modules`` every later test would look like a run *inside* Hermes and
 #: the profile scope of D2 would refuse registration there. The fixture removes exactly what one test
 #: added, so the legacy unit tests keep running outside the host.
-_HOST_NAMESPACES = ("agent", "hermes_cli", "hermes_plugins", "hermes_constants", "gateway")
+_HOST_NAMESPACES = ("agent", "hermes_cli", "hermes_plugins", "hermes_constants", "gateway", "tui_gateway")
 
 
 @pytest.fixture(autouse=True)

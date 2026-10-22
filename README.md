@@ -21,6 +21,10 @@ Built by Katalis. Apache-2.0.
 
 - Hermes Agent with the native plugin API. Everything here was verified on **v0.21.6+387 (commit
   `dce1e9b`)**, Python 3.11.15 of the Hermes venv, on Windows.
+- Hermes **0.22** changes one contract this plugin depends on: a host that serves a single profile binds no
+  secret scope. Verified on the source of **v0.22.4 (commit `4d043038`)**: the plugin then reads the launch
+  profile the way the host does, and still refuses a missing scope while the host multiplexes profiles. See
+  "Host incompatibilities".
 - A Cited installation whose `/api/mcp` endpoint accepts the `MCP-Protocol-Version` header Hermes sends
   from `initialize`. Hermes sends `2025-11-25`; Cited needs
   [RonnieGex/cited#21](https://github.com/RonnieGex/cited/pull/21), merged into `main` as
@@ -74,9 +78,11 @@ before a single callback is installed. The mode is immutable for that registrati
 
 In `search` mode the plugin reads the configuration from the active Hermes profile through
 `agent.secret_scope`, requires the mapping and the home of that profile at registration and at every call,
-and takes the documented default when a key is absent: it never falls back to the process environment. A
-missing, changed-home or unreadable scope answers a redacted sentence and sends zero requests, and the mode
-of a registration cannot change without registering that profile again. The search path never requests
+and takes the documented default when a key is absent: it never falls back to the process environment. On a
+Hermes 0.22 host that serves one profile and binds no scope, the profile is the launch profile the host itself
+builds (see "Host incompatibilities"). A changed-home or unreadable scope, and a missing scope while the host
+multiplexes profiles, answer a redacted sentence and send zero requests, and the mode of a registration cannot
+change without registering that profile again. The search path never requests
 `CITED_MCP_TOKEN`, not even to check or to redact it.
 
 The same boundary applies to `full`: every registered callback and its turn state belong to the profile that
@@ -348,6 +354,21 @@ so a failure of its pass-through returns `None` and leaves the text in place.
   (`agent/turn_finalizer.py:645-647`). The final message can therefore differ from the render the plugin
   composed and from the row the record stored. The plugin does not claim the render of C1 for a host path
   that can add text.
+- **Hermes 0.22 binds no secret scope while it serves one profile.** In v0.22.4 (commit `4d043038`)
+  `tui_gateway/launch_profile_policy.py` binds nothing for a single-profile process (`launch_body`: "Nothing
+  is bound while single-profile") and `agent/secret_scope.py:get_secret` then reads the process environment;
+  once a second profile is served, multiplexing is active and an unscoped read raises `UnscopedSecretError`.
+  Plugin 0.2.0 refused to register on such a host ("no readable secret scope"). Since the change
+  `single-profile-scope`, when `current_secret_scope()` answers `None` and `is_multiplex_active()` is false,
+  the plugin builds its scope with the host's own builder, `owner_secret_scope`, called with the pinned identity
+  of the process (`get_routing_process_hermes_home()`): the launch profile, that is `<HERMES_HOME>/.env` over the
+  launch environment, with that home as the profile home and no host getter. The missing scope is still refused
+  wherever the launch profile is not provably the task's own: while multiplexing is active (the host's unscoped
+  read raises there, or answers from a launch body armed before the flip, a private transitional state the plugin
+  does not read), for a task routed to another profile through a `HERMES_HOME` override, and when the pinned
+  identity and the live `HERMES_HOME` disagree, as in a host that mirrors a served profile into the environment. A
+  host without that builder (0.21) keeps the refusal. This point is handled by the plugin; it asks Hermes for
+  nothing.
 
 The contract this plugin asks Hermes for is three contracts: **synchronous retention of the delivery** — a
 delivery policy resolved once per turn that holds text, reasoning, interim commentary, voice and the SSE route
