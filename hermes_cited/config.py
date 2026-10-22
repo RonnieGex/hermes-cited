@@ -220,11 +220,48 @@ def active_scope() -> ProfileScope:
         home = current_secret_scope_home()
     except Exception:
         raise CitedScopeError(SCOPE_SENTENCE) from None
+    if values is None:
+        return _single_profile_scope()
     if not isinstance(values, collections.abc.Mapping):
         raise CitedScopeError(SCOPE_SENTENCE)
     if home is None or not str(home).strip():
         raise CitedScopeError(SCOPE_SENTENCE)
     return ProfileScope(values=values, home=str(home), getter=get_secret, source="hermes")
+
+
+def _single_profile_scope() -> ProfileScope:
+    """The launch profile of a Hermes 0.22 host that serves one profile and binds no scope (H23).
+
+    Hermes 0.22 binds no secret scope while a process serves a single profile, and its own ``get_secret``
+    then reads the launch profile: ``tui_gateway/launch_profile_policy.py`` (``launch_body``,
+    ``owner_secret_scope``) and ``agent/secret_scope.py`` (``get_secret``) of v0.22.4. The plugin honours
+    the same contract through the host's own builder, ``owner_secret_scope(get_process_hermes_home())``,
+    the mapping Hermes binds for every launch-profile body: ``<home>/.env`` over the launch environment.
+    The read stays closed while multiplexing is active, exactly as ``get_secret`` raises there, and while
+    the task is routed to another profile (``serves_routed_profile``: a ``HERMES_HOME`` override that names
+    another home), where the launch profile would be the wrong profile. A host without that builder (0.21)
+    keeps the refusal. The plugin itself never reads ``os.environ`` here.
+    """
+    try:
+        from agent.secret_scope import is_multiplex_active, serves_routed_profile
+        from hermes_constants import get_process_hermes_home
+        from tui_gateway.launch_profile_policy import owner_secret_scope
+    except Exception:
+        raise CitedScopeError(SCOPE_SENTENCE) from None
+    try:
+        if is_multiplex_active() or serves_routed_profile():
+            raise CitedScopeError(SCOPE_SENTENCE)
+        launch_home = str(get_process_hermes_home() or "").strip()
+        if not launch_home:
+            raise CitedScopeError(SCOPE_SENTENCE)
+        values = owner_secret_scope(launch_home)
+    except CitedScopeError:
+        raise
+    except Exception:
+        raise CitedScopeError(SCOPE_SENTENCE) from None
+    if not isinstance(values, collections.abc.Mapping):
+        raise CitedScopeError(SCOPE_SENTENCE)
+    return ProfileScope(values=values, home=launch_home, getter=None, source="hermes")
 
 
 def _check_registration(scope: ProfileScope, registration: Registration) -> None:
